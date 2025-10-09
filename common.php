@@ -373,7 +373,12 @@ function normalize_round_meta($roundMeta) {
     $entry = [];
     if (array_key_exists('planned_date', $meta)) {
       $val = trim((string)$meta['planned_date']);
-      if ($val !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $val)) {
+      if ($val !== '') {
+        if (function_exists('mb_substr')) {
+          $val = mb_substr($val, 0, 120);
+        } else {
+          $val = substr($val, 0, 120);
+        }
         $entry['planned_date'] = $val;
       }
     }

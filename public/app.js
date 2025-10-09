@@ -40,9 +40,9 @@
       state.roundMeta = {};
     }
     const val = (value || '').trim();
-    const valid = /^\d{4}-\d{2}-\d{2}$/.test(val) ? val : '';
-    if (valid) {
-      state.roundMeta[key] = {...(state.roundMeta[key] || {}), planned_date: valid};
+    const limited = val.length > 120 ? val.slice(0, 120) : val;
+    if (limited) {
+      state.roundMeta[key] = {...(state.roundMeta[key] || {}), planned_date: limited};
     } else if (state.roundMeta[key]) {
       delete state.roundMeta[key].planned_date;
       if (Object.keys(state.roundMeta[key]).length === 0) {
@@ -65,7 +65,7 @@
     for (const [rid, entry] of Object.entries(meta)){
       if (!entry || typeof entry !== 'object') continue;
       const date = typeof entry.planned_date === 'string' ? entry.planned_date.trim() : '';
-      if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) out[rid] = {planned_date: date};
+      if (date) out[rid] = {planned_date: date.slice(0, 120)};
     }
     return out;
   }
@@ -184,8 +184,9 @@
         Object.entries(prevMeta).forEach(([rid, entry])=>{
           if (!entry || typeof entry !== 'object') return;
           const date = typeof entry.planned_date === 'string' ? entry.planned_date.trim() : '';
-          if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
-            state.roundMeta[String(rid)] = {planned_date: date};
+          const limited = date ? date.slice(0, 120) : '';
+          if (limited) {
+            state.roundMeta[String(rid)] = {planned_date: limited};
           }
         });
       }
@@ -374,8 +375,9 @@
       Object.entries(meta).forEach(([rid, entry])=>{
         if (!entry || typeof entry !== 'object') return;
         const date = typeof entry.planned_date === 'string' ? entry.planned_date.trim() : '';
-        if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
-          state.roundMeta[String(rid)] = {planned_date: date};
+        const limited = date ? date.slice(0, 120) : '';
+        if (limited) {
+          state.roundMeta[String(rid)] = {planned_date: limited};
         }
       });
     }
@@ -477,6 +479,7 @@
   let ROUND_MAP, ROUND_ORDER;
   const roundLabel = (r)=> (ROUND_MAP.get(Number(r))?.label) ?? String(r);
   const colorForRound = (r)=> (ROUND_MAP.get(Number(r))?.color) ?? '#374151';
+  const isRoundZero = (r)=> Number(r) === 0;
 
   function hasBlankInDefaultRound(){
     const addrField = getAddressFieldId();
@@ -552,6 +555,8 @@
     const plannedDateLabel = text('round.planned_date_label', 'Tervezett dátum');
     const plannedDateHint = cfg('text.round.planned_date_hint', '');
     const plannedDateValue = getPlannedDateForRound(rid);
+    const plannedDateInputId = `round_${cssId(String(rid))}_planned_date`;
+    const showPlannedDate = plannedDateEnabled && !isRoundZero(rid);
     const actionButtons = [];
     if (feature('group_actions.open', true)) actionButtons.push(`<button class="iconbtn grp-open" data-round="${rid}">${esc(actionsText.open ?? 'Kinyit')}</button>`);
     if (feature('group_actions.close', true)) actionButtons.push(`<button class="iconbtn grp-close" data-round="${rid}">${esc(actionsText.close ?? 'Összezár')}</button>`);
@@ -566,12 +571,10 @@
           ${esc(roundLabel(rid))}
           ${sumTxt ? `<span class="__sum" style="margin-left:8px;color:#6b7280;font-weight:600;font-size:12px;">${esc(sumTxt)}</span>` : ''}
         </div>
-        ${plannedDateEnabled ? `
+        ${showPlannedDate ? `
         <div class="group-planned-date">
-          <label>
-            <span>${esc(plannedDateLabel)}</span>
-            <input type="date" class="planned-date-input" data-round="${rid}" value="${esc(plannedDateValue)}"${plannedDateHint ? ` title="${esc(plannedDateHint)}"` : ''}>
-          </label>
+          <label class="planned-date-label" for="${plannedDateInputId}">${esc(plannedDateLabel)}</label>
+          <input type="text" id="${plannedDateInputId}" class="planned-date-input" data-round="${rid}" value="${esc(plannedDateValue)}"${plannedDateHint ? ` title="${esc(plannedDateHint)}"` : ''}>
         </div>` : ''}
         <div class="group-tools">
           ${actionButtons.join('')}
