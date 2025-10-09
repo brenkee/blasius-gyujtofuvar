@@ -455,9 +455,9 @@
     return j;
   }
   async function loadCfg(){ state.cfg = await fetchJSON(EP.cfg); }
-  async function loadAll(){
-    const j = await fetchJSON(EP.load);
-    state.items = Array.isArray(j.items)? j.items : [];
+  function applyLoadedData(payload){
+    const j = payload || {};
+    state.items = Array.isArray(j.items) ? j.items : [];
     state.roundMeta = {};
     const meta = j.round_meta;
     if (meta && typeof meta === 'object' && !Array.isArray(meta)){
@@ -470,6 +470,13 @@
         }
       });
     }
+    markerLayer.clearLayers();
+    state.markersById.clear();
+    updatePinCount();
+  }
+  async function loadAll(){
+    const j = await fetchJSON(EP.load);
+    applyLoadedData(j);
   }
   async function saveAll(){
     try{
@@ -650,7 +657,6 @@
     if (feature('group_actions.open', true)) actionButtons.push(`<button class="iconbtn grp-open" data-round="${rid}">${esc(actionsText.open ?? 'Kinyit')}</button>`);
     if (feature('group_actions.close', true)) actionButtons.push(`<button class="iconbtn grp-close" data-round="${rid}">${esc(actionsText.close ?? 'Összezár')}</button>`);
     if (feature('group_actions.print', true)) actionButtons.push(`<button class="iconbtn grp-print" data-round="${rid}">${esc(actionsText.print ?? 'Nyomtatás')}</button>`);
-    if (feature('group_actions.export', true)) actionButtons.push(`<button class="iconbtn grp-export" data-round="${rid}">${esc(actionsText.export ?? 'Export')}</button>`);
     if (feature('group_actions.navigate', true)) actionButtons.push(`<button class="iconbtn grp-nav" data-round="${rid}">${esc(actionsText.navigate ?? 'Navigáció')}</button>`);
     if (feature('group_actions.delete', true)) actionButtons.push(`<button class="iconbtn grp-del" data-round="${rid}" style="border-color:#fecaca;background:rgba(248,113,113,0.12);">${esc(actionsText.delete ?? 'Kör törlése')}</button>`);
     g.innerHTML = `
@@ -1314,8 +1320,6 @@
         state.items.filter(it => (+it.round||0)===rid).forEach(it=>{ it.collapsed = true; });
         saveAll();
       });
-      const btnExport = groupEl.querySelector('.grp-export');
-      if (btnExport) btnExport.addEventListener('click', ()=>{ window.open(EP.exportRound(rid), '_blank'); });
       const btnPrint = groupEl.querySelector('.grp-print');
       if (btnPrint) btnPrint.addEventListener('click', ()=>{ window.open(EP.printRound(rid), '_blank'); });
 
@@ -1414,6 +1418,48 @@
   }
 
   // ======= GLOBAL BUTTONS
+  const importBtn = document.getElementById('importBtn');
+  const importInput = document.getElementById('importFileInput');
+  if (importBtn && importInput) {
+    importBtn.addEventListener('click', ()=>{ if (!importBtn.disabled) importInput.click(); });
+    importInput.addEventListener('change', async ()=>{
+      const file = importInput.files && importInput.files[0];
+      if (!file) return;
+      importBtn.disabled = true;
+      try {
+        const form = new FormData();
+        form.append('file', file);
+        const resp = await fetch(EP.importCsv, {method:'POST', body: form});
+        const raw = await resp.text();
+        let data;
+        try { data = JSON.parse(raw); }
+        catch(_) { throw Object.assign(new Error('bad_json'), {raw}); }
+        if (!resp.ok || !data || data.ok !== true) {
+          const detail = (data && typeof data.error === 'string') ? data.error : null;
+          const err = new Error('import_failed');
+          if (detail) err.detail = detail;
+          throw err;
+        }
+        applyLoadedData(data);
+        history.length = 0;
+        renderEverything();
+        showSaveStatus(true);
+        alert(text('messages.import_success', 'Import kész.'));
+      } catch (e) {
+        console.error(e);
+        showSaveStatus(false);
+        let msg = text('messages.import_error', 'Az importálás nem sikerült.');
+        const extra = e && (e.detail || e.message);
+        if (extra && typeof extra === 'string' && extra.trim() && !['import_failed','bad_json'].includes(extra)) {
+          msg += `\n\n${extra.trim()}`;
+        }
+        alert(msg);
+      } finally {
+        importInput.value = '';
+        importBtn.disabled = false;
+      }
+    });
+  }
   const exportBtn = document.getElementById('exportBtn');
   if (exportBtn) exportBtn.addEventListener('click', ()=>{ window.open(EP.exportAll, '_blank'); });
   const printBtn = document.getElementById('printBtn');

@@ -7,6 +7,12 @@ $action = $_GET['action'] ?? null;
 if (!$action) { http_response_code(400); echo 'Missing action'; exit; }
 
 $jsonHeader = function(){ header('Content-Type: application/json; charset=utf-8'); };
+$sendJsonError = function($message, $code = 400) use ($jsonHeader){
+  $jsonHeader();
+  http_response_code($code);
+  echo json_encode(['ok' => false, 'error' => $message], JSON_UNESCAPED_UNICODE);
+  exit;
+};
 
 if ($action === 'cfg') {
   $jsonHeader();
@@ -144,91 +150,340 @@ if ($action === 'geocode') {
 if ($action === 'export') {
   $roundFilter = isset($_GET['round']) ? (int)$_GET['round'] : null;
 
-  [$items, $roundMeta] = data_store_read($DATA_FILE);
-  if (!is_array($roundMeta)) { $roundMeta = []; }
-  $auto = (bool)($CFG['app']['auto_sort_by_round'] ?? true);
+  [$items] = data_store_read($DATA_FILE);
+  $items = array_values(array_filter(is_array($items) ? $items : []));
+
+  $autoSort = (bool)($CFG['app']['auto_sort_by_round'] ?? true);
   $zeroBottom = (bool)($CFG['app']['round_zero_at_bottom'] ?? true);
-  if ($auto) {
-    $items = array_values($items);
-    usort($items, function($a,$b) use($zeroBottom){
-      $ra = (int)($a['round'] ?? 0); $rb = (int)($b['round'] ?? 0);
-      if ($zeroBottom) { $az = $ra===0 ? 1 : 0; $bz = $rb===0 ? 1 : 0; if ($az !== $bz) return $az - $bz; }
-      if ($ra !== $rb) return $ra - $rb;
-      return 0;
+  if ($autoSort) {
+    usort($items, function($a, $b) use ($zeroBottom) {
+      $ra = (int)($a['round'] ?? 0);
+      $rb = (int)($b['round'] ?? 0);
+      if ($zeroBottom) {
+        $az = $ra === 0 ? 1 : 0;
+        $bz = $rb === 0 ? 1 : 0;
+        if ($az !== $bz) return $az - $bz;
+      }
+      if ($ra === $rb) return 0;
+      return $ra <=> $rb;
     });
-  }
-  if ($roundFilter !== null) {
-    $items = array_values(array_filter($items, fn($x)=> (int)($x['round']??0) === $roundFilter));
   }
 
   $itemsCfg = $CFG['items'] ?? [];
+  $fieldsCfg = array_values(array_filter($itemsCfg['fields'] ?? [], function($f){ return ($f['enabled'] ?? true) !== false; }));
   $metricsCfg = array_values(array_filter($itemsCfg['metrics'] ?? [], function($m){ return ($m['enabled'] ?? true) !== false; }));
-  $labelFieldId = $itemsCfg['label_field_id'] ?? 'label';
-  $addressFieldId = $itemsCfg['address_field_id'] ?? 'address';
-  $noteFieldId = $itemsCfg['note_field_id'] ?? 'note';
-  $sumTemplate = $CFG['text']['group']['sum_template'] ?? 'Összesen: {parts}';
-  $sumSeparator = $CFG['text']['group']['sum_separator'] ?? ' · ';
+  $fieldIds = array_values(array_filter(array_map(function($f){ return $f['id'] ?? null; }, $fieldsCfg)));
+  $metricIds = array_values(array_filter(array_map(function($m){ return $m['id'] ?? null; }, $metricsCfg)));
 
-  $formatMetric = function($metric, $value, $context='row'){
-    $precision = isset($metric['precision']) ? (int)$metric['precision'] : 0;
-    $formatted = number_format((float)$value, $precision, '.', '');
-    $unit = $metric['unit'] ?? '';
-    $label = $metric['label'] ?? '';
-    $tplKey = $context === 'row' ? 'row_format' : 'group_format';
-    if (!empty($metric[$tplKey])) {
-      return str_replace(['{value}','{sum}','{unit}','{label}'], [$formatted,$formatted,$unit,$label], $metric[$tplKey]);
+  $columns = [];
+  $addColumn = function($id) use (&$columns){
+    $key = (string)$id;
+    if ($key === '') return;
+    if (!in_array($key, $columns, true)) {
+      $columns[] = $key;
     }
-    return trim($formatted . ($unit ? ' '.$unit : ''));
+  };
+  $addColumn('id');
+  $addColumn('round');
+  foreach ($fieldIds as $fid) { $addColumn($fid); }
+  foreach ($metricIds as $mid) { $addColumn($mid); }
+  foreach (['city','lat','lon','collapsed'] as $extra) { $addColumn($extra); }
+
+  foreach ($items as $it) {
+    if (!is_array($it)) continue;
+    if ($roundFilter !== null && (int)($it['round'] ?? 0) !== $roundFilter) {
+      continue;
+    }
+    foreach ($it as $key => $value) {
+      if ($key === null) continue;
+      $keyStr = (string)$key;
+      if ($keyStr === '' || strpos($keyStr, '_') === 0) continue;
+      $addColumn($keyStr);
+    }
+  }
+  if (empty($columns)) {
+    $columns = ['id','round'];
+  }
+
+  $delimiter = ';';
+  $fh = fopen('php://temp', 'r+');
+  if (!$fh) {
+    header('Content-Type: text/plain; charset=utf-8');
+    http_response_code(500);
+    echo 'Export hiba';
+    exit;
+  }
+
+  fputcsv($fh, $columns, $delimiter);
+  foreach ($items as $it) {
+    if (!is_array($it)) continue;
+    if ($roundFilter !== null && (int)($it['round'] ?? 0) !== $roundFilter) {
+      continue;
+    }
+    $row = [];
+    foreach ($columns as $col) {
+      if ($col === null || $col === '') { $row[] = ''; continue; }
+      if (!array_key_exists($col, $it) || $it[$col] === null) {
+        $row[] = '';
+        continue;
+      }
+      $value = $it[$col];
+      if ($col === 'round') {
+        $row[] = (string)((int)$value);
+      } elseif ($col === 'collapsed') {
+        $row[] = (!empty($value) && $value !== '0' && $value !== 0 && $value !== 'false') ? '1' : '0';
+      } elseif ($col === 'lat' || $col === 'lon' || in_array($col, $metricIds, true)) {
+        if ($value === '') {
+          $row[] = '';
+        } elseif (is_numeric($value)) {
+          $row[] = rtrim(rtrim(number_format((float)$value, 8, '.', ''), '0'), '.');
+        } else {
+          $row[] = (string)$value;
+        }
+      } else {
+        $row[] = is_scalar($value) ? (string)$value : json_encode($value, JSON_UNESCAPED_UNICODE);
+      }
+    }
+    fputcsv($fh, $row, $delimiter);
+  }
+
+  rewind($fh);
+  $csvBody = stream_get_contents($fh);
+  fclose($fh);
+  if ($csvBody === false) { $csvBody = ''; }
+  $csv = "\xEF\xBB\xBF" . $csvBody;
+  @file_put_contents($EXPORT_FILE, $csv);
+  header('Content-Type: text/csv; charset=utf-8');
+  header('Content-Disposition: attachment; filename="'. $EXPORT_NAME .'"');
+  echo $csv; exit;
+}
+
+if ($action === 'import_csv') {
+  if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    $sendJsonError('Hibás HTTP metódus.', 405);
+  }
+  if (empty($_FILES['file']) || !is_array($_FILES['file'])) {
+    $sendJsonError('Nem található feltöltött fájl.');
+  }
+  $uploadErr = (int)($_FILES['file']['error'] ?? UPLOAD_ERR_OK);
+  if ($uploadErr !== UPLOAD_ERR_OK) {
+    $sendJsonError('A fájl feltöltése nem sikerült.');
+  }
+  $tmpFile = $_FILES['file']['tmp_name'] ?? '';
+  if (!$tmpFile || !is_file($tmpFile)) {
+    $sendJsonError('A feltöltött fájl nem érhető el.');
+  }
+
+  $raw = file_get_contents($tmpFile);
+  if ($raw === false) {
+    $sendJsonError('A CSV fájl nem olvasható.');
+  }
+  $rawTrimmed = trim($raw);
+  if ($rawTrimmed === '') {
+    $sendJsonError('A CSV fájl üres.');
+  }
+
+  $lines = preg_split('/\r\n|\n|\r/', $raw);
+  $firstLine = '';
+  foreach ($lines as $line) {
+    if ($line !== '') { $firstLine = $line; break; }
+  }
+  if ($firstLine === '') {
+    $sendJsonError('A CSV fejléce nem olvasható.');
+  }
+  $firstLine = preg_replace('/^\xEF\xBB\xBF/u', '', $firstLine);
+  $semi = substr_count($firstLine, ';');
+  $comma = substr_count($firstLine, ',');
+  $delimiter = $semi >= $comma ? ';' : ',';
+
+  $fh = fopen($tmpFile, 'r');
+  if (!$fh) {
+    $sendJsonError('A CSV fájl nem nyitható meg.');
+  }
+  $header = fgetcsv($fh, 0, $delimiter);
+  if ($header === false || $header === null) {
+    fclose($fh);
+    $sendJsonError('A CSV fejléce nem olvasható.');
+  }
+  if (isset($header[0])) {
+    $header[0] = preg_replace('/^\xEF\xBB\xBF/u', '', (string)$header[0]);
+  }
+  $headers = [];
+  foreach ($header as $idx => $col) {
+    $name = trim((string)$col);
+    $headers[$idx] = $name !== '' ? $name : null;
+  }
+
+  $itemsCfg = $CFG['items'] ?? [];
+  $fieldDefs = array_values(array_filter($itemsCfg['fields'] ?? [], function($f){ return ($f['enabled'] ?? true) !== false; }));
+  $metricDefs = array_values(array_filter($itemsCfg['metrics'] ?? [], function($m){ return ($m['enabled'] ?? true) !== false; }));
+  $fieldMap = [];
+  foreach ($fieldDefs as $def) {
+    $fid = $def['id'] ?? null;
+    if ($fid) { $fieldMap[$fid] = $def; }
+  }
+  $metricIds = [];
+  foreach ($metricDefs as $def) {
+    $mid = $def['id'] ?? null;
+    if ($mid) { $metricIds[$mid] = true; }
+  }
+
+  $usedIds = [];
+  $makeId = function() use (&$usedIds) {
+    do {
+      try {
+        $rand = bin2hex(random_bytes(6));
+      } catch (Throwable $e) {
+        if (function_exists('openssl_random_pseudo_bytes')) {
+          $alt = openssl_random_pseudo_bytes(6);
+          $rand = $alt !== false ? bin2hex($alt) : bin2hex(pack('N', mt_rand()));
+        } else {
+          $rand = bin2hex(pack('N', mt_rand()));
+        }
+      }
+      $id = 'row_' . $rand;
+    } while(isset($usedIds[$id]));
+    $usedIds[$id] = true;
+    return $id;
+  };
+  $parseNumber = function($value, $column, $rowNumber) use ($sendJsonError) {
+    $str = trim((string)$value);
+    if ($str === '') return null;
+    $norm = str_replace(["\xC2\xA0", ' '], '', $str);
+    $norm = str_replace(',', '.', $norm);
+    if (!is_numeric($norm)) {
+      $sendJsonError("Érvénytelen szám a(z) {$column} oszlopban (sor: {$rowNumber}).");
+    }
+    return (float)$norm;
   };
 
-  // csoportosítás + összesítések
-  $by = [];
-  foreach ($items as $idx => $it) { $r=(int)($it['round']??0); $by[$r][] = ['n'=>$idx+1] + $it; }
-  ksort($by);
-  $tpl = (string)($CFG['export']['group_header_template'] ?? "=== Kör {id} – {label} ===");
-  $lines = [];
-  $plannedLabel = $CFG['text']['round']['planned_date_label'] ?? 'Tervezett dátum';
-  foreach ($by as $rid => $arr) {
-    $label = $ROUND_MAP[$rid]['label'] ?? (string)$rid;
-    $totalsParts = [];
-    foreach ($metricsCfg as $metric){
-      $id = $metric['id'] ?? null; if (!$id) continue;
-      $sum = 0.0;
-      foreach ($arr as $t){ if (isset($t[$id]) && is_numeric($t[$id])) $sum += (float)$t[$id]; }
-      $totalsParts[] = $formatMetric($metric, $sum, 'group');
+  $rowNumber = 1;
+  $items = [];
+  while (($row = fgetcsv($fh, 0, $delimiter)) !== false) {
+    $rowNumber++;
+    if (!is_array($row)) { continue; }
+    $allEmpty = true;
+    foreach ($row as $val) {
+      if (trim((string)$val) !== '') { $allEmpty = false; break; }
     }
-    $hdrBase = str_replace(['{id}','{label}'], [$rid,$label], $tpl);
-    $sumText = $totalsParts ? str_replace('{parts}', implode($sumSeparator, $totalsParts), $sumTemplate) : '';
-    $metaPieces = [$hdrBase];
-    $plannedKey = (string)$rid;
-    if (isset($roundMeta[$plannedKey]['planned_date'])) {
-      $plannedValue = trim((string)$roundMeta[$plannedKey]['planned_date']);
-      if ($plannedValue !== '') {
-        $metaPieces[] = $plannedLabel . ': ' . $plannedValue;
+    if ($allEmpty) { continue; }
+
+    $assoc = [];
+    foreach ($headers as $idx => $colName) {
+      if ($colName === null) continue;
+      $assoc[$colName] = $row[$idx] ?? '';
+    }
+
+    $idRaw = isset($assoc['id']) ? trim((string)$assoc['id']) : '';
+    unset($assoc['id']);
+    if ($idRaw === '') {
+      $id = $makeId();
+    } else {
+      if (isset($usedIds[$idRaw])) {
+        $id = $makeId();
+      } else {
+        $id = $idRaw;
+        $usedIds[$id] = true;
       }
     }
-    if ($sumText !== '') {
-      $metaPieces[] = $sumText;
-    }
-    $lines[] = implode('  | ', $metaPieces);
-    foreach ($arr as $t){
-      $parts = [];
-      if (!empty($CFG['export']['include_label'])   && trim((string)($t[$labelFieldId] ?? ''))!=='') $parts[] = trim((string)$t[$labelFieldId]);
-      if (!empty($CFG['export']['include_address']) && trim((string)($t[$addressFieldId] ?? ''))!=='') $parts[] = trim((string)$t[$addressFieldId]);
-      foreach ($metricsCfg as $metric){
-        $id = $metric['id'] ?? null; if (!$id) continue;
-        if (isset($t[$id]) && $t[$id] !== '') $parts[] = $formatMetric($metric, $t[$id], 'row');
+
+    $roundRaw = isset($assoc['round']) ? trim((string)$assoc['round']) : '';
+    unset($assoc['round']);
+    if ($roundRaw === '') {
+      $round = 0;
+    } else {
+      if (filter_var($roundRaw, FILTER_VALIDATE_INT) === false) {
+        fclose($fh);
+        $sendJsonError("Érvénytelen kör azonosító a(z) {$rowNumber}. sorban.");
       }
-      if (!empty($CFG['export']['include_note'])    && trim((string)($t[$noteFieldId] ?? ''))!=='') $parts[] = trim((string)$t[$noteFieldId]);
-      $lines[] = sprintf('%02d. %s', $t['n'], count($parts)? implode(' | ', $parts) : '—');
+      $round = (int)$roundRaw;
     }
-    $lines[] = '';
+
+    $item = ['id' => $id, 'round' => $round];
+
+    if (array_key_exists('collapsed', $assoc)) {
+      $collapsedRaw = strtolower(trim((string)$assoc['collapsed']));
+      $item['collapsed'] = !in_array($collapsedRaw, ['0','false','no','nem',''], true);
+      unset($assoc['collapsed']);
+    } else {
+      $item['collapsed'] = true;
+    }
+
+    if (array_key_exists('city', $assoc)) {
+      $item['city'] = trim((string)$assoc['city']);
+      unset($assoc['city']);
+    } else {
+      $item['city'] = $item['city'] ?? '';
+    }
+
+    if (array_key_exists('lat', $assoc)) {
+      $item['lat'] = $parseNumber($assoc['lat'], 'lat', $rowNumber);
+      unset($assoc['lat']);
+    } else {
+      $item['lat'] = null;
+    }
+    if (array_key_exists('lon', $assoc)) {
+      $item['lon'] = $parseNumber($assoc['lon'], 'lon', $rowNumber);
+      unset($assoc['lon']);
+    } else {
+      $item['lon'] = null;
+    }
+
+    foreach ($fieldMap as $fid => $def) {
+      if (array_key_exists($fid, $assoc)) {
+        $val = $assoc[$fid];
+        if (($def['type'] ?? '') === 'number') {
+          $item[$fid] = $parseNumber($val, $fid, $rowNumber);
+        } else {
+          $item[$fid] = is_scalar($val) ? trim((string)$val) : '';
+        }
+        unset($assoc[$fid]);
+      } else {
+        if (array_key_exists('default', $def)) {
+          $item[$fid] = $def['default'];
+        } elseif (($def['type'] ?? '') === 'number') {
+          $item[$fid] = null;
+        } else {
+          if (!array_key_exists($fid, $item)) {
+            $item[$fid] = '';
+          }
+        }
+      }
+    }
+
+    foreach (array_keys($metricIds) as $mid) {
+      if (array_key_exists($mid, $assoc)) {
+        $item[$mid] = $parseNumber($assoc[$mid], $mid, $rowNumber);
+        unset($assoc[$mid]);
+      } else {
+        if (!array_key_exists($mid, $item)) {
+          $item[$mid] = null;
+        }
+      }
+    }
+
+    if (!array_key_exists('city', $item)) { $item['city'] = ''; }
+    if (!array_key_exists('lat', $item)) { $item['lat'] = null; }
+    if (!array_key_exists('lon', $item)) { $item['lon'] = null; }
+
+    foreach ($assoc as $key => $value) {
+      if ($key === null) continue;
+      $keyStr = (string)$key;
+      if ($keyStr === '' || strpos($keyStr, '_') === 0 || array_key_exists($keyStr, $item)) continue;
+      $item[$keyStr] = is_scalar($value) ? trim((string)$value) : $value;
+    }
+
+    $items[] = $item;
   }
-  $txt = implode(PHP_EOL, $lines);
-  @file_put_contents($EXPORT_FILE, $txt);
-  header('Content-Type: text/plain; charset=utf-8');
-  header('Content-Disposition: attachment; filename="'. $EXPORT_NAME .'"');
-  echo $txt; exit;
+  fclose($fh);
+
+  [, $roundMeta] = data_store_read($DATA_FILE);
+  if (!is_array($roundMeta)) { $roundMeta = []; }
+  data_store_write($DATA_FILE, $items, $roundMeta);
+
+  $jsonHeader();
+  echo json_encode(['ok' => true, 'items' => $items, 'round_meta' => $roundMeta], JSON_UNESCAPED_UNICODE);
+  exit;
 }
 
 if ($action === 'delete_round') {

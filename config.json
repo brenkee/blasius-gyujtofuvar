@@ -13,6 +13,7 @@
         "toolbar": {
             "expand_all": true,
             "collapse_all": true,
+            "import_all": true,
             "export_all": true,
             "print_all": true,
             "download_archive": true,
@@ -36,8 +37,8 @@
     },
     "files": {
         "data_file": "fuvar_data.json",
-        "export_file": "fuvar_export.txt",
-        "export_download_name": "fuvar_export.txt",
+        "export_file": "fuvar_export.csv",
+        "export_download_name": "fuvar_export.csv",
         "archive_file": "fuvar_archive.log"
     },
     "map": {
@@ -212,9 +213,13 @@
                 "label": "\u00d6sszes \u00f6sszez\u00e1r",
                 "title": "\u00d6sszes k\u00f6r \u00f6sszez\u00e1r\u00e1sa"
             },
+            "import_all": {
+                "label": "Import (CSV)",
+                "title": "C\u00edmlista import\u00e1l\u00e1sa CSV-b\u0151l"
+            },
             "export_all": {
-                "label": "Export",
-                "title": "Export TXT"
+                "label": "Export (CSV)",
+                "title": "C\u00edmlista export\u00e1l\u00e1sa CSV-be"
             },
             "print_all": {
                 "label": "Nyomtat\u00e1s",
@@ -273,7 +278,9 @@
             "navigation_skip": "Figyelem: {count} c\u00edm nem ker\u00fclt bele (nincs geolok\u00e1ci\u00f3).",
             "geocode_failed": "Geok\u00f3dol\u00e1s sikertelen.",
             "geocode_failed_detailed": "Geok\u00f3dol\u00e1s sikertelen. Pr\u00f3b\u00e1ld pontos\u00edtani a c\u00edmet.",
-            "undo_unavailable": "Nincs visszavonhat\u00f3 m\u0171velet."
+            "undo_unavailable": "Nincs visszavonhat\u00f3 m\u0171velet.",
+            "import_success": "Import k\u00e9sz.",
+            "import_error": "Az import\u00e1l\u00e1s nem siker\u00fclt."
         }
     },
     "items": {
