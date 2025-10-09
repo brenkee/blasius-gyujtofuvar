@@ -13,20 +13,26 @@ if ($action === 'cfg') {
   $JS_CFG = [
     "app" => [
       "title" => $CFG['app']['title'],
-      "export_button_label" => $CFG['app']['export_button_label'],
       "auto_sort_by_round" => (bool)$CFG['app']['auto_sort_by_round'],
       "round_zero_at_bottom" => (bool)$CFG['app']['round_zero_at_bottom'],
       "default_collapsed" => (bool)$CFG['app']['default_collapsed']
     ],
+    "history" => [
+      "undo_enabled" => !empty($CFG['history']['undo_enabled']),
+      "max_steps" => (int)($CFG['history']['max_steps'] ?? 3)
+    ],
+    "features" => $CFG['features'] ?? [],
     "ui" => [
       "panel_min_px" => (int)$CFG['ui']['panel_min_px'],
       "panel_pref_vw" => (int)$CFG['ui']['panel_pref_vw'],
       "panel_max_px" => (int)$CFG['ui']['panel_max_px'],
-      "show_note_field" => (bool)$CFG['ui']['show_note_field'],
+      "colors" => $CFG['ui']['colors'] ?? [],
       "marker" => [
         "icon_size" => (int)$CFG['ui']['marker']['icon_size'],
         "font_size" => (int)$CFG['ui']['marker']['font_size'],
-        "auto_contrast" => (bool)$CFG['ui']['marker']['auto_contrast']
+        "auto_contrast" => (bool)$CFG['ui']['marker']['auto_contrast'],
+        "focus_ring_radius" => isset($CFG['ui']['marker']['focus_ring_radius']) ? (float)$CFG['ui']['marker']['focus_ring_radius'] : 80.0,
+        "focus_ring_color" => $CFG['ui']['marker']['focus_ring_color'] ?? 'auto'
       ]
     ],
     "map" => [
@@ -35,13 +41,22 @@ if ($action === 'cfg') {
         "attribution" => $CFG['map']['tiles']['attribution']
       ],
       "fit_bounds" => $CFG['map']['fit_bounds'] ?? null,
-      "max_bounds_pad" => (float)$CFG['map']['max_bounds_pad']
+      "max_bounds_pad" => isset($CFG['map']['max_bounds_pad']) ? (float)$CFG['map']['max_bounds_pad'] : 0.6
     ],
     "rounds" => array_values($ROUND_MAP),
     "routing" => [
-      "origin" => "Maglód",
-      "max_waypoints" => 10
-    ]
+      "origin" => $CFG['routing']['origin'] ?? 'Maglód',
+      "origin_coordinates" => [
+        'lat' => isset($CFG['routing']['origin_coordinates']['lat']) ? (float)$CFG['routing']['origin_coordinates']['lat'] : null,
+        'lon' => isset($CFG['routing']['origin_coordinates']['lon']) ? (float)$CFG['routing']['origin_coordinates']['lon'] : null,
+      ],
+      "max_waypoints" => (int)($CFG['routing']['max_waypoints'] ?? 10),
+      "geocode_origin_on_start" => !empty($CFG['routing']['geocode_origin_on_start'])
+    ],
+    "text" => $CFG['text'] ?? [],
+    "items" => $CFG['items'] ?? [],
+    "export" => $CFG['export'] ?? [],
+    "print" => $CFG['print'] ?? []
   ];
   echo json_encode($JS_CFG, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
   exit;
@@ -125,6 +140,26 @@ if ($action === 'export') {
     $items = array_values(array_filter($items, fn($x)=> (int)($x['round']??0) === $roundFilter));
   }
 
+  $itemsCfg = $CFG['items'] ?? [];
+  $metricsCfg = array_values(array_filter($itemsCfg['metrics'] ?? [], function($m){ return ($m['enabled'] ?? true) !== false; }));
+  $labelFieldId = $itemsCfg['label_field_id'] ?? 'label';
+  $addressFieldId = $itemsCfg['address_field_id'] ?? 'address';
+  $noteFieldId = $itemsCfg['note_field_id'] ?? 'note';
+  $sumTemplate = $CFG['text']['group']['sum_template'] ?? 'Összesen: {parts}';
+  $sumSeparator = $CFG['text']['group']['sum_separator'] ?? ' · ';
+
+  $formatMetric = function($metric, $value, $context='row'){
+    $precision = isset($metric['precision']) ? (int)$metric['precision'] : 0;
+    $formatted = number_format((float)$value, $precision, '.', '');
+    $unit = $metric['unit'] ?? '';
+    $label = $metric['label'] ?? '';
+    $tplKey = $context === 'row' ? 'row_format' : 'group_format';
+    if (!empty($metric[$tplKey])) {
+      return str_replace(['{value}','{sum}','{unit}','{label}'], [$formatted,$formatted,$unit,$label], $metric[$tplKey]);
+    }
+    return trim($formatted . ($unit ? ' '.$unit : ''));
+  };
+
   // csoportosítás + összesítések
   $by = [];
   foreach ($items as $idx => $it) { $r=(int)($it['round']??0); $by[$r][] = ['n'=>$idx+1] + $it; }
@@ -133,21 +168,25 @@ if ($action === 'export') {
   $lines = [];
   foreach ($by as $rid => $arr) {
     $label = $ROUND_MAP[$rid]['label'] ?? (string)$rid;
-    // totals
-    $sumW=0.0; $sumV=0.0;
-    foreach ($arr as $t){
-      if (isset($t['weight']) && is_numeric($t['weight'])) $sumW += (float)$t['weight'];
-      if (isset($t['volume']) && is_numeric($t['volume'])) $sumV += (float)$t['volume'];
+    $totalsParts = [];
+    foreach ($metricsCfg as $metric){
+      $id = $metric['id'] ?? null; if (!$id) continue;
+      $sum = 0.0;
+      foreach ($arr as $t){ if (isset($t[$id]) && is_numeric($t[$id])) $sum += (float)$t[$id]; }
+      $totalsParts[] = $formatMetric($metric, $sum, 'group');
     }
     $hdrBase = str_replace(['{id}','{label}'], [$rid,$label], $tpl);
-    $lines[] = $hdrBase . "  | Összesen: " . number_format($sumW,1,'.','') . " kg, " . number_format($sumV,1,'.','') . " m3";
+    $sumText = $totalsParts ? str_replace('{parts}', implode($sumSeparator, $totalsParts), $sumTemplate) : '';
+    $lines[] = $hdrBase . ($sumText ? '  | '.$sumText : '');
     foreach ($arr as $t){
       $parts = [];
-      if (!empty($CFG['export']['include_label'])   && trim((string)($t['label'] ?? ''))!=='') $parts[] = trim((string)$t['label']);
-      if (!empty($CFG['export']['include_address']) && trim((string)($t['address'] ?? ''))!=='') $parts[] = trim((string)$t['address']);
-      if (isset($t['weight']) && $t['weight']!=='') $parts[] = number_format((float)$t['weight'],1,'.','') . " kg";
-      if (isset($t['volume']) && $t['volume']!=='') $parts[] = number_format((float)$t['volume'],2,'.','') . " m3";
-      if (!empty($CFG['export']['include_note'])    && trim((string)($t['note'] ?? ''))!=='') $parts[] = trim((string)$t['note']);
+      if (!empty($CFG['export']['include_label'])   && trim((string)($t[$labelFieldId] ?? ''))!=='') $parts[] = trim((string)$t[$labelFieldId]);
+      if (!empty($CFG['export']['include_address']) && trim((string)($t[$addressFieldId] ?? ''))!=='') $parts[] = trim((string)$t[$addressFieldId]);
+      foreach ($metricsCfg as $metric){
+        $id = $metric['id'] ?? null; if (!$id) continue;
+        if (isset($t[$id]) && $t[$id] !== '') $parts[] = $formatMetric($metric, $t[$id], 'row');
+      }
+      if (!empty($CFG['export']['include_note'])    && trim((string)($t[$noteFieldId] ?? ''))!=='') $parts[] = trim((string)$t[$noteFieldId]);
       $lines[] = sprintf('%02d. %s', $t['n'], count($parts)? implode(' | ', $parts) : '—');
     }
     $lines[] = '';
@@ -165,6 +204,25 @@ if ($action === 'delete_round') {
   $req = json_decode($body, true);
   $rid = isset($req['round']) ? (int)$req['round'] : (int)($_GET['round'] ?? 0);
 
+  $itemsCfg = $CFG['items'] ?? [];
+  $metricsCfg = array_values(array_filter($itemsCfg['metrics'] ?? [], function($m){ return ($m['enabled'] ?? true) !== false; }));
+  $labelFieldId = $itemsCfg['label_field_id'] ?? 'label';
+  $addressFieldId = $itemsCfg['address_field_id'] ?? 'address';
+  $noteFieldId = $itemsCfg['note_field_id'] ?? 'note';
+  $sumTemplate = $CFG['text']['group']['sum_template'] ?? 'Összesen: {parts}';
+  $sumSeparator = $CFG['text']['group']['sum_separator'] ?? ' · ';
+  $formatMetric = function($metric, $value, $context='row'){
+    $precision = isset($metric['precision']) ? (int)$metric['precision'] : 0;
+    $formatted = number_format((float)$value, $precision, '.', '');
+    $unit = $metric['unit'] ?? '';
+    $label = $metric['label'] ?? '';
+    $tplKey = $context === 'row' ? 'row_format' : 'group_format';
+    if (!empty($metric[$tplKey])) {
+      return str_replace(['{value}','{sum}','{unit}','{label}'], [$formatted,$formatted,$unit,$label], $metric[$tplKey]);
+    }
+    return trim($formatted . ($unit ? ' '.$unit : ''));
+  };
+
   $items = [];
   if (file_exists($DATA_FILE)) {
     $raw = file_get_contents($DATA_FILE);
@@ -179,18 +237,26 @@ if ($action === 'delete_round') {
     $dt = date('Y-m-d H:i:s');
     $roundLabel = $ROUND_MAP[$rid]['label'] ?? (string)$rid;
 
-    $sumW=0.0; $sumV=0.0;
-    foreach ($removed as $t){
-      if (isset($t['weight']) && is_numeric($t['weight'])) $sumW += (float)$t['weight'];
-      if (isset($t['volume']) && is_numeric($t['volume'])) $sumV += (float)$t['volume'];
+    $totalParts = [];
+    foreach ($metricsCfg as $metric){
+      $id = $metric['id'] ?? null; if (!$id) continue;
+      $sum = 0.0;
+      foreach ($removed as $t){ if (isset($t[$id]) && is_numeric($t[$id])) $sum += (float)$t[$id]; }
+      $totalParts[] = $formatMetric($metric, $sum, 'group');
     }
-
-    $lines = ["[$dt] TÖRÖLT KÖR: $rid – $roundLabel  | Összesen: ".number_format($sumW,1,'.','')." kg, ".number_format($sumV,1,'.','')." m3"];
+    $summary = $totalParts ? str_replace('{parts}', implode($sumSeparator, $totalParts), $sumTemplate) : '';
+    $headerLine = "[$dt] TÖRÖLT KÖR: $rid – $roundLabel" . ($summary ? '  | '.$summary : '');
+    $lines = [$headerLine];
     foreach ($removed as $t) {
       $parts = [];
-      foreach (['label','address','note'] as $k) { $v = trim((string)($t[$k] ?? '')); if ($v!=='') $parts[] = $v; }
-      if (isset($t['weight']) && $t['weight']!=='') $parts[] = number_format((float)$t['weight'],1,'.','') . " kg";
-      if (isset($t['volume']) && $t['volume']!=='') $parts[] = number_format((float)$t['volume'],2,'.','') . " m3";
+      foreach ([$labelFieldId, $addressFieldId, $noteFieldId] as $k) {
+        if (!$k) continue;
+        $v = trim((string)($t[$k] ?? '')); if ($v!=='') $parts[] = $v;
+      }
+      foreach ($metricsCfg as $metric){
+        $id = $metric['id'] ?? null; if (!$id) continue;
+        if (isset($t[$id]) && $t[$id] !== '') $parts[] = $formatMetric($metric, $t[$id], 'row');
+      }
       $lines[] = "- " . (count($parts)? implode(' | ', $parts) : '—');
     }
     $lines[] = "";
