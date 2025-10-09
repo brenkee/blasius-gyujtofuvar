@@ -455,9 +455,9 @@
     return j;
   }
   async function loadCfg(){ state.cfg = await fetchJSON(EP.cfg); }
-  async function loadAll(){
-    const j = await fetchJSON(EP.load);
-    state.items = Array.isArray(j.items)? j.items : [];
+  function applyLoadedData(payload){
+    const j = payload || {};
+    state.items = Array.isArray(j.items) ? j.items : [];
     state.roundMeta = {};
     const meta = j.round_meta;
     if (meta && typeof meta === 'object' && !Array.isArray(meta)){
@@ -470,6 +470,13 @@
         }
       });
     }
+    markerLayer.clearLayers();
+    state.markersById.clear();
+    updatePinCount();
+  }
+  async function loadAll(){
+    const j = await fetchJSON(EP.load);
+    applyLoadedData(j);
   }
   async function saveAll(){
     try{
@@ -491,6 +498,47 @@
     const url = EP.geocode + '&' + new URLSearchParams({q:qNorm});
     async function one(){ const r = await fetch(url,{cache:'no-store'}); const t=await r.text(); let j; try{ j=JSON.parse(t);}catch(e){throw new Error('geocode_error');} if(!r.ok||j.error) throw new Error('geocode_error'); return j; }
     try{ return await one(); } catch(_){ return await one(); }
+  }
+
+  async function autoGeocodeImported(targetIds){
+    const idSet = Array.isArray(targetIds) && targetIds.length ? new Set(targetIds.map(id => String(id))) : null;
+    const addressFieldId = getAddressFieldId();
+    const labelFieldId = getLabelFieldId();
+    let changed = false;
+    let attempted = 0;
+    let failed = 0;
+    const failures = [];
+    for (let i = 0; i < state.items.length; i += 1) {
+      const item = state.items[i];
+      if (!item || typeof item !== 'object') continue;
+      const idStr = item.id != null ? String(item.id) : '';
+      if (idSet && !idSet.has(idStr)) continue;
+      if (item.lat != null && item.lon != null) continue;
+      const address = (item[addressFieldId] ?? '').toString().trim();
+      if (!address) continue;
+      attempted += 1;
+      try {
+        const geo = await geocodeRobust(address);
+        const updated = {...item};
+        updated.lat = geo.lat;
+        updated.lon = geo.lon;
+        updated.city = geo.city || cityFromDisplay(address, item.city);
+        state.items[i] = updated;
+        changed = true;
+      } catch (err) {
+        console.error('auto geocode failed for import', err);
+        failed += 1;
+        const idPart = item.id != null ? `#${item.id} ` : '';
+        const label = (item[labelFieldId] ?? '').toString().trim();
+        const labelPart = label ? `${label} – ` : '';
+        failures.push(`${idPart}${labelPart}${address}`.trim());
+      }
+    }
+    let saveOk = true;
+    if (changed) {
+      saveOk = await saveAll();
+    }
+    return {changed, saveOk, failed, attempted, failures};
   }
 
   // ======= AUTO SORT (kör + körön belül távolság)
@@ -650,7 +698,6 @@
     if (feature('group_actions.open', true)) actionButtons.push(`<button class="iconbtn grp-open" data-round="${rid}">${esc(actionsText.open ?? 'Kinyit')}</button>`);
     if (feature('group_actions.close', true)) actionButtons.push(`<button class="iconbtn grp-close" data-round="${rid}">${esc(actionsText.close ?? 'Összezár')}</button>`);
     if (feature('group_actions.print', true)) actionButtons.push(`<button class="iconbtn grp-print" data-round="${rid}">${esc(actionsText.print ?? 'Nyomtatás')}</button>`);
-    if (feature('group_actions.export', true)) actionButtons.push(`<button class="iconbtn grp-export" data-round="${rid}">${esc(actionsText.export ?? 'Export')}</button>`);
     if (feature('group_actions.navigate', true)) actionButtons.push(`<button class="iconbtn grp-nav" data-round="${rid}">${esc(actionsText.navigate ?? 'Navigáció')}</button>`);
     if (feature('group_actions.delete', true)) actionButtons.push(`<button class="iconbtn grp-del" data-round="${rid}" style="border-color:#fecaca;background:rgba(248,113,113,0.12);">${esc(actionsText.delete ?? 'Kör törlése')}</button>`);
     g.innerHTML = `
@@ -1314,8 +1361,6 @@
         state.items.filter(it => (+it.round||0)===rid).forEach(it=>{ it.collapsed = true; });
         saveAll();
       });
-      const btnExport = groupEl.querySelector('.grp-export');
-      if (btnExport) btnExport.addEventListener('click', ()=>{ window.open(EP.exportRound(rid), '_blank'); });
       const btnPrint = groupEl.querySelector('.grp-print');
       if (btnPrint) btnPrint.addEventListener('click', ()=>{ window.open(EP.printRound(rid), '_blank'); });
 
@@ -1414,6 +1459,188 @@
   }
 
   // ======= GLOBAL BUTTONS
+  function showImportModeDialog(message, {replaceLabel, appendLabel} = {}){
+    return new Promise((resolve)=>{
+      const overlay = document.createElement('div');
+      overlay.style.position = 'fixed';
+      overlay.style.inset = '0';
+      overlay.style.background = 'rgba(15,23,42,0.45)';
+      overlay.style.backdropFilter = 'blur(2px)';
+      overlay.style.display = 'flex';
+      overlay.style.alignItems = 'center';
+      overlay.style.justifyContent = 'center';
+      overlay.style.zIndex = '10000';
+
+      const dark = document.documentElement.classList.contains('dark');
+      const box = document.createElement('div');
+      box.style.color = dark ? '#e5e7eb' : '#111827';
+      box.style.padding = '24px';
+      box.style.borderRadius = '12px';
+      box.style.boxShadow = '0 12px 32px rgba(15,23,42,0.35)';
+      box.style.maxWidth = '420px';
+      box.style.width = 'calc(100% - 32px)';
+      box.style.fontSize = '16px';
+      box.style.lineHeight = '1.5';
+      box.style.background = dark ? '#111827' : '#ffffff';
+
+      const textEl = document.createElement('div');
+      textEl.textContent = message || '';
+      textEl.style.marginBottom = '20px';
+
+      const btnWrap = document.createElement('div');
+      btnWrap.style.display = 'flex';
+      btnWrap.style.gap = '12px';
+      btnWrap.style.justifyContent = 'flex-end';
+      btnWrap.style.flexWrap = 'wrap';
+
+      function makeBtn(label, variant){
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = label;
+        btn.style.border = 'none';
+        btn.style.padding = '8px 16px';
+        btn.style.borderRadius = '8px';
+        btn.style.cursor = 'pointer';
+        btn.style.fontSize = '15px';
+        btn.style.fontWeight = '600';
+        if (variant === 'primary') {
+          btn.style.background = '#2563eb';
+          btn.style.color = '#ffffff';
+        } else if (variant === 'ghost') {
+          btn.style.background = 'transparent';
+          btn.style.color = dark ? '#e5e7eb' : '#111827';
+          btn.style.border = '1px solid rgba(148, 163, 184, 0.5)';
+        } else {
+          btn.style.background = dark ? '#1f2937' : '#f3f4f6';
+          btn.style.color = dark ? '#f8fafc' : '#111827';
+        }
+        btn.addEventListener('mouseenter', ()=>{ btn.style.filter = 'brightness(0.95)'; });
+        btn.addEventListener('mouseleave', ()=>{ btn.style.filter = ''; });
+        return btn;
+      }
+
+      let finished = false;
+      const handleResult = (result)=>{
+        if (finished) return;
+        finished = true;
+        cleanup();
+        resolve(result);
+      };
+
+      const replaceBtn = makeBtn(replaceLabel || 'Felülírás', 'primary');
+      replaceBtn.addEventListener('click', ()=> handleResult('replace'));
+
+      const appendBtn = makeBtn(appendLabel || 'Hozzáadás');
+      appendBtn.addEventListener('click', ()=> handleResult('append'));
+
+      btnWrap.appendChild(replaceBtn);
+      btnWrap.appendChild(appendBtn);
+
+      box.appendChild(textEl);
+      box.appendChild(btnWrap);
+      overlay.appendChild(box);
+      document.body.appendChild(overlay);
+
+      const onKey = (event)=>{
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          handleResult(null);
+        }
+      };
+      document.addEventListener('keydown', onKey);
+
+      overlay.addEventListener('click', (event)=>{
+        if (event.target === overlay) {
+          handleResult(null);
+        }
+      });
+
+      setTimeout(()=>{ replaceBtn.focus(); }, 0);
+
+      function cleanup(){
+        overlay.remove();
+        document.removeEventListener('keydown', onKey);
+      }
+    });
+  }
+
+  const importBtn = document.getElementById('importBtn');
+  const importInput = document.getElementById('importFileInput');
+  if (importBtn && importInput) {
+    importBtn.addEventListener('click', ()=>{ if (!importBtn.disabled) importInput.click(); });
+    importInput.addEventListener('change', async ()=>{
+      const file = importInput.files && importInput.files[0];
+      if (!file) return;
+      const primaryPrompt = text('messages.import_mode_prompt', 'Felülírjuk a jelenlegi adatokat az importált CSV-vel, vagy hozzáadjuk az új sorokat?');
+      const mode = await showImportModeDialog(primaryPrompt, {
+        replaceLabel: text('messages.import_mode_replace', 'Felülírás'),
+        appendLabel: text('messages.import_mode_append', 'Hozzáadás')
+      });
+      if (!mode) {
+        importInput.value = '';
+        return;
+      }
+      const replaceSelected = mode === 'replace';
+      const confirmPrompt = replaceSelected
+        ? text('messages.import_mode_confirm_replace', 'Biztosan felülírjuk a jelenlegi adatokat a CSV tartalmával?')
+        : text('messages.import_mode_confirm_append', 'Biztosan hozzáadjuk az új sorokat a meglévő listához?');
+      const proceed = window.confirm(confirmPrompt);
+      if (!proceed) {
+        importInput.value = '';
+        return;
+      }
+      importBtn.disabled = true;
+      try {
+        const form = new FormData();
+        form.append('file', file);
+        form.append('mode', mode);
+        const resp = await fetch(EP.importCsv, {method:'POST', body: form});
+        const raw = await resp.text();
+        let data;
+        try { data = JSON.parse(raw); }
+        catch(_) { throw Object.assign(new Error('bad_json'), {raw}); }
+        if (!resp.ok || !data || data.ok !== true) {
+          const detail = (data && typeof data.error === 'string') ? data.error : null;
+          const err = new Error('import_failed');
+          if (detail) err.detail = detail;
+          throw err;
+        }
+        const importedIds = Array.isArray(data.imported_ids) ? data.imported_ids : null;
+        applyLoadedData(data);
+        history.length = 0;
+        const geo = await autoGeocodeImported(importedIds);
+        renderEverything();
+        if (!geo.changed) {
+          showSaveStatus(true);
+        } else if (!geo.saveOk) {
+          showSaveStatus(false);
+        }
+        let successMsg = text('messages.import_success', 'Import kész.');
+        if (geo.failed > 0 && geo.attempted > 0) {
+          const tpl = text('messages.import_geocode_partial', 'Figyelem: {count} címet nem sikerült automatikusan térképre tenni.');
+          successMsg += `\n\n${format(tpl, {count: geo.failed})}`;
+          if (Array.isArray(geo.failures) && geo.failures.length) {
+            const detailTpl = text('messages.import_geocode_partial_detail', 'Nem sikerült geokódolni:\n{list}');
+            const list = geo.failures.map((entry, idx)=> `${idx + 1}. ${entry}`).join('\n');
+            successMsg += `\n${format(detailTpl, {list})}`;
+          }
+        }
+        alert(successMsg);
+      } catch (e) {
+        console.error(e);
+        showSaveStatus(false);
+        let msg = text('messages.import_error', 'Az importálás nem sikerült.');
+        const extra = e && (e.detail || e.message);
+        if (extra && typeof extra === 'string' && extra.trim() && !['import_failed','bad_json'].includes(extra)) {
+          msg += `\n\n${extra.trim()}`;
+        }
+        alert(msg);
+      } finally {
+        importInput.value = '';
+        importBtn.disabled = false;
+      }
+    });
+  }
   const exportBtn = document.getElementById('exportBtn');
   if (exportBtn) exportBtn.addEventListener('click', ()=>{ window.open(EP.exportAll, '_blank'); });
   const printBtn = document.getElementById('printBtn');
