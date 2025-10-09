@@ -3,6 +3,15 @@ require __DIR__ . '/common.php';
 
 $roundFilter = isset($_GET['round']) ? (int)$_GET['round'] : null;
 
+$itemsCfg = $CFG['items'] ?? [];
+$metricsCfg = array_values(array_filter($itemsCfg['metrics'] ?? [], function($m){ return ($m['enabled'] ?? true) !== false; }));
+$labelFieldId = $itemsCfg['label_field_id'] ?? 'label';
+$addressFieldId = $itemsCfg['address_field_id'] ?? 'address';
+$noteFieldId = $itemsCfg['note_field_id'] ?? 'note';
+$groupText = $CFG['text']['group'] ?? [];
+$sumTemplate = $groupText['sum_template'] ?? 'Összesen: {parts}';
+$sumSeparator = $groupText['sum_separator'] ?? ' · ';
+
 $items = [];
 if (file_exists($DATA_FILE)) {
   $raw = file_get_contents($DATA_FILE);
@@ -25,12 +34,27 @@ if ($roundFilter !== null) {
   $items = array_values(array_filter($items, fn($x)=> (int)($x['round']??0) === $roundFilter));
 }
 
-?><!doctype html>
+function format_metric_value($metric, $value, $context='row') {
+  $precision = isset($metric['precision']) ? (int)$metric['precision'] : 0;
+  $num = number_format((float)$value, $precision, '.', '');
+  $unit = $metric['unit'] ?? '';
+  $label = $metric['label'] ?? '';
+  $tplKey = $context === 'row' ? 'row_format' : 'group_format';
+  if (!empty($metric[$tplKey])) {
+    return str_replace(['{value}','{sum}','{unit}','{label}'], [$num,$num,$unit,$label], $metric[$tplKey]);
+  }
+  return trim($num . ($unit ? ' '.$unit : ''));
+}
+
+$printTitleSuffix = $CFG['print']['title_suffix'] ?? ' – Nyomtatás';
+$printListTitle = $CFG['print']['list_title'] ?? 'Szállítási lista';
+?>
+<!doctype html>
 <html lang="hu">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title><?= htmlspecialchars($CFG['app']['title']) ?> – Nyomtatás</title>
+  <title><?= htmlspecialchars($CFG['app']['title'] . $printTitleSuffix) ?></title>
   <style>
     body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#111;margin:20px}
     h1{margin:0 0 10px;font-size:20px}
@@ -44,7 +68,7 @@ if ($roundFilter !== null) {
   </style>
 </head>
 <body>
-  <h1><?= htmlspecialchars($CFG['app']['title']) ?> – Szállítási lista</h1>
+  <h1><?= htmlspecialchars($CFG['app']['title'] . ' – ' . $printListTitle) ?></h1>
   <div class="meta">
     Készült: <?= date('Y-m-d H:i') ?>
     <?php if ($roundFilter!==null): ?>
@@ -59,26 +83,36 @@ if ($roundFilter !== null) {
       if ($roundFilter!==null && $rid!==$roundFilter) continue;
       $rlabel = $ROUND_MAP[$rid]['label'] ?? (string)$rid;
 
-      // totals
-      $sumW=0.0; $sumV=0.0;
-      foreach ($arr as $t){
-        if (isset($t['weight']) && is_numeric($t['weight'])) $sumW += (float)$t['weight'];
-        if (isset($t['volume']) && is_numeric($t['volume'])) $sumV += (float)$t['volume'];
+      $totalsParts = [];
+      foreach ($metricsCfg as $metric){
+        $id = $metric['id'] ?? null; if (!$id) continue;
+        $sum = 0.0;
+        foreach ($arr as $t){ if (isset($t[$id]) && is_numeric($t[$id])) $sum += (float)$t[$id]; }
+        $totalsParts[] = format_metric_value($metric, $sum, 'group');
       }
-      echo '<div class="round"><div>'.htmlspecialchars($rlabel).'</div><div class="sum">Összesen: '.number_format($sumW,1,'.','').' kg · '.number_format($sumV,1,'.','').' m³</div></div>';
+      $sumText = $totalsParts ? str_replace('{parts}', implode($sumSeparator, $totalsParts), $sumTemplate) : '';
+      echo '<div class="round"><div>'.htmlspecialchars($rlabel).'</div>';
+      if ($sumText !== '') echo '<div class="sum">'.htmlspecialchars($sumText).'</div>';
+      echo '</div>';
 
       $n=0;
       foreach ($arr as $it){
         $n++; $parts=[];
-        if (trim((string)($it['label']??''))!=='') $parts[] = '<span class="lbl">'.htmlspecialchars($it['label']).'</span>';
-        if (trim((string)($it['address']??''))!=='') $parts[] = '<span class="addr">'.htmlspecialchars($it['address']).'</span>';
+        $labelVal = $it[$labelFieldId] ?? '';
+        $addressVal = $it[$addressFieldId] ?? '';
+        if (trim((string)$labelVal)!=='') $parts[] = '<span class="lbl">'.htmlspecialchars($labelVal).'</span>';
+        if (trim((string)$addressVal)!=='') $parts[] = '<span class="addr">'.htmlspecialchars($addressVal).'</span>';
         $extras=[];
-        if (isset($it['weight']) && $it['weight']!=='') $extras[] = number_format((float)$it['weight'],1,'.','').' kg';
-        if (isset($it['volume']) && $it['volume']!=='') $extras[] = number_format((float)$it['volume'],2,'.','').' m³';
+        foreach ($metricsCfg as $metric){
+          $id = $metric['id'] ?? null; if (!$id) continue;
+          if (isset($it[$id]) && $it[$id] !== '') {
+            $extras[] = htmlspecialchars(format_metric_value($metric, $it[$id], 'row'));
+          }
+        }
 
         echo '<div class="item"><span class="num">'.sprintf('%02d. ', $n).'</span>'.implode(' – ', $parts);
         if ($extras) echo '<span class="extra">('.implode(' · ', $extras).')</span>';
-        if (trim((string)($it['note']??''))!=='') echo '<div class="note">'.htmlspecialchars($it['note']).'</div>';
+        if ($noteFieldId && trim((string)($it[$noteFieldId]??''))!=='') echo '<div class="note">'.htmlspecialchars($it[$noteFieldId]).'</div>';
         echo '</div>';
       }
     }

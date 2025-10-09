@@ -5,10 +5,37 @@ $CONFIG_FILE = __DIR__ . '/config.json';
 $CFG_DEFAULT = [
   "app" => [
     "title" => "Gyűjtőfuvar – címkezelő",
-    "export_button_label" => "Export",
     "auto_sort_by_round" => true,
     "round_zero_at_bottom" => true,
     "default_collapsed" => false
+  ],
+  "history" => [
+    "undo_enabled" => true,
+    "max_steps" => 3
+  ],
+  "features" => [
+    "toolbar" => [
+      "expand_all" => true,
+      "collapse_all" => true,
+      "export_all" => true,
+      "print_all" => true,
+      "download_archive" => true,
+      "theme_toggle" => true,
+      "undo" => true
+    ],
+    "quick_search" => true,
+    "marker_popup_on_click" => true,
+    "marker_popup_on_focus" => true,
+    "marker_focus_feedback" => true,
+    "group_actions" => [
+      "open" => true,
+      "close" => true,
+      "print" => true,
+      "export" => true,
+      "navigate" => true,
+      "delete" => true
+    ],
+    "group_totals" => true
   ],
   "files" => [
     "data_file" => "fuvar_data.json",
@@ -33,11 +60,162 @@ $CFG_DEFAULT = [
     "panel_min_px" => 330,
     "panel_pref_vw" => 36,
     "panel_max_px" => 520,
-    "show_note_field" => true,
-    "marker" => [
-      "icon_size" => 38,
-      "font_size" => 14,
-      "auto_contrast" => true
+    "colors" => [
+      "light" => [
+        "bg" => "#fafafa",
+        "panel" => "#ffffff",
+        "border" => "#e5e7eb",
+        "text" => "#111827",
+        "muted" => "#6b7280",
+        "accent" => "#2563eb",
+        "ok" => "#16a34a",
+        "err" => "#dc2626",
+        "highlight" => "#e0f2fe"
+      ],
+      "dark" => [
+        "bg" => "#0f172a",
+        "panel" => "#0b1220",
+        "border" => "#1f2937",
+        "text" => "#e5e7eb",
+        "muted" => "#94a3b8",
+        "accent" => "#60a5fa",
+        "ok" => "#34d399",
+        "err" => "#f87171",
+        "highlight" => "#1e293b"
+      ]
+    ],
+      "marker" => [
+        "icon_size" => 38,
+        "font_size" => 14,
+        "auto_contrast" => true,
+        "focus_ring_radius" => 80,
+        "focus_ring_color" => "auto"
+      ]
+  ],
+  "routing" => [
+    "origin" => "Maglód",
+    "origin_coordinates" => [
+      "lat" => 47.45,
+      "lon" => 19.35
+    ],
+    "max_waypoints" => 10,
+    "geocode_origin_on_start" => true
+  ],
+  "text" => [
+    "toolbar" => [
+      "expand_all" => ["label" => "Összes kinyit", "title" => "Összes kör kinyitása"],
+      "collapse_all" => ["label" => "Összes összezár", "title" => "Összes kör összezárása"],
+      "export_all" => ["label" => "Export", "title" => "Export TXT"],
+      "print_all" => ["label" => "Nyomtatás", "title" => "Nyomtatás"],
+      "download_archive" => ["label" => "Archívum letöltése", "title" => "Archívum letöltése (TXT)"],
+      "theme_toggle" => ["label" => "🌙 / ☀️", "title" => "Téma váltása"],
+      "undo" => ["label" => "Visszavonás", "title" => "Visszavonás"]
+    ],
+    "badges" => [
+      "pin_counter_label" => "Pin-ek:",
+      "pin_counter_title" => "Aktív pin jelölők száma"
+    ],
+    "group" => [
+      "sum_template" => "Összesen: {parts}",
+      "sum_separator" => " · ",
+      "actions" => [
+        "open" => "Kinyit",
+        "close" => "Összezár",
+        "print" => "Nyomtatás (kör)",
+        "export" => "Export (kör)",
+        "navigate" => "Navigáció (GMaps)",
+        "delete" => "Kör törlése"
+      ]
+    ],
+    "quick_search" => [
+      "placeholder" => "Keresés: címke, város, cím…",
+      "clear_label" => "✕",
+      "clear_title" => "Szűrés törlése"
+    ],
+    "actions" => [
+      "ok" => "OK",
+      "delete" => "Törlés",
+      "delete_disabled_hint" => "Nem törölhető az alap sor"
+    ],
+    "messages" => [
+      "address_required" => "Adj meg teljes címet!",
+      "load_error" => "Betöltési hiba: kérlek frissítsd az oldalt.",
+      "delete_round_confirm" => "Biztosan törlöd a(z) \"{name}\" kör összes címét?",
+      "delete_round_success" => "Kör törölve. Tételek: {count}.",
+      "delete_round_error" => "A kör törlése nem sikerült.",
+      "navigation_empty" => "Nincs navigálható cím ebben a körben.",
+      "navigation_skip" => "Figyelem: {count} cím nem került bele (nincs geolokáció).",
+      "geocode_failed" => "Geokódolás sikertelen.",
+      "geocode_failed_detailed" => "Geokódolás sikertelen. Próbáld pontosítani a címet.",
+      "undo_unavailable" => "Nincs visszavonható művelet."
+    ]
+  ],
+  "items" => [
+    "address_field_id" => "address",
+    "label_field_id" => "label",
+    "note_field_id" => "note",
+    "fields" => [
+      [
+        "id" => "label",
+        "type" => "text",
+        "label" => "Címke",
+        "placeholder" => "pl. Ügyfél neve / kód",
+        "default" => ""
+      ],
+      [
+        "id" => "address",
+        "type" => "text",
+        "label" => "Teljes cím",
+        "placeholder" => "pl. 2234 Maglód, Fő utca 1.",
+        "default" => "",
+        "required" => true
+      ],
+      [
+        "id" => "note",
+        "type" => "text",
+        "label" => "Megjegyzés",
+        "placeholder" => "időablak, kapucsengő, stb.",
+        "default" => ""
+      ]
+    ],
+    "metrics" => [
+      [
+        "id" => "weight",
+        "type" => "number",
+        "label" => "Súly (kg)",
+        "placeholder" => "pl. 12.5",
+        "step" => 0.1,
+        "min" => 0,
+        "precision" => 1,
+        "unit" => "kg",
+        "row_format" => "{value} kg",
+        "group_format" => "{sum} kg"
+      ],
+      [
+        "id" => "volume",
+        "type" => "number",
+        "label" => "Térfogat (m³)",
+        "placeholder" => "pl. 0.80",
+        "step" => 0.01,
+        "min" => 0,
+        "precision" => 2,
+        "unit" => "m³",
+        "row_format" => "{value} m³",
+        "group_format" => "{sum} m³"
+      ]
+    ],
+    "round_field" => [
+      "label" => "Kör",
+      "placeholder" => ""
+    ],
+    "meta_display" => [
+      "separator" => " · ",
+      "missing_warning" => [
+        "enabled" => true,
+        "text" => "!",
+        "title" => "Hiányzó súly és térfogat",
+        "class" => "warn"
+      ]
     ]
   ],
   "rounds" => [],
@@ -46,6 +224,10 @@ $CFG_DEFAULT = [
     "include_address" => true,
     "include_note" => true,
     "group_header_template" => "=== Kör {id} – {label} ==="
+  ],
+  "print" => [
+    "title_suffix" => " – Nyomtatás",
+    "list_title" => "Szállítási lista"
   ],
   "backup" => [
     "enabled" => true,
