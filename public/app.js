@@ -10,25 +10,113 @@
     filterText: ''
   };
 
-  // ======= UNDO (max 3 lépés)
   const history = [];
-  const UNDO_LIMIT = 3;
   const undoBtn = document.getElementById('undoBtn');
 
+  const groupsEl = document.getElementById('groups');
+  const pinCountEl = document.getElementById('pinCount');
+  const themeToggle = document.getElementById('themeToggle');
+
+  function cfg(path, fallback){
+    if (!state.cfg) return fallback;
+    const parts = path.split('.');
+    let node = state.cfg;
+    for (const p of parts){
+      if (node && typeof node === 'object' && p in node){
+        node = node[p];
+      } else {
+        return fallback;
+      }
+    }
+    return node;
+  }
+
+  function feature(path, fallback=true){
+    const val = cfg(`features.${path}`, undefined);
+    return typeof val === 'boolean' ? val : fallback;
+  }
+
+  function text(path, fallback=''){
+    const val = cfg(`text.${path}`, undefined);
+    if (typeof val === 'string') return val;
+    if (val && typeof val === 'object' && 'label' in val && typeof val.label === 'string') return val.label;
+    return fallback;
+  }
+
+  function format(template, vars={}){
+    return (template || '').replace(/\{(\w+)\}/g, (_, k)=> (k in vars ? String(vars[k]) : ''));
+  }
+
+  const getFieldDefs = ()=> (cfg('items.fields', []) || []).filter(f => f && f.enabled !== false);
+  const getMetricDefs = ()=> (cfg('items.metrics', []) || []).filter(f => f && f.enabled !== false);
+  const getAddressFieldId = ()=> cfg('items.address_field_id', 'address');
+  const getLabelFieldId = ()=> cfg('items.label_field_id', 'label');
+  const getNoteFieldId = ()=> cfg('items.note_field_id', 'note');
+
+  function defaultValueForField(def){
+    if (!def) return '';
+    if (def.hasOwnProperty('default')) return def.default;
+    if (def.type === 'number') return null;
+    return '';
+  }
+
+  let themeStyleEl = null;
+  function applyThemeVariables(){
+    const colors = cfg('ui.colors', null);
+    if (!colors) return;
+    if (!themeStyleEl){
+      themeStyleEl = document.createElement('style');
+      themeStyleEl.id = 'cfg-theme-vars';
+      document.head.appendChild(themeStyleEl);
+    }
+    const toCss = (vars)=> Object.entries(vars || {}).map(([k,v])=>`--${k}:${v};`).join('');
+    let css = '';
+    if (colors.light) css += `:root{${toCss(colors.light)}}`;
+    if (colors.dark) css += `:root.dark{${toCss(colors.dark)}}`;
+    themeStyleEl.textContent = css;
+  }
+
+  function applyPanelSizes(){
+    const root = document.documentElement;
+    const min = cfg('ui.panel_min_px', null);
+    const pref = cfg('ui.panel_pref_vw', null);
+    const max = cfg('ui.panel_max_px', null);
+    if (min!=null) root.style.setProperty('--panel-min', typeof min === 'number' ? `${min}px` : String(min));
+    if (pref!=null) root.style.setProperty('--panel-pref', typeof pref === 'number' ? `${pref}vw` : String(pref));
+    if (max!=null) root.style.setProperty('--panel-max', typeof max === 'number' ? `${max}px` : String(max));
+  }
+
+  // ======= UNDO
+  function undoLimit(){
+    const limit = Number(cfg('history.max_steps', 3));
+    return Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 0;
+  }
+  function undoFeatureEnabled(){
+    return cfg('history.undo_enabled', true) && feature('toolbar.undo', true) && undoBtn;
+  }
   function pushSnapshot() {
+    if (!undoFeatureEnabled()) return;
     const snap = JSON.parse(JSON.stringify(state.items));
-    if (history.length >= UNDO_LIMIT) history.shift();
+    const limit = undoLimit();
+    if (limit <= 0) return;
+    if (history.length >= limit) history.shift();
     history.push(snap);
     updateUndoButton();
   }
   function canUndo(){ return history.length > 0; }
   function updateUndoButton(){
     if (!undoBtn) return;
-    undoBtn.disabled = !canUndo();
-    undoBtn.title = canUndo() ? 'Visszavonás' : 'Nincs visszavonható művelet';
+    const enabled = undoFeatureEnabled();
+    undoBtn.style.display = enabled ? '' : 'none';
+    const hasUndo = canUndo();
+    undoBtn.disabled = !enabled || !hasUndo;
+    const title = cfg('text.toolbar.undo.title', text('toolbar.undo', 'Visszavonás'));
+    undoBtn.title = enabled
+      ? (hasUndo ? title : (cfg('text.messages.undo_unavailable', 'Nincs visszavonható művelet')))
+      : title;
   }
   async function doUndo(){
-    if (!canUndo()) return;
+    if (!undoFeatureEnabled() || !canUndo()) return;
     const prev = history.pop();
     state.items = prev;
     await saveAll();
@@ -37,14 +125,9 @@
   }
   if (undoBtn){
     undoBtn.addEventListener('click', doUndo);
-    updateUndoButton();
   }
 
   // ======= DOM
-  const groupsEl = document.getElementById('groups');
-  const pinCountEl = document.getElementById('pinCount');
-  const themeToggle = document.getElementById('themeToggle');
-
   // ======= THEME
   (function initTheme(){
     const root = document.documentElement;
@@ -62,7 +145,7 @@
   // ======= MAP
   const map = L.map('map',{zoomControl:true, preferCanvas:true});
   const markerLayer = L.featureGroup().addTo(map);
-  function updatePinCount(){ pinCountEl.textContent = markerLayer.getLayers().length.toString(); }
+  function updatePinCount(){ if (pinCountEl) pinCountEl.textContent = markerLayer.getLayers().length.toString(); }
 
   // ======= HELPERS
   const esc = (s)=> (s??'').toString()
@@ -77,9 +160,9 @@
   }
   function numberedIcon(hex, num){
     const n = (''+num).slice(0,3);
-    const textCol = idealTextColor(hex);
-    const sz = state.cfg.ui.marker.icon_size || 38;
-    const fsz = state.cfg.ui.marker.font_size || 14;
+    const textCol = cfg('ui.marker.auto_contrast', true) ? idealTextColor(hex) : '#fff';
+    const sz = cfg('ui.marker.icon_size', 38) || 38;
+    const fsz = cfg('ui.marker.font_size', 14) || 14;
     const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="${sz}" height="${sz}" viewBox="0 0 32 32">
       <g fill="none">
@@ -113,15 +196,28 @@
 
   // --- Sorfejléc „meta” (súly/térfogat, vagy piros „!” ha mindkettő hiányzik)
   function metaHTML(it){
-    const wOk = (typeof it.weight === 'number' && !isNaN(it.weight));
-    const vOk = (typeof it.volume === 'number' && !isNaN(it.volume));
-    if (!wOk && !vOk) {
-      return `<span class="warn" title="Hiányzó súly és térfogat" style="color:#ef4444;font-weight:800;">!</span>`;
-    }
+    const metrics = getMetricDefs();
+    if (!metrics.length) return '';
+    const separator = cfg('items.meta_display.separator', ' · ');
     const parts = [];
-    if (wOk) parts.push(`${it.weight.toFixed(1)} kg`);
-    if (vOk) parts.push(`${it.volume.toFixed(2)} m³`);
-    return `<span class="vals" style="color:#374151;font-weight:600;font-size:12px;">${parts.join(' · ')}</span>`;
+    metrics.forEach(metric => {
+      const raw = it[metric.id];
+      if (raw === '' || raw == null) return;
+      const num = Number(raw);
+      if (!Number.isFinite(num)) return;
+      const formatted = formatMetricSum(metric, num, 'row');
+      parts.push(esc(formatted));
+    });
+    if (parts.length){
+      return `<span class="vals" style="color:#374151;font-weight:600;font-size:12px;">${parts.join(separator)}</span>`;
+    }
+    const warnCfg = cfg('items.meta_display.missing_warning', {});
+    if (!warnCfg || warnCfg.enabled === false) return '';
+    const textVal = warnCfg.text ?? '!';
+    const style = warnCfg.style ? ` style="${warnCfg.style}"` : ' style="color:#ef4444;font-weight:800;"';
+    const title = warnCfg.title ? ` title="${esc(warnCfg.title)}"` : '';
+    const cls = warnCfg.class ? ` class="${esc(warnCfg.class)}"` : '';
+    return `<span${cls}${style}${title}>${esc(textVal)}</span>`;
   }
   function updateRowHeaderMeta(row, it){
     const meta = row.querySelector('[data-meta]');
@@ -198,8 +294,8 @@
 
   // ======= AUTO SORT (kör + körön belül távolság)
   function autoSortItems(){
-    if (!state.cfg.app.auto_sort_by_round) return;
-    const zeroBottom = !!state.cfg.app.round_zero_at_bottom;
+    if (!cfg('app.auto_sort_by_round', true)) return;
+    const zeroBottom = !!cfg('app.round_zero_at_bottom', false);
     const withIdx = state.items.map((it, idx)=>({it, idx}));
     withIdx.sort((a,b)=>{
       const ra = +a.it.round || 0, rb = +b.it.round || 0;
@@ -226,49 +322,91 @@
   const colorForRound = (r)=> (ROUND_MAP.get(Number(r))?.color) ?? '#374151';
 
   function hasBlankInDefaultRound(){
-    return state.items.some(it => ((+it.round||0)===0) && !it.address && it.lat==null && it.lon==null);
+    const addrField = getAddressFieldId();
+    return state.items.some(it => ((+it.round||0)===0) && !(it[addrField] && it[addrField].toString().trim()) && it.lat==null && it.lon==null);
   }
   function ensureBlankRowInDefaultRound(){
     if (!hasBlankInDefaultRound()){
-      state.items.push({
+      const blank = {
         id:'row_'+Math.random().toString(36).slice(2),
-        label:'', address:'', city:'', note:'',
-        weight:null, volume:null,
+        city:'',
         lat:null, lon:null,
         round:0, collapsed:state.cfg.app.default_collapsed
+      };
+      getFieldDefs().forEach(field => {
+        blank[field.id] = defaultValueForField(field);
       });
+      getMetricDefs().forEach(metric => {
+        blank[metric.id] = null;
+      });
+      state.items.push(blank);
     }
   }
 
   function totalsForRound(rid){
-    let w=0, v=0;
+    const metrics = getMetricDefs();
+    const sums = {};
+    const counts = {};
+    metrics.forEach(metric => { sums[metric.id] = 0; counts[metric.id] = 0; });
     state.items.forEach(it=>{
       if ((+it.round||0)!==rid) return;
-      if (typeof it.weight==='number' && !isNaN(it.weight)) w += it.weight;
-      if (typeof it.volume==='number' && !isNaN(it.volume)) v += it.volume;
+      metrics.forEach(metric => {
+        const raw = it[metric.id];
+        if (raw === '' || raw == null) return;
+        const num = Number(raw);
+        if (!Number.isFinite(num)) return;
+        sums[metric.id] += num;
+        counts[metric.id] += 1;
+      });
     });
-    return {w, v};
+    return {sums, counts};
+  }
+
+  function formatMetricSum(metric, value, context='group'){
+    const precision = Number.isFinite(Number(metric.precision)) ? Number(metric.precision) : 0;
+    const val = Number.isFinite(value) ? value.toFixed(precision) : (0).toFixed(precision);
+    const tplKey = context === 'row' ? 'row_format' : 'group_format';
+    const tpl = metric[tplKey];
+    if (tpl) return format(tpl, {value: val, sum: val, unit: metric.unit ?? '', label: metric.label ?? ''});
+    return `${val}${metric.unit ? ' '+metric.unit : ''}`;
+  }
+
+  function groupTotalsText(rid, totals){
+    if (!feature('group_totals', true)) return '';
+    const metrics = getMetricDefs();
+    if (!metrics.length) return '';
+    const sep = cfg('text.group.sum_separator', ' · ');
+    const parts = metrics.map(metric => {
+      const sum = Number(totals.sums?.[metric.id] ?? 0);
+      return formatMetricSum(metric, sum, 'group');
+    }).filter(Boolean);
+    if (!parts.length) return '';
+    const template = cfg('text.group.sum_template', 'Összesen: {parts}');
+    return format(template, {parts: parts.join(sep), round: roundLabel(rid)});
   }
 
   function makeGroupHeader(rid, totals){
     const g = document.createElement('div');
     g.className = 'group';
     const color = colorForRound(rid);
-    const sumTxt = `Összesen: ${Number.isFinite(totals.w)?totals.w.toFixed(1):'0.0'} kg · ${Number.isFinite(totals.v)?totals.v.toFixed(1):'0.0'} m³`;
+    const sumTxt = groupTotalsText(rid, totals);
+    const actionsText = cfg('text.group.actions', {});
+    const actionButtons = [];
+    if (feature('group_actions.open', true)) actionButtons.push(`<button class="iconbtn grp-open" data-round="${rid}">${esc(actionsText.open ?? 'Kinyit')}</button>`);
+    if (feature('group_actions.close', true)) actionButtons.push(`<button class="iconbtn grp-close" data-round="${rid}">${esc(actionsText.close ?? 'Összezár')}</button>`);
+    if (feature('group_actions.print', true)) actionButtons.push(`<button class="iconbtn grp-print" data-round="${rid}">${esc(actionsText.print ?? 'Nyomtatás')}</button>`);
+    if (feature('group_actions.export', true)) actionButtons.push(`<button class="iconbtn grp-export" data-round="${rid}">${esc(actionsText.export ?? 'Export')}</button>`);
+    if (feature('group_actions.navigate', true)) actionButtons.push(`<button class="iconbtn grp-nav" data-round="${rid}">${esc(actionsText.navigate ?? 'Navigáció')}</button>`);
+    if (feature('group_actions.delete', true)) actionButtons.push(`<button class="iconbtn grp-del" data-round="${rid}" style="border-color:#fecaca;background:rgba(248,113,113,0.12);">${esc(actionsText.delete ?? 'Kör törlése')}</button>`);
     g.innerHTML = `
       <div class="group-header" data-group-header="${rid}">
         <div class="group-title">
           <span style="display:inline-block;width:12px;height:12px;border-radius:999px;background:${color};border:1px solid #d1d5db;margin-right:8px;vertical-align:middle"></span>
           ${esc(roundLabel(rid))}
-          <span class="__sum" style="margin-left:8px;color:#6b7280;font-weight:600;font-size:12px;">${sumTxt}</span>
+          ${sumTxt ? `<span class="__sum" style="margin-left:8px;color:#6b7280;font-weight:600;font-size:12px;">${esc(sumTxt)}</span>` : ''}
         </div>
         <div class="group-tools">
-          <button class="iconbtn grp-open" data-round="${rid}">Kinyit</button>
-          <button class="iconbtn grp-close" data-round="${rid}">Összezár</button>
-          <button class="iconbtn grp-print" data-round="${rid}">Nyomtatás (kör)</button>
-          <button class="iconbtn grp-export" data-round="${rid}">Export (kör)</button>
-          <button class="iconbtn grp-nav" data-round="${rid}">Navigáció (GMaps)</button>
-          <button class="iconbtn grp-del" data-round="${rid}" style="border-color:#fecaca;background:rgba(248,113,113,0.12);">Kör törlése</button>
+          ${actionButtons.join('')}
         </div>
       </div>
       <div class="group-body" data-group-body="${rid}"></div>
@@ -295,14 +433,27 @@
       span = sums[0];
       for (let i=1;i<sums.length;i++) sums[i].remove();
     }
-    span.textContent = `Összesen: ${t.w.toFixed(1)} kg · ${t.v.toFixed(1)} m³`;
+    const txt = groupTotalsText(rid, t);
+    if (txt){
+      span.style.display = '';
+      span.textContent = txt;
+    } else {
+      span.style.display = 'none';
+    }
   }
 
   function refreshDeleteButtonState(row, it){
     const delBtn = row.querySelector('.del');
     const notSaved = (it.lat==null || it.lon==null);
-    const isDefaultBlank = (+it.round||0)===0 && notSaved && !it.address;
+    const addrField = getAddressFieldId();
+    const hasAddr = !!((it[addrField] ?? '').toString().trim());
+    const isDefaultBlank = (+it.round||0)===0 && notSaved && !hasAddr;
     delBtn.disabled = isDefaultBlank;
+    if (delBtn.disabled){
+      delBtn.title = text('actions.delete_disabled_hint', '');
+    } else {
+      delBtn.title = '';
+    }
   }
   function refreshDeleteButtonsAll(){
     groupsEl.querySelectorAll('.row').forEach(row=>{
@@ -321,7 +472,7 @@
       mk = L.marker([it.lat, it.lon], {icon}).addTo(markerLayer);
       mk.on('click', ()=>{
         highlightRow(it.id, true);
-        pingMarker(it.id); // fókusz szinkron: pin ping
+        if (feature('marker_focus_feedback', true)) pingMarker(it.id); // fókusz szinkron: pin ping
         const row = state.rowsById.get(it.id);
         if (row){
           row.scrollIntoView({behavior:'smooth', block:'center'});
@@ -330,21 +481,49 @@
           if (body && body.style.display==='none'){ body.style.display=''; if (tog) tog.textContent='▼'; }
           const first = row.querySelector('input,select'); if (first){ first.focus(); }
         }
+        if (mk.getTooltip()) mk.openTooltip();
+        if (feature('marker_popup_on_click', true)) mk.openPopup();
+        map.panTo(mk.getLatLng());
       });
       state.markersById.set(it.id, mk);
     } else mk.setLatLng([it.lat, it.lon]);
     mk.setIcon(icon);
+    const labelField = getLabelFieldId();
+    const addressField = getAddressFieldId();
+    const noteField = getNoteFieldId();
     const extras = [];
-    if (it.weight!=null && it.weight!=='') extras.push(`${Number(it.weight)} kg`);
-    if (it.volume!=null && it.volume!=='') extras.push(`${Number(it.volume)} m³`);
+    getMetricDefs().forEach(metric => {
+      const raw = it[metric.id];
+      if (raw === '' || raw == null) return;
+      const num = Number(raw);
+      if (!Number.isFinite(num)) return;
+      extras.push(formatMetricSum(metric, num, 'row'));
+    });
+    const labelVal = it[labelField] ?? '';
+    const addrVal = it[addressField] ?? '';
+    const noteVal = noteField ? (it[noteField] ?? '') : '';
+    const popupFields = [];
+    if (labelVal) popupFields.push(`<div style="font-weight:600">${esc(labelVal)}</div>`);
+    if (addrVal) popupFields.push(`<div style="color:#4b5563">${esc(addrVal)}</div>`);
+    if (extras.length) popupFields.push(`<div style="margin-top:4px;color:#334155">${extras.map(esc).join(' · ')}</div>`);
+    if (noteVal) popupFields.push(`<div style="margin-top:4px;">${esc(noteVal)}</div>`);
     const html = `
       <div style="font-size:14px;line-height:1.35;">
-        ${it.label ? `<div style="font-weight:600">${esc(it.label)}</div>` : ''}
-        <div style="color:#4b5563">${esc(it.address||'')}</div>
-        ${extras.length? `<div style="margin-top:4px;color:#334155">${extras.join(' · ')}</div>` : ''}
-        ${it.note ? `<div style="margin-top:4px;">${esc(it.note)}</div>` : ''}
+        ${popupFields.join('')}
       </div>`;
     mk.bindPopup(html, {maxWidth:320});
+    const tooltipText = labelVal || addrVal || '';
+    if (tooltipText){
+      const sz = cfg('ui.marker.icon_size', 38) || 38;
+      mk.bindTooltip(tooltipText, {
+        direction: 'top',
+        offset: [0, -Math.max(24, Math.round(sz * 0.6))],
+        opacity: 0.95,
+        sticky: true
+      });
+    } else if (mk.getTooltip()){
+      mk.unbindTooltip();
+    }
     updatePinCount();
   }
 
@@ -378,10 +557,14 @@
 
   // ======= Pin „ping” (fókusz-visszajelzés)
   function pingMarker(id){
+    if (!feature('marker_focus_feedback', true)) return;
     const it = state.items.find(x=>x.id===id);
     if (!it || it.lat==null || it.lon==null) return;
-    const color = colorForRound(+it.round||0);
-    const c = L.circle([it.lat, it.lon], {radius: 80, color, weight: 2, fillColor: color, fillOpacity: 0.25, opacity: 0.8});
+    const radiusCfg = Number(cfg('ui.marker.focus_ring_radius', 80));
+    const radius = Number.isFinite(radiusCfg) && radiusCfg > 0 ? radiusCfg : 80;
+    const colorSetting = cfg('ui.marker.focus_ring_color', 'auto');
+    const baseColor = (typeof colorSetting === 'string' && colorSetting.toLowerCase() !== 'auto') ? colorSetting : colorForRound(+it.round||0);
+    const c = L.circle([it.lat, it.lon], {radius, color: baseColor, weight: 2, fillColor: baseColor, fillOpacity: 0.25, opacity: 0.8});
     c.addTo(map);
     let op = 0.6, fo = 0.25;
     const iv = setInterval(()=>{
@@ -398,27 +581,50 @@
     const it = state.items[idx];
     const row = state.rowsById.get(id);
     const okBtn = row?.querySelector('.ok');
-    const addrI = row?.querySelector('#addr_'+cssId(id));
-    const labelI= row?.querySelector('#label_'+cssId(id));
-    const weightI= row?.querySelector('#weight_'+cssId(id));
-    const volumeI= row?.querySelector('#volume_'+cssId(id));
-    const address = (addrI ? addrI.value : it.address || '').trim();
-    if (!address){ alert('Adj meg teljes címet!'); if (addrI) addrI.focus(); return; }
+    const fields = getFieldDefs();
+    const metrics = getMetricDefs();
+    const addressFieldId = getAddressFieldId();
+    const labelFieldId = getLabelFieldId();
+    const addressInput = row?.querySelector(`[data-field="${addressFieldId}"]`);
+    const address = (addressInput ? addressInput.value : it[addressFieldId] || '').toString().trim();
+    if (!address){ alert(text('messages.address_required', 'Adj meg teljes címet!')); if (addressInput) addressInput.focus(); return; }
     if (okBtn){ okBtn.disabled=true; okBtn.textContent='...'; }
     try{
       const g = await geocodeRobust(address);
       const newRound = (overrideRound!=null) ? overrideRound : (typeof it._pendingRound!=='undefined' ? it._pendingRound : it.round);
       pushSnapshot();
-      state.items[idx] = {
-        ...it,
-        address,
-        label: (labelI ? labelI.value : it.label || '').trim(),
-        city: g.city || cityFromDisplay(address, it.city),
-        weight: weightI ? (weightI.value.trim()===''?null:parseFloat(weightI.value)) : it.weight ?? null,
-        volume: volumeI ? (volumeI.value.trim()===''?null:parseFloat(volumeI.value)) : it.volume ?? null,
-        lat: g.lat, lon: g.lon,
-        round: +newRound || 0
-      };
+      const updated = {...it};
+      fields.forEach(field => {
+        const el = row?.querySelector(`[data-field="${field.id}"]`);
+        if (!el) return;
+        if (field.type === 'number'){
+          const raw = el.value.trim();
+          updated[field.id] = raw === '' ? null : parseFloat(raw);
+        } else if (field.type === 'textarea'){
+          updated[field.id] = el.value.trim();
+        } else {
+          updated[field.id] = el.value.trim();
+        }
+      });
+      metrics.forEach(metric => {
+        const el = row?.querySelector(`[data-field="${metric.id}"]`);
+        if (!el) return;
+        const raw = el.value.trim();
+        if (raw === '') updated[metric.id] = null;
+        else {
+          const num = parseFloat(raw);
+          updated[metric.id] = Number.isFinite(num) ? num : null;
+        }
+      });
+      updated[addressFieldId] = address;
+      if (labelFieldId && updated[labelFieldId] != null) {
+        updated[labelFieldId] = updated[labelFieldId].toString().trim();
+      }
+      updated.city = g.city || cityFromDisplay(address, it.city);
+      updated.lat = g.lat;
+      updated.lon = g.lon;
+      updated.round = +newRound || 0;
+      state.items[idx] = updated;
       delete state.items[idx]._pendingRound;
       upsertMarker(state.items[idx], idx);
       ensureBlankRowInDefaultRound();
@@ -431,7 +637,9 @@
   }
 
   function renderRow(it, globalIndex){
-    const city = cityFromDisplay(it.address, it.city);
+    const addressField = getAddressFieldId();
+    const labelField = getLabelFieldId();
+    const city = cityFromDisplay(it[addressField], it.city);
     const row = document.createElement('div');
     row.className = 'row';
     row.dataset.rowId = it.id;
@@ -439,35 +647,92 @@
     const roundColor = colorForRound(+it.round||0);
     const numTextColor = idealTextColor(roundColor);
 
-    const wVal = (it.weight ?? '');
-    const vVal = (it.volume ?? '');
+    const fields = getFieldDefs();
+    const metrics = getMetricDefs();
+    const makeInputId = (fid)=> `${fid}_${cssId(it.id)}`;
+
+    const fieldHtml = fields.map(field => {
+      const fid = field.id;
+      const value = it[fid] ?? defaultValueForField(field);
+      const idAttr = makeInputId(fid);
+      const label = field.label ?? fid;
+      const placeholder = field.placeholder ?? '';
+      const attrs = [];
+      if (field.maxlength) attrs.push(`maxlength="${field.maxlength}"`);
+      if (field.autocomplete) attrs.push(`autocomplete="${field.autocomplete}"`);
+      if (field.required) attrs.push('required');
+      const attrStr = attrs.join(' ');
+      if (field.type === 'textarea'){
+        return `
+          <div class="f">
+            <label for="${idAttr}">${esc(label)}</label>
+            <textarea id="${idAttr}" data-field="${esc(fid)}" placeholder="${esc(placeholder)}" ${attrStr}>${esc(value ?? '')}</textarea>
+          </div>`;
+      }
+      if (field.type === 'select' && Array.isArray(field.options)){
+        const opts = field.options.map(opt => {
+          const val = typeof opt === 'object' ? opt.value : opt;
+          const textVal = typeof opt === 'object' ? opt.label : opt;
+          const selected = String(value) === String(val) ? 'selected' : '';
+          return `<option value="${esc(val)}" ${selected}>${esc(textVal)}</option>`;
+        }).join('');
+        return `
+          <div class="f">
+            <label for="${idAttr}">${esc(label)}</label>
+            <select id="${idAttr}" data-field="${esc(fid)}">${opts}</select>
+          </div>`;
+      }
+      const typeAttr = field.type === 'number' ? 'number' : (field.type === 'date' ? 'date' : 'text');
+      const extra = [];
+      if (field.step != null) extra.push(`step="${field.step}"`);
+      if (field.min != null) extra.push(`min="${field.min}"`);
+      if (field.max != null) extra.push(`max="${field.max}"`);
+      const extraStr = extra.join(' ');
+      const valueAttr = value != null ? `value="${typeAttr==='number' && value!=='' ? esc(value) : esc(value)}"` : '';
+      return `
+        <div class="f">
+          <label for="${idAttr}">${esc(label)}</label>
+          <input id="${idAttr}" type="${typeAttr}" data-field="${esc(fid)}" placeholder="${esc(placeholder)}" ${valueAttr} ${attrStr} ${extraStr}>
+        </div>`;
+    }).join('');
+
+    const metricsHtml = metrics.map(metric => {
+      const fid = metric.id;
+      const idAttr = makeInputId(fid);
+      const value = it[fid] ?? '';
+      const placeholder = metric.placeholder ?? '';
+      const extra = [];
+      if (metric.step != null) extra.push(`step="${metric.step}"`);
+      if (metric.min != null) extra.push(`min="${metric.min}"`);
+      if (metric.max != null) extra.push(`max="${metric.max}"`);
+      const extraStr = extra.join(' ');
+      const valueAttr = value!=='' && value!=null ? `value="${esc(value)}"` : '';
+      return `
+        <div class="f">
+          <label for="${idAttr}">${esc(metric.label ?? fid)}</label>
+          <input id="${idAttr}" type="number" data-field="${esc(fid)}" placeholder="${esc(placeholder)}" ${valueAttr} ${extraStr}>
+        </div>`;
+    }).join('');
+
+    const actionsText = cfg('text.actions', {});
+    const okLabel = actionsText.ok ?? 'OK';
+    const delLabel = actionsText.delete ?? 'Törlés';
+    const roundLabelText = cfg('items.round_field.label', 'Kör');
 
     row.innerHTML = `
       <div class="header">
         <div class="num" data-num style="background:${roundColor}; color:${numTextColor}">${String(globalIndex+1).padStart(2,'0')}</div>
         <div class="city" data-city title="${esc(city||'—')}">${esc(city || '—')}</div>
         <div class="meta" data-meta style="margin-left:auto;margin-right:8px;"></div>
-        <div class="tools"><button class="iconbtn toggle" title="${collapsed?'Kinyit':'Összezár'}">${collapsed?'▶':'▼'}</button></div>
+        <div class="tools"><button class="iconbtn toggle" title="${collapsed?esc(text('toolbar.expand_all.title','Kinyit')):esc(text('toolbar.collapse_all.title','Összezár'))}">${collapsed?'▶':'▼'}</button></div>
       </div>
       <div class="body" style="${collapsed?'display:none':''}">
-        <div class="grid3">
-          <div class="f">
-            <label for="label_${cssId(it.id)}">Címke</label>
-            <input id="label_${cssId(it.id)}" type="text" value="${esc(it.label||'')}" placeholder="pl. Ügyfél neve / kód">
-          </div>
-          <div class="f">
-            <label for="addr_${cssId(it.id)}">Teljes cím</label>
-            <input id="addr_${cssId(it.id)}" type="text" value="${esc(it.address||'')}" placeholder="pl. 2234 Maglód, Fő utca 1.">
-          </div>
-          ${state.cfg.ui.show_note_field ? `
-          <div class="f">
-            <label for="note_${cssId(it.id)}">Megjegyzés</label>
-            <input id="note_${cssId(it.id)}" type="text" value="${esc(it.note||'')}" placeholder="időablak, kapucsengő, stb.">
-          </div>` : `<div></div>`}
+        <div class="form-grid">
+          ${fieldHtml}
         </div>
-        <div class="grid3" style="align-items:end;">
+        <div class="metrics-grid" style="align-items:end;${metrics.length?'':'display:none'}">
           <div class="f" style="max-width:160px">
-            <label for="round_${cssId(it.id)}">Kör</label>
+            <label for="round_${cssId(it.id)}">${esc(roundLabelText)}</label>
             <select id="round_${cssId(it.id)}" class="select-round">
               ${Array.from(ROUND_MAP.values()).map(r => {
                 const sel = (+it.round===+r.id) ? 'selected' : '';
@@ -475,20 +740,13 @@
               }).join('')}
             </select>
           </div>
-          <div class="f">
-            <label for="weight_${cssId(it.id)}">Súly (kg)</label>
-            <input id="weight_${cssId(it.id)}" type="number" step="0.1" min="0" value="${wVal!==''?esc(wVal):''}" placeholder="pl. 12.5">
-          </div>
-          <div class="f">
-            <label for="volume_${cssId(it.id)}">Térfogat (m³)</label>
-            <input id="volume_${cssId(it.id)}" type="number" step="0.01" min="0" value="${vVal!==''?esc(vVal):''}" placeholder="pl. 0.80">
-          </div>
+          ${metricsHtml}
         </div>
         <div class="grid" style="margin-top:6px;">
           <div></div>
           <div class="btns">
-            <button class="ok">OK</button>
-            <button class="del">Törlés</button>
+            <button class="ok">${esc(okLabel)}</button>
+            <button class="del">${esc(delLabel)}</button>
           </div>
         </div>
       </div>
@@ -499,12 +757,21 @@
       if ((e.target instanceof HTMLElement) && e.target.classList.contains('iconbtn')) return;
       highlightRow(it.id);
       const mk = state.markersById.get(it.id);
-      if (mk) { mk.openPopup(); map.panTo(mk.getLatLng()); pingMarker(it.id); }
+      if (mk) {
+        if (mk.getTooltip()) mk.openTooltip();
+        if (feature('marker_popup_on_click', true)) mk.openPopup();
+        if (feature('marker_focus_feedback', true)) pingMarker(it.id);
+        map.panTo(mk.getLatLng());
+      }
     });
     row.addEventListener('focusin', ()=>{
       // bármely input/elem fókuszba kerül a soron belül → pin ping + popup
       const mk = state.markersById.get(it.id);
-      if (mk) { mk.openPopup(); pingMarker(it.id); }
+      if (mk) {
+        if (mk.getTooltip()) mk.openTooltip();
+        if (feature('marker_popup_on_focus', true)) mk.openPopup();
+        if (feature('marker_focus_feedback', true)) pingMarker(it.id);
+      }
     });
 
     row.querySelector('.toggle').addEventListener('click', (e)=>{
@@ -518,46 +785,59 @@
       if (idx>=0){ pushSnapshot(); state.items[idx].collapsed = !hidden; saveAll(); }
     });
 
-    const labelI = row.querySelector('#label_'+cssId(it.id));
-    const addrI  = row.querySelector('#addr_'+cssId(it.id));
-    const noteI  = row.querySelector('#note_'+cssId(it.id));
+    const fieldInputs = new Map();
+    const metricInputs = new Map();
+    const fieldsMap = new Map(fields.map(f=>[f.id, f]));
+    fields.forEach(field => {
+      const el = row.querySelector(`[data-field="${field.id}"]`);
+      if (el) fieldInputs.set(field.id, el);
+    });
+    metrics.forEach(metric => {
+      const el = row.querySelector(`[data-field="${metric.id}"]`);
+      if (el) metricInputs.set(metric.id, el);
+    });
     const roundS = row.querySelector('#round_'+cssId(it.id));
-    const weightI= row.querySelector('#weight_'+cssId(it.id));
-    const volumeI= row.querySelector('#volume_'+cssId(it.id));
     const okBtn  = row.querySelector('.ok');
     const delBtn = row.querySelector('.del');
+    const addressFieldId = getAddressFieldId();
 
-    [labelI, addrI].forEach(inp => {
+    fieldInputs.forEach((inp, fid)=>{
       inp.addEventListener('change', ()=>{
         const idx = state.items.findIndex(x=>x.id===it.id);
         if (idx<0) return;
         pushSnapshot();
-        state.items[idx].label = labelI.value.trim();
-        state.items[idx].address = addrI.value.trim();
-        const cityNow = cityFromDisplay(state.items[idx].address, state.items[idx].city);
-        state.items[idx].city = cityNow;
-        row.querySelector('[data-city]').textContent = cityNow || '—';
+        const def = fieldsMap.get(fid) || {};
+        let val;
+        if (def.type === 'number'){
+          const trimmed = inp.value.trim();
+          const num = parseFloat(trimmed);
+          val = trimmed==='' || !Number.isFinite(num) ? null : num;
+        } else {
+          val = inp.value.trim();
+        }
+        state.items[idx][fid] = val;
+        if (fid === addressFieldId){
+          const cityNow = cityFromDisplay(state.items[idx][fid], state.items[idx].city);
+          state.items[idx].city = cityNow;
+          row.querySelector('[data-city]').textContent = cityNow || '—';
+          refreshDeleteButtonState(row, state.items[idx]);
+        }
         saveAll();
-        renderGroupHeaderTotalsForRound(+state.items[idx].round||0);
         updateRowHeaderMeta(row, state.items[idx]);
-        refreshDeleteButtonState(row, state.items[idx]);
       });
     });
-    if (noteI) noteI.addEventListener('change', ()=>{
-      const idx = state.items.findIndex(x=>x.id===it.id);
-      if (idx<0) return;
-      pushSnapshot();
-      state.items[idx].note = noteI.value.trim();
-      saveAll();
-    });
 
-    [weightI, volumeI].forEach(inp=>{
+    metricInputs.forEach((inp, fid)=>{
       inp.addEventListener('change', ()=>{
         const idx = state.items.findIndex(x=>x.id===it.id);
         if (idx<0) return;
         pushSnapshot();
-        const v = inp.value.trim();
-        state.items[idx][inp===weightI?'weight':'volume'] = v==='' ? null : parseFloat(v);
+        const raw = inp.value.trim();
+        if (raw==='') state.items[idx][fid] = null;
+        else {
+          const num = parseFloat(raw);
+          state.items[idx][fid] = Number.isFinite(num) ? num : null;
+        }
         saveAll();
         renderGroupHeaderTotalsForRound(+state.items[idx].round||0);
         updateRowHeaderMeta(row, state.items[idx]);
@@ -567,13 +847,14 @@
     roundS.addEventListener('change', async ()=>{
       const idx = state.items.findIndex(x=>x.id===it.id); if (idx<0) return;
       const selRound = +roundS.value;
-      const hasAddress = !!state.items[idx].address?.trim();
+      const addrVal = state.items[idx][addressFieldId];
+      const hasAddress = !!(addrVal && addrVal.toString().trim());
       const hasPin = (state.items[idx].lat!=null && state.items[idx].lon!=null);
 
       if (!hasAddress) { state.items[idx]._pendingRound = selRound; return; }
       if (!hasPin) {
         try{ await doOk(state.items[idx].id, selRound); }
-        catch(e){ console.error(e); alert('Geokódolás sikertelen.'); roundS.value = String(state.items[idx].round ?? 0); }
+        catch(e){ console.error(e); alert(text('messages.geocode_failed', 'Geokódolás sikertelen.')); roundS.value = String(state.items[idx].round ?? 0); }
         return;
       }
       const prevRound = +state.items[idx].round||0;
@@ -585,7 +866,7 @@
       renderGroupHeaderTotalsForRound(selRound);
     });
 
-    okBtn.addEventListener('click', async ()=>{ try{ await doOk(it.id, null); } catch(e){ console.error(e); alert('Geokódolás sikertelen. Próbáld pontosítani a címet.'); } });
+    okBtn.addEventListener('click', async ()=>{ try{ await doOk(it.id, null); } catch(e){ console.error(e); alert(text('messages.geocode_failed_detailed', 'Geokódolás sikertelen. Próbáld pontosítani a címet.')); } });
 
     delBtn.addEventListener('click', ()=>{
       if (delBtn.disabled) return;
@@ -610,6 +891,7 @@
 
   // ======= GYORS KERESŐ / SZŰRŐ
   function injectQuickSearch(){
+    if (!feature('quick_search', true)) return;
     // csak egyszer
     if (document.getElementById('quickSearchWrap')) return;
     const wrap = document.createElement('div');
@@ -622,7 +904,7 @@
     const inp = document.createElement('input');
     inp.id = 'quickSearch';
     inp.type = 'search';
-    inp.placeholder = 'Keresés: címke, város, cím…';
+    inp.placeholder = text('quick_search.placeholder', 'Keresés…');
     inp.style.width = '100%';
     inp.style.padding = '6px 8px';
     inp.style.border = '1px solid #d1d5db';
@@ -630,8 +912,8 @@
     inp.autocomplete = 'off';
 
     const clearBtn = document.createElement('button');
-    clearBtn.textContent = '✕';
-    clearBtn.title = 'Szűrés törlése';
+    clearBtn.textContent = text('quick_search.clear_label', '✕');
+    clearBtn.title = text('quick_search.clear_title', 'Szűrés törlése');
     clearBtn.style.padding = '6px 10px';
     clearBtn.style.border = '1px solid #d1d5db';
     clearBtn.style.borderRadius = '8px';
@@ -653,7 +935,17 @@
         const id = row.dataset.rowId;
         const it = state.items.find(x=>x.id===id);
         if (!it){ row.style.display=''; return; }
-        const hay = `${it.label||''} ${it.city||''} ${it.address||''}`.toLowerCase();
+        const parts = [];
+        getFieldDefs().forEach(field => {
+          const val = it[field.id];
+          if (val != null) parts.push(String(val));
+        });
+        getMetricDefs().forEach(metric => {
+          const val = it[metric.id];
+          if (val != null) parts.push(String(val));
+        });
+        parts.push(it.city || '');
+        const hay = parts.join(' ').toLowerCase();
         const match = !q || hay.includes(q);
         row.style.display = match ? '' : 'none';
       });
@@ -703,24 +995,30 @@
       const body = groupEl.querySelector(`[data-group-body="${rid}"]`);
       inRound.forEach(it => { body.appendChild(renderRow(it, globalIndex)); globalIndex++; });
 
-      groupEl.querySelector('.grp-open').addEventListener('click', ()=>{
+      const btnOpen = groupEl.querySelector('.grp-open');
+      if (btnOpen) btnOpen.addEventListener('click', ()=>{
         body.querySelectorAll('.body').forEach(b=>b.style.display='');
         pushSnapshot();
         state.items.filter(it => (+it.round||0)===rid).forEach(it=>{ it.collapsed = false; });
         saveAll();
       });
-      groupEl.querySelector('.grp-close').addEventListener('click', ()=>{
+      const btnClose = groupEl.querySelector('.grp-close');
+      if (btnClose) btnClose.addEventListener('click', ()=>{
         body.querySelectorAll('.body').forEach(b=>b.style.display='none');
         pushSnapshot();
         state.items.filter(it => (+it.round||0)===rid).forEach(it=>{ it.collapsed = true; });
         saveAll();
       });
-      groupEl.querySelector('.grp-export').addEventListener('click', ()=>{ window.open(EP.exportRound(rid), '_blank'); });
-      groupEl.querySelector('.grp-print').addEventListener('click', ()=>{ window.open(EP.printRound(rid), '_blank'); });
+      const btnExport = groupEl.querySelector('.grp-export');
+      if (btnExport) btnExport.addEventListener('click', ()=>{ window.open(EP.exportRound(rid), '_blank'); });
+      const btnPrint = groupEl.querySelector('.grp-print');
+      if (btnPrint) btnPrint.addEventListener('click', ()=>{ window.open(EP.printRound(rid), '_blank'); });
 
-      groupEl.querySelector('.grp-del').addEventListener('click', async ()=>{
+      const btnDelete = groupEl.querySelector('.grp-del');
+      if (btnDelete) btnDelete.addEventListener('click', async ()=>{
         const name = (ROUND_MAP.get(rid)?.label) || String(rid);
-        if (!confirm(`Biztosan törlöd a(z) "${name}" kör összes címét?`)) return;
+        const msgTpl = cfg('text.messages.delete_round_confirm', 'Biztosan törlöd a(z) "{name}" kör összes címét?');
+        if (!confirm(format(msgTpl, {name}))) return;
         try{
           pushSnapshot();
           const removedIds = state.items.filter(it => (+it.round||0)===rid).map(it=>it.id);
@@ -744,11 +1042,13 @@
           ensureBlankRowInDefaultRound();
           await saveAll();
           renderEverything();
-          alert(`Kör törölve. Tételek: ${j?.deleted ?? removedIds.length}.`);
-        }catch(e){ console.error(e); alert('A kör törlése nem sikerült.'); }
+          const successTpl = cfg('text.messages.delete_round_success', 'Kör törölve. Tételek: {count}.');
+          alert(format(successTpl, {count: j?.deleted ?? removedIds.length}));
+        }catch(e){ console.error(e); alert(cfg('text.messages.delete_round_error', 'A kör törlése nem sikerült.')); }
       });
 
-      groupEl.querySelector('.grp-nav').addEventListener('click', ()=>{ openGmapsForRound(rid); });
+      const btnNav = groupEl.querySelector('.grp-nav');
+      if (btnNav) btnNav.addEventListener('click', ()=>{ openGmapsForRound(rid); });
 
       groupsEl.appendChild(groupEl);
     });
@@ -767,10 +1067,10 @@
   }
 
   function openGmapsForRound(rid){
-    const origin = state.cfg.routing?.origin || 'Maglód';
-    const maxW = state.cfg.routing?.max_waypoints || 10;
+    const origin = cfg('routing.origin', 'Maglód');
+    const maxW = cfg('routing.max_waypoints', 10) || 10;
     const pts = state.items.filter(it => (+it.round||0)===rid && it.lat!=null && it.lon!=null);
-    if (pts.length===0){ alert('Nincs navigálható cím ebben a körben.'); return; }
+    if (pts.length===0){ alert(cfg('text.messages.navigation_empty', 'Nincs navigálható cím ebben a körben.')); return; }
     const batches = [];
     for (let i=0;i<pts.length;i+=maxW){ batches.push(pts.slice(i, i+maxW)); }
     batches.forEach((batch)=>{
@@ -785,19 +1085,27 @@
       window.open(url.toString(), '_blank');
     });
     const skipped = state.items.filter(it => (+it.round||0)===rid && (it.lat==null || it.lon==null)).length;
-    if (skipped>0) alert(`Figyelem: ${skipped} cím nem került bele (nincs geolokáció).`);
+    if (skipped>0) {
+      const warnTpl = cfg('text.messages.navigation_skip', 'Figyelem: {count} cím nem került bele (nincs geolokáció).');
+      alert(format(warnTpl, {count: skipped}));
+    }
   }
 
   // ======= GLOBAL BUTTONS
-  document.getElementById('exportBtn').addEventListener('click', ()=>{ window.open(EP.exportAll, '_blank'); });
-  document.getElementById('printBtn').addEventListener('click', ()=>{ window.open(EP.printAll, '_blank'); });
-  document.getElementById('downloadArchiveBtn').addEventListener('click', ()=>{ window.open(EP.downloadArchive, '_blank'); });
-  document.getElementById('expandAll').addEventListener('click', ()=>{
+  const exportBtn = document.getElementById('exportBtn');
+  if (exportBtn) exportBtn.addEventListener('click', ()=>{ window.open(EP.exportAll, '_blank'); });
+  const printBtn = document.getElementById('printBtn');
+  if (printBtn) printBtn.addEventListener('click', ()=>{ window.open(EP.printAll, '_blank'); });
+  const archiveBtn = document.getElementById('downloadArchiveBtn');
+  if (archiveBtn) archiveBtn.addEventListener('click', ()=>{ window.open(EP.downloadArchive, '_blank'); });
+  const expandAllBtn = document.getElementById('expandAll');
+  if (expandAllBtn) expandAllBtn.addEventListener('click', ()=>{
     groupsEl.querySelectorAll('.body').forEach(b=>b.style.display='');
     pushSnapshot();
     state.items.forEach(it=>it.collapsed=false); saveAll();
   });
-  document.getElementById('collapseAll').addEventListener('click', ()=>{
+  const collapseAllBtn = document.getElementById('collapseAll');
+  if (collapseAllBtn) collapseAllBtn.addEventListener('click', ()=>{
     groupsEl.querySelectorAll('.body').forEach(b=>b.style.display='none');
     pushSnapshot();
     state.items.forEach(it=>it.collapsed=true); saveAll();
@@ -814,13 +1122,17 @@
   (async function start(){
     try{
       await loadCfg();
+      applyThemeVariables();
+      applyPanelSizes();
+      updateUndoButton();
 
       // tile layer
       L.tileLayer(state.cfg.map.tiles.url,{maxZoom:19, attribution:state.cfg.map.tiles.attribution}).addTo(map);
       if (state.cfg.map.fit_bounds) {
         const b = L.latLngBounds(state.cfg.map.fit_bounds);
         map.fitBounds(b.pad(0.15));
-        map.setMaxBounds(b.pad(state.cfg.map.max_bounds_pad || 0.6));
+        const pad = cfg('map.max_bounds_pad', 0.6) || 0.6;
+        map.setMaxBounds(b.pad(pad));
         map.on('drag', ()=> map.panInsideBounds(map.options.maxBounds,{animate:false}));
       }
 
@@ -828,13 +1140,20 @@
       ROUND_MAP = new Map(state.cfg.rounds.map(r=>[Number(r.id), r]));
 
       // origin geocode cache
-      try{
-        const r = await fetch(EP.geocode + '&' + new URLSearchParams({q:'Maglód'}), {cache:'force-cache'});
-        if (r.ok){
-          const j = await r.json();
-          if (j && j.lat && j.lon){ state.ORIGIN = {lat:j.lat, lon:j.lon}; }
-        }
-      }catch(e){}
+      const originCoords = cfg('routing.origin_coordinates', null);
+      if (originCoords && Number.isFinite(originCoords.lat) && Number.isFinite(originCoords.lon)) {
+        state.ORIGIN = {lat: Number(originCoords.lat), lon: Number(originCoords.lon)};
+      }
+      if (cfg('routing.geocode_origin_on_start', true)) {
+        const originName = cfg('routing.origin', 'Maglód');
+        try{
+          const r = await fetch(EP.geocode + '&' + new URLSearchParams({q:originName}), {cache:'force-cache'});
+          if (r.ok){
+            const j = await r.json();
+            if (j && j.lat && j.lon){ state.ORIGIN = {lat:j.lat, lon:j.lon}; }
+          }
+        }catch(e){}
+      }
 
       // load data
       await loadAll();
@@ -848,7 +1167,7 @@
       renderEverything();
     }catch(e){
       console.error(e);
-      alert('Betöltési hiba: kérlek frissítsd az oldalt.');
+      alert(text('messages.load_error', 'Betöltési hiba: kérlek frissítsd az oldalt.'));
     }
   })();
 
