@@ -481,7 +481,6 @@
           if (body && body.style.display==='none'){ body.style.display=''; if (tog) tog.textContent='▼'; }
           const first = row.querySelector('input,select'); if (first){ first.focus(); }
         }
-        if (mk.getTooltip()) mk.openTooltip();
         if (feature('marker_popup_on_click', true)) mk.openPopup();
         map.panTo(mk.getLatLng());
       });
@@ -512,18 +511,6 @@
         ${popupFields.join('')}
       </div>`;
     mk.bindPopup(html, {maxWidth:320});
-    const tooltipText = labelVal || addrVal || '';
-    if (tooltipText){
-      const sz = cfg('ui.marker.icon_size', 38) || 38;
-      mk.bindTooltip(tooltipText, {
-        direction: 'top',
-        offset: [0, -Math.max(24, Math.round(sz * 0.6))],
-        opacity: 0.95,
-        sticky: true
-      });
-    } else if (mk.getTooltip()){
-      mk.unbindTooltip();
-    }
     updatePinCount();
   }
 
@@ -758,7 +745,6 @@
       highlightRow(it.id);
       const mk = state.markersById.get(it.id);
       if (mk) {
-        if (mk.getTooltip()) mk.openTooltip();
         if (feature('marker_popup_on_click', true)) mk.openPopup();
         if (feature('marker_focus_feedback', true)) pingMarker(it.id);
         map.panTo(mk.getLatLng());
@@ -768,7 +754,6 @@
       // bármely input/elem fókuszba kerül a soron belül → pin ping + popup
       const mk = state.markersById.get(it.id);
       if (mk) {
-        if (mk.getTooltip()) mk.openTooltip();
         if (feature('marker_popup_on_focus', true)) mk.openPopup();
         if (feature('marker_focus_feedback', true)) pingMarker(it.id);
       }
