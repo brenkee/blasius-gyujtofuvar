@@ -214,11 +214,11 @@
                 "title": "\u00d6sszes k\u00f6r \u00f6sszez\u00e1r\u00e1sa"
             },
             "import_all": {
-                "label": "Import (CSV)",
+                "label": "Import",
                 "title": "C\u00edmlista import\u00e1l\u00e1sa CSV-b\u0151l"
             },
             "export_all": {
-                "label": "Export (CSV)",
+                "label": "Export",
                 "title": "C\u00edmlista export\u00e1l\u00e1sa CSV-be"
             },
             "print_all": {

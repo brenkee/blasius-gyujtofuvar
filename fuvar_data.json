@@ -26,7 +26,7 @@
             "collapsed": true,
             "weight": 200,
             "volume": 5.5,
-            "deadline": "2024-05-20"
+            "deadline": "2025-10-16"
         },
         {
             "id": "row_037sdru0o898",
@@ -40,7 +40,7 @@
             "lon": 17.5582659,
             "round": 2,
             "collapsed": true,
-            "deadline": "2024-05-10"
+            "deadline": "2025-10-13"
         },
         {
             "id": "row_0ftwkdtf8v4i",
@@ -54,7 +54,7 @@
             "lon": 17.7886886,
             "round": 2,
             "collapsed": true,
-            "deadline": "2024-05-06"
+            "deadline": "2025-10-10"
         },
         {
             "id": "row_jrq2hx9ahyk",
@@ -68,7 +68,7 @@
             "collapsed": true,
             "weight": 10,
             "volume": 10,
-            "deadline": "2024-05-04"
+            "deadline": ""
         },
         {
             "id": "row_w52hcj9wzx",
@@ -82,7 +82,7 @@
             "collapsed": true,
             "weight": 1000,
             "volume": 3,
-            "deadline": "2024-05-09"
+            "deadline": ""
         },
         {
             "id": "row_f7b42h18kyv",
@@ -96,7 +96,7 @@
             "collapsed": true,
             "volume": 3,
             "weight": 1000,
-            "deadline": "2024-05-11"
+            "deadline": ""
         },
         {
             "id": "row_kpou94e3uj",
@@ -110,7 +110,7 @@
             "collapsed": true,
             "weight": 300,
             "volume": 4,
-            "deadline": "2024-05-03"
+            "deadline": ""
         },
         {
             "id": "row_lhh0naj1lul",
@@ -124,7 +124,7 @@
             "collapsed": true,
             "weight": 200,
             "volume": 1,
-            "deadline": "2024-05-15"
+            "deadline": ""
         },
         {
             "id": "row_f46d1qlxb18",
@@ -138,7 +138,7 @@
             "collapsed": true,
             "weight": 1000,
             "volume": 3,
-            "deadline": "2024-05-02"
+            "deadline": ""
         },
         {
             "id": "row_hblr1l96q5e",
@@ -152,7 +152,7 @@
             "collapsed": true,
             "weight": 300,
             "volume": 10,
-            "deadline": "2024-05-01"
+            "deadline": ""
         },
         {
             "id": "row_zoo1vqjge4",
@@ -166,7 +166,7 @@
             "collapsed": true,
             "weight": 30,
             "volume": 30,
-            "deadline": "2024-05-18"
+            "deadline": ""
         },
         {
             "id": "row_kkxpqs13jv",
@@ -227,7 +227,7 @@
         {
             "id": "row_fzk21st1odf",
             "label": "Vajda Zsolt",
-            "address": "Orosháza 5900 Luther u.42/2",
+            "address": "Orosháza 5900 Luther u.42\/2",
             "city": "Orosháza",
             "note": "hungarocell és gyapot 150k",
             "lat": 46.5630622,
