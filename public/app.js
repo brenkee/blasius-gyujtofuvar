@@ -305,24 +305,71 @@
   function autoSortItems(){
     if (!cfg('app.auto_sort_by_round', true)) return;
     const zeroBottom = !!cfg('app.round_zero_at_bottom', false);
-    const withIdx = state.items.map((it, idx)=>({it, idx}));
-    withIdx.sort((a,b)=>{
-      const ra = +a.it.round || 0, rb = +b.it.round || 0;
-      if (zeroBottom) {
-        const az=(ra===0)?1:0, bz=(rb===0)?1:0;
-        if (az!==bz) return az-bz;
-      }
-      if (ra!==rb) return ra-rb;
-      const da = haversineKm(state.ORIGIN.lat,state.ORIGIN.lon, a.it.lat, a.it.lon);
-      const db = haversineKm(state.ORIGIN.lat,state.ORIGIN.lon, b.it.lat, b.it.lon);
-      if (isFinite(da) || isFinite(db)){
-        if (!isFinite(da)) return 1;
-        if (!isFinite(db)) return -1;
-        if (da!==db) return da-db;
-      }
-      return a.idx-b.idx;
+    const groups = new Map();
+    state.items.forEach((it, idx)=>{
+      const rid = +it.round || 0;
+      if (!groups.has(rid)) groups.set(rid, []);
+      groups.get(rid).push({it, idx});
     });
-    state.items = withIdx.map(x=>x.it);
+
+    const roundIds = Array.from(groups.keys()).sort((a,b)=>a-b);
+    if (zeroBottom){
+      const zeroIdx = roundIds.indexOf(0);
+      if (zeroIdx !== -1){
+        roundIds.splice(zeroIdx, 1);
+        roundIds.push(0);
+      }
+    }
+
+    const hasCoords = (entry)=>{
+      const {lat, lon} = entry.it;
+      return lat !== '' && lon !== '' && lat != null && lon != null;
+    };
+
+    const ordered = [];
+    roundIds.forEach(rid => {
+      const entries = groups.get(rid) || [];
+      const withCoords = entries.filter(hasCoords);
+      const withoutCoords = entries.filter(entry => !hasCoords(entry));
+
+      const sorted = [];
+      if (withCoords.length){
+        const remaining = withCoords.slice();
+        let currentIdx = 0;
+        let bestStart = Infinity;
+        for (let i=0;i<remaining.length;i++){
+          const candidate = remaining[i];
+          const distRaw = haversineKm(state.ORIGIN.lat, state.ORIGIN.lon, candidate.it.lat, candidate.it.lon);
+          const dist = Number.isFinite(distRaw) ? distRaw : Infinity;
+          if (dist < bestStart){
+            bestStart = dist;
+            currentIdx = i;
+          }
+        }
+        let current = remaining.splice(currentIdx,1)[0];
+        sorted.push(current);
+        while (remaining.length){
+          let nextIdx = 0;
+          let bestDist = Infinity;
+          for (let i=0;i<remaining.length;i++){
+            const candidate = remaining[i];
+            const distRaw = haversineKm(current.it.lat, current.it.lon, candidate.it.lat, candidate.it.lon);
+            const dist = Number.isFinite(distRaw) ? distRaw : Infinity;
+            if (dist < bestDist){
+              bestDist = dist;
+              nextIdx = i;
+            }
+          }
+          current = remaining.splice(nextIdx,1)[0];
+          sorted.push(current);
+        }
+      }
+
+      withoutCoords.sort((a,b)=>a.idx-b.idx);
+      sorted.concat(withoutCoords).forEach(entry => ordered.push(entry.it));
+    });
+
+    state.items = ordered;
   }
 
   // ======= ROUNDS
@@ -515,6 +562,19 @@
     if (addrVal) popupFields.push(`<div style="color:#4b5563">${esc(addrVal)}</div>`);
     if (extras.length) popupFields.push(`<div style="margin-top:4px;color:#334155">${extras.map(esc).join(' · ')}</div>`);
     if (noteVal) popupFields.push(`<div style="margin-top:4px;">${esc(noteVal)}</div>`);
+    let googleQuery = '';
+    const latNum = Number(it.lat);
+    const lonNum = Number(it.lon);
+    if (typeof addrVal === 'string' && addrVal.trim()) {
+      googleQuery = addrVal.trim();
+    } else if (Number.isFinite(latNum) && Number.isFinite(lonNum)) {
+      googleQuery = `${latNum},${lonNum}`;
+    }
+    if (googleQuery) {
+      const mapsUrl = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(googleQuery);
+      const linkLabel = text('marker.google_maps_link', 'Megnyitás Google Térképen');
+      popupFields.push(`<div style="margin-top:6px;"><a href="${esc(mapsUrl)}" target="_blank" rel="noopener" style="color:#2563eb;font-weight:600;text-decoration:none;">${esc(linkLabel)}</a></div>`);
+    }
     const html = `
       <div style="font-size:14px;line-height:1.35;">
         ${popupFields.join('')}
@@ -727,7 +787,7 @@
           ${fieldHtml}
         </div>
         <div class="metrics-grid" style="align-items:end;${metrics.length?'':'display:none'}">
-          <div class="f" style="max-width:160px">
+          <div class="f" style="max-width:140px">
             <label for="round_${cssId(it.id)}">${esc(roundLabelText)}</label>
             <select id="round_${cssId(it.id)}" class="select-round">
               ${Array.from(ROUND_MAP.values()).map(r => {
@@ -893,7 +953,7 @@
     wrap.style.display = 'flex';
     wrap.style.gap = '6px';
     wrap.style.alignItems = 'center';
-    wrap.style.margin = '8px 8px 6px 8px';
+    wrap.style.margin = '8px 8px 4px 8px';
 
     const inp = document.createElement('input');
     inp.id = 'quickSearch';
@@ -903,6 +963,7 @@
     inp.style.padding = '6px 8px';
     inp.style.border = '1px solid #d1d5db';
     inp.style.borderRadius = '8px';
+    inp.style.transition = 'border-color .2s ease, box-shadow .2s ease';
     inp.autocomplete = 'off';
 
     const clearBtn = document.createElement('button');
@@ -920,6 +981,36 @@
     // a groupsEl elé tesszük
     const p = groupsEl.parentNode;
     p.insertBefore(wrap, groupsEl);
+
+    const status = document.createElement('div');
+    status.id = 'quickSearchStatus';
+    status.style.display = 'none';
+    status.style.margin = '0 8px 8px 8px';
+    status.style.padding = '6px 8px';
+    status.style.borderRadius = '8px';
+    status.style.border = '1px solid rgba(37,99,235,0.3)';
+    status.style.background = 'rgba(37,99,235,0.08)';
+    status.style.fontSize = '12px';
+    status.style.fontWeight = '600';
+    status.style.color = '#1d4ed8';
+    status.setAttribute('role', 'status');
+    p.insertBefore(status, groupsEl);
+
+    function updateIndicator(active, visibleCount){
+      if (active){
+        inp.style.borderColor = '#2563eb';
+        inp.style.boxShadow = '0 0 0 2px rgba(37,99,235,0.2)';
+        status.style.display = '';
+        const tpl = text('quick_search.filtered_notice', 'Szűrt találatok: {count}');
+        const emptyTpl = text('quick_search.filtered_empty', 'Nincs találat a megadott szűrőre.');
+        status.textContent = visibleCount > 0 ? format(tpl, {count: visibleCount}) : emptyTpl;
+      } else {
+        inp.style.borderColor = '#d1d5db';
+        inp.style.boxShadow = 'none';
+        status.style.display = 'none';
+        status.textContent = '';
+      }
+    }
 
     function applyFilter(){
       const q = (state.filterText || '').trim().toLowerCase();
@@ -949,6 +1040,8 @@
         const anyVisible = Array.from(body.children).some(ch => ch.classList.contains('row') && ch.style.display!=='none');
         g.style.display = anyVisible ? '' : 'none';
       });
+      const visibleCount = Array.from(groupsEl.querySelectorAll('.row')).filter(row => row.style.display !== 'none').length;
+      updateIndicator(!!q, visibleCount);
     }
 
     inp.addEventListener('input', ()=>{
@@ -959,12 +1052,15 @@
       state.filterText = '';
       inp.value = '';
       applyFilter();
+      inp.focus();
     });
 
     // első render után is alkalmazzuk, ha lenne mentett filter
     if (state.filterText) {
       inp.value = state.filterText;
       applyFilter();
+    } else {
+      updateIndicator(false, Array.from(groupsEl.querySelectorAll('.row')).length);
     }
   }
 
