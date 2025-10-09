@@ -1,246 +1,356 @@
 {
-  "app": {
-    "title": "BLASIUS - Gyűjtőfuvar szervező",
-    "auto_sort_by_round": true,
-    "round_zero_at_bottom": false,
-    "default_collapsed": false
-  },
-  "history": {
-    "undo_enabled": true,
-    "max_steps": 10
-  },
-  "features": {
-    "toolbar": {
-      "expand_all": true,
-      "collapse_all": true,
-      "export_all": true,
-      "print_all": true,
-      "download_archive": true,
-      "theme_toggle": true,
-      "undo": true
+    "app": {
+        "title": "BLASIUS - Gy\u0171jt\u0151fuvar szervez\u0151",
+        "auto_sort_by_round": true,
+        "round_zero_at_bottom": false,
+        "default_collapsed": false
     },
-    "quick_search": true,
-    "marker_popup_on_click": true,
-    "marker_popup_on_focus": true,
-    "marker_focus_feedback": true,
-    "group_actions": {
-      "open": true,
-      "close": true,
-      "print": true,
-      "export": true,
-      "navigate": true,
-      "delete": true
+    "history": {
+        "undo_enabled": true,
+        "max_steps": 10
     },
-    "group_totals": true,
-    "round_planned_date": true
-  },
-  "files": {
-    "data_file": "fuvar_data.json",
-    "export_file": "fuvar_export.txt",
-    "export_download_name": "fuvar_export.txt",
-    "archive_file": "fuvar_archive.log"
-  },
-  "map": {
-    "tiles": {
-      "url": "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-      "attribution": ""
+    "features": {
+        "toolbar": {
+            "expand_all": true,
+            "collapse_all": true,
+            "export_all": true,
+            "print_all": true,
+            "download_archive": true,
+            "theme_toggle": true,
+            "undo": true
+        },
+        "quick_search": true,
+        "marker_popup_on_click": true,
+        "marker_popup_on_focus": true,
+        "marker_focus_feedback": true,
+        "group_actions": {
+            "open": true,
+            "close": true,
+            "print": true,
+            "export": true,
+            "navigate": true,
+            "delete": true
+        },
+        "group_totals": true,
+        "round_planned_date": true
     },
-    "fit_bounds": [[45.737, 16.113], [48.585, 22.897]],
-    "max_bounds_pad": 0.6
-  },
-  "geocode": {
-    "countrycodes": "hu",
-    "language": "hu",
-    "user_agent": "fuvarszervezo-internal/1.4 (+contact@example.com)"
-  },
-  "ui": {
-    "panel_min_px": 330,
-    "panel_pref_vw": 36,
-    "panel_max_px": 520,
-    "colors": {
-      "light": {
-        "bg": "#fafafa",
-        "panel": "#ffffff",
-        "border": "#e5e7eb",
-        "text": "#111827",
-        "muted": "#6b7280",
-        "accent": "#2563eb",
-        "ok": "#16a34a",
-        "err": "#dc2626",
-        "highlight": "#e0f2fe"
-      },
-      "dark": {
-        "bg": "#0f172a",
-        "panel": "#0b1220",
-        "border": "#1f2937",
-        "text": "#e5e7eb",
-        "muted": "#94a3b8",
-        "accent": "#60a5fa",
-        "ok": "#34d399",
-        "err": "#f87171",
-        "highlight": "#1e293b"
-      }
+    "files": {
+        "data_file": "fuvar_data.json",
+        "export_file": "fuvar_export.txt",
+        "export_download_name": "fuvar_export.txt",
+        "archive_file": "fuvar_archive.log"
     },
-    "marker": {
-      "icon_size": 40,
-      "font_size": 15,
-      "auto_contrast": true,
-      "focus_ring_radius": 50000,
-      "focus_ring_color": "auto"
-    }
-  },
-  "routing": {
-    "origin": "Maglód",
-    "origin_coordinates": {
-      "lat": 47.45,
-      "lon": 19.35
+    "map": {
+        "tiles": {
+            "url": "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+            "attribution": ""
+        },
+        "fit_bounds": [
+            [
+                45.737,
+                16.113
+            ],
+            [
+                48.585,
+                22.897
+            ]
+        ],
+        "max_bounds_pad": 0.6
     },
-    "max_waypoints": 10,
-    "geocode_origin_on_start": true
-  },
-  "rounds": [
-    { "id": 0,  "label": "Még nincs besorolva", "color": "#888" },
-    { "id": 1,  "label": "Berkenye: M2",   "color": "#1F00F5" },
-    { "id": 2,  "label": "Balaton Déli part: M7",   "color": "#FF1701" },
-    { "id": 3,  "label": "Balaton Északi part: M7",   "color": "#E6E601" },
-    { "id": 4,  "label": "Győr: M1",   "color": "#5F00B8" },
-    { "id": 5,  "label": "Kecskemét: M5",   "color": "#FF7601" },
-    { "id": 6,  "label": "Szeged: M5",   "color": "#FA00F1" },
-    { "id": 7,  "label": "Szolnok: M4",   "color": "#9A75FF" },
-    { "id": 8,  "label": "Hatvan: M3",   "color": "#FFDD83" },
-    { "id": 9,  "label": "Salgótarján: M3",   "color": "#662C1D" },
-    { "id": 10, "label": "Miskolc: M3",  "color": "#237028" },
-    { "id": 11,  "label": "Szekszárd: M6",   "color": "#00FFE4" }
-  ],
-  "text": {
-    "toolbar": {
-      "expand_all": {"label": "Összes kinyit", "title": "Összes kör kinyitása"},
-      "collapse_all": {"label": "Összes összezár", "title": "Összes kör összezárása"},
-      "export_all": {"label": "Export", "title": "Export TXT"},
-      "print_all": {"label": "Nyomtatás", "title": "Nyomtatás"},
-      "download_archive": {"label": "Archívum", "title": "Archívum letöltése (TXT)"},
-      "theme_toggle": {"label": "🌙 / ☀️", "title": "Téma váltása"},
-      "undo": {"label": "Visszavonás", "title": "Visszavonás"}
+    "geocode": {
+        "countrycodes": "hu",
+        "language": "hu",
+        "user_agent": "fuvarszervezo-internal/1.4 (+contact@example.com)"
     },
-    "badges": {
-      "pin_counter_label": "Címek:",
-      "pin_counter_title": "Aktív pin jelölők száma"
+    "ui": {
+        "panel_min_px": 330,
+        "panel_pref_vw": 36,
+        "panel_max_px": 520,
+        "colors": {
+            "light": {
+                "bg": "#fafafa",
+                "panel": "#ffffff",
+                "border": "#e5e7eb",
+                "text": "#111827",
+                "muted": "#6b7280",
+                "accent": "#2563eb",
+                "ok": "#16a34a",
+                "err": "#dc2626",
+                "highlight": "#e0f2fe"
+            },
+            "dark": {
+                "bg": "#0f172a",
+                "panel": "#0b1220",
+                "border": "#1f2937",
+                "text": "#e5e7eb",
+                "muted": "#94a3b8",
+                "accent": "#60a5fa",
+                "ok": "#34d399",
+                "err": "#f87171",
+                "highlight": "#1e293b"
+            }
+        },
+        "marker": {
+            "icon_size": 40,
+            "font_size": 15,
+            "auto_contrast": true,
+            "focus_ring_radius": 50000,
+            "focus_ring_color": "auto"
+        },
+        "panel": {
+            "sticky_top": {
+                "enabled": true
+            }
+        },
+        "save_status": {
+            "position": {
+                "top": "10px",
+                "right": "12px"
+            },
+            "style": {
+                "padding": "6px 10px",
+                "borderRadius": "999px",
+                "fontSize": "12px",
+                "fontWeight": "600",
+                "boxShadow": "0 2px 6px rgba(0,0,0,.15)",
+                "zIndex": 9999
+            },
+            "colors": {
+                "success": {
+                    "color": "#065f46",
+                    "background": "#d1fae5",
+                    "border": "1px solid #a7f3d0"
+                },
+                "error": {
+                    "color": "#7f1d1d",
+                    "background": "#fee2e2",
+                    "border": "1px solid #fecaca"
+                }
+            },
+            "hide_after_ms": 1600
+        }
     },
-    "round": {
-      "planned_date_label": "Tervezett dátum",
-      "planned_date_hint": "Válaszd ki a kör tervezett dátumát"
+    "routing": {
+        "origin": "Magl\u00f3d",
+        "origin_coordinates": {
+            "lat": 47.45,
+            "lon": 19.35
+        },
+        "max_waypoints": 10,
+        "geocode_origin_on_start": true
     },
-    "group": {
-      "sum_template": "Összesen: {parts}",
-      "sum_separator": " · ",
-      "actions": {
-        "open": "Kinyit",
-        "close": "Összezár",
-        "print": "Nyomtatás",
-        "export": "Export",
-        "navigate": "Navigáció",
-        "delete": "Kör törlése"
-      }
-    },
-    "quick_search": {
-      "placeholder": "Keresés: címke, város, cím…",
-      "clear_label": "✕",
-      "clear_title": "Szűrés törlése"
-    },
-    "actions": {
-      "ok": "OK",
-      "delete": "Törlés",
-      "delete_disabled_hint": "Nem törölhető az alap sor"
-    },
-    "messages": {
-      "address_required": "Adj meg valós címet!",
-      "load_error": "Betöltési hiba: kérlek frissítsd az oldalt.",
-      "delete_round_confirm": "Biztosan törlöd a(z) \"{name}\" kör összes címét?",
-      "delete_round_success": "Kör törölve. Tételek: {count}.",
-      "delete_round_error": "A kör törlése nem sikerült.",
-      "navigation_empty": "Nincs navigálható cím ebben a körben.",
-      "navigation_skip": "Figyelem: {count} cím nem került bele (nincs geolokáció).",
-      "geocode_failed": "Geokódolás sikertelen.",
-      "geocode_failed_detailed": "Geokódolás sikertelen. Próbáld pontosítani a címet.",
-      "undo_unavailable": "Nincs visszavonható művelet."
-    }
-  },
-  "items": {
-    "address_field_id": "address",
-    "label_field_id": "label",
-    "note_field_id": "note",
-    "fields": [
-      {
-        "id": "label",
-        "type": "text",
-        "label": "Címke",
-        "placeholder": "pl. Ügyfél neve / kód",
-        "default": ""
-      },
-      {
-        "id": "address",
-        "type": "text",
-        "label": "Teljes cím",
-        "placeholder": "Cím",
-        "default": "",
-        "required": true
-      },
-      {
-        "id": "note",
-        "type": "text",
-        "label": "Megjegyzés",
-        "placeholder": "Megjegyzés",
-        "default": ""
-      }
+    "rounds": [
+        {
+            "id": 0,
+            "label": "M\u00e9g nincs besorolva",
+            "color": "#888"
+        },
+        {
+            "id": 1,
+            "label": "Berkenye: M2",
+            "color": "#1F00F5"
+        },
+        {
+            "id": 2,
+            "label": "Balaton D\u00e9li part: M7",
+            "color": "#FF1701"
+        },
+        {
+            "id": 3,
+            "label": "Balaton \u00c9szaki part: M7",
+            "color": "#E6E601"
+        },
+        {
+            "id": 4,
+            "label": "Gy\u0151r: M1",
+            "color": "#5F00B8"
+        },
+        {
+            "id": 5,
+            "label": "Kecskem\u00e9t: M5",
+            "color": "#FF7601"
+        },
+        {
+            "id": 6,
+            "label": "Szeged: M5",
+            "color": "#FA00F1"
+        },
+        {
+            "id": 7,
+            "label": "Szolnok: M4",
+            "color": "#9A75FF"
+        },
+        {
+            "id": 8,
+            "label": "Hatvan: M3",
+            "color": "#FFDD83"
+        },
+        {
+            "id": 9,
+            "label": "Salg\u00f3tarj\u00e1n: M3",
+            "color": "#662C1D"
+        },
+        {
+            "id": 10,
+            "label": "Miskolc: M3",
+            "color": "#237028"
+        },
+        {
+            "id": 11,
+            "label": "Szeksz\u00e1rd: M6",
+            "color": "#00FFE4"
+        }
     ],
-    "metrics": [
-      {
-        "id": "weight",
-        "type": "number",
-        "label": "Súly (kg)",
-        "placeholder": "kg",
-        "step": 10,
-        "min": 0,
-        "precision": 1,
-        "unit": "kg",
-        "row_format": "{value} kg",
-        "group_format": "{sum} kg"
-      },
-      {
-        "id": "volume",
-        "type": "number",
-        "label": "Térfogat (m³)",
-        "placeholder": "m³",
-        "step": 0.5,
-        "min": 0,
-        "precision": 1,
-        "unit": "m³",
-        "row_format": "{value} m³",
-        "group_format": "{sum} m³"
-      }
-    ],
-    "round_field": {
-      "label": "Kör",
-      "placeholder": ""
+    "text": {
+        "toolbar": {
+            "expand_all": {
+                "label": "\u00d6sszes kinyit",
+                "title": "\u00d6sszes k\u00f6r kinyit\u00e1sa"
+            },
+            "collapse_all": {
+                "label": "\u00d6sszes \u00f6sszez\u00e1r",
+                "title": "\u00d6sszes k\u00f6r \u00f6sszez\u00e1r\u00e1sa"
+            },
+            "export_all": {
+                "label": "Export",
+                "title": "Export TXT"
+            },
+            "print_all": {
+                "label": "Nyomtat\u00e1s",
+                "title": "Nyomtat\u00e1s"
+            },
+            "download_archive": {
+                "label": "Arch\u00edvum",
+                "title": "Arch\u00edvum let\u00f6lt\u00e9se (TXT)"
+            },
+            "theme_toggle": {
+                "label": "\ud83c\udf19 / \u2600\ufe0f",
+                "title": "T\u00e9ma v\u00e1lt\u00e1sa"
+            },
+            "undo": {
+                "label": "Visszavon\u00e1s",
+                "title": "Visszavon\u00e1s"
+            }
+        },
+        "badges": {
+            "pin_counter_label": "C\u00edmek:",
+            "pin_counter_title": "Akt\u00edv pin jel\u00f6l\u0151k sz\u00e1ma"
+        },
+        "round": {
+            "planned_date_label": "Tervezett d\u00e1tum",
+            "planned_date_hint": "V\u00e1laszd ki a k\u00f6r tervezett d\u00e1tum\u00e1t"
+        },
+        "group": {
+            "sum_template": "\u00d6sszesen: {parts}",
+            "sum_separator": " \u00b7 ",
+            "actions": {
+                "open": "Kinyit",
+                "close": "\u00d6sszez\u00e1r",
+                "print": "Nyomtat\u00e1s",
+                "export": "Export",
+                "navigate": "Navig\u00e1ci\u00f3",
+                "delete": "K\u00f6r t\u00f6rl\u00e9se"
+            }
+        },
+        "quick_search": {
+            "placeholder": "Keres\u00e9s: c\u00edmke, v\u00e1ros, c\u00edm\u2026",
+            "clear_label": "\u2715",
+            "clear_title": "Sz\u0171r\u00e9s t\u00f6rl\u00e9se"
+        },
+        "actions": {
+            "ok": "OK",
+            "delete": "T\u00f6rl\u00e9s",
+            "delete_disabled_hint": "Nem t\u00f6r\u00f6lhet\u0151 az alap sor"
+        },
+        "messages": {
+            "address_required": "Adj meg val\u00f3s c\u00edmet!",
+            "load_error": "Bet\u00f6lt\u00e9si hiba: k\u00e9rlek friss\u00edtsd az oldalt.",
+            "delete_round_confirm": "Biztosan t\u00f6rl\u00f6d a(z) \"{name}\" k\u00f6r \u00f6sszes c\u00edm\u00e9t?",
+            "delete_round_success": "K\u00f6r t\u00f6r\u00f6lve. T\u00e9telek: {count}.",
+            "delete_round_error": "A k\u00f6r t\u00f6rl\u00e9se nem siker\u00fclt.",
+            "navigation_empty": "Nincs navig\u00e1lhat\u00f3 c\u00edm ebben a k\u00f6rben.",
+            "navigation_skip": "Figyelem: {count} c\u00edm nem ker\u00fclt bele (nincs geolok\u00e1ci\u00f3).",
+            "geocode_failed": "Geok\u00f3dol\u00e1s sikertelen.",
+            "geocode_failed_detailed": "Geok\u00f3dol\u00e1s sikertelen. Pr\u00f3b\u00e1ld pontos\u00edtani a c\u00edmet.",
+            "undo_unavailable": "Nincs visszavonhat\u00f3 m\u0171velet."
+        }
     },
-    "meta_display": {
-      "separator": " · ",
-      "missing_warning": {
-        "enabled": true,
-        "text": "!",
-        "title": "Hiányzó súly és térfogat",
-        "class": "warn"
-      }
+    "items": {
+        "address_field_id": "address",
+        "label_field_id": "label",
+        "note_field_id": "note",
+        "fields": [
+            {
+                "id": "label",
+                "type": "text",
+                "label": "C\u00edmke",
+                "placeholder": "pl. \u00dcgyf\u00e9l neve / k\u00f3d",
+                "default": ""
+            },
+            {
+                "id": "address",
+                "type": "text",
+                "label": "Teljes c\u00edm",
+                "placeholder": "C\u00edm",
+                "default": "",
+                "required": true
+            },
+            {
+                "id": "note",
+                "type": "text",
+                "label": "Megjegyz\u00e9s",
+                "placeholder": "Megjegyz\u00e9s",
+                "default": ""
+            }
+        ],
+        "metrics": [
+            {
+                "id": "weight",
+                "type": "number",
+                "label": "S\u00faly (kg)",
+                "placeholder": "kg",
+                "step": 10,
+                "min": 0,
+                "precision": 1,
+                "unit": "kg",
+                "row_format": "{value} kg",
+                "group_format": "{sum} kg"
+            },
+            {
+                "id": "volume",
+                "type": "number",
+                "label": "T\u00e9rfogat (m\u00b3)",
+                "placeholder": "m\u00b3",
+                "step": 0.5,
+                "min": 0,
+                "precision": 1,
+                "unit": "m\u00b3",
+                "row_format": "{value} m\u00b3",
+                "group_format": "{sum} m\u00b3"
+            }
+        ],
+        "round_field": {
+            "label": "K\u00f6r",
+            "placeholder": ""
+        },
+        "meta_display": {
+            "separator": " \u00b7 ",
+            "missing_warning": {
+                "enabled": true,
+                "text": "!",
+                "title": "Hi\u00e1nyz\u00f3 s\u00faly \u00e9s t\u00e9rfogat",
+                "class": "warn"
+            }
+        }
+    },
+    "export": {
+        "include_label": true,
+        "include_address": true,
+        "include_note": true,
+        "group_header_template": "=== K\u00f6r {id} \u2013 {label} ==="
+    },
+    "print": {
+        "title_suffix": " \u2013 Nyomtat\u00e1s",
+        "list_title": "Sz\u00e1ll\u00edt\u00e1si lista"
     }
-  },
-  "export": {
-    "include_label": true,
-    "include_address": true,
-    "include_note": true,
-    "group_header_template": "=== Kör {id} – {label} ==="
-  },
-  "print": {
-    "title_suffix": " – Nyomtatás",
-    "list_title": "Szállítási lista"
-  }
 }

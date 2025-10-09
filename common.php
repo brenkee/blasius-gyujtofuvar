@@ -85,13 +85,47 @@ $CFG_DEFAULT = [
         "highlight" => "#1e293b"
       ]
     ],
-      "marker" => [
-        "icon_size" => 38,
-        "font_size" => 14,
-        "auto_contrast" => true,
-        "focus_ring_radius" => 80,
-        "focus_ring_color" => "auto"
+    "marker" => [
+      "icon_size" => 38,
+      "font_size" => 14,
+      "auto_contrast" => true,
+      "focus_ring_radius" => 80,
+      "focus_ring_color" => "auto"
+    ],
+    "panel" => [
+      "sticky_top" => [
+        "enabled" => false
       ]
+    ],
+    "save_status" => [
+      "position" => [
+        "top" => '10px',
+        "right" => '12px'
+      ],
+      "style" => [
+        "padding" => '6px 10px',
+        "borderRadius" => '999px',
+        "fontSize" => '12px',
+        "fontWeight" => '600',
+        "boxShadow" => '0 2px 6px rgba(0,0,0,.15)',
+        "zIndex" => 9999,
+        "transition" => 'opacity .25s ease',
+        "pointerEvents" => 'none'
+      ],
+      "colors" => [
+        "success" => [
+          "color" => '#065f46',
+          "background" => '#d1fae5',
+          "border" => '1px solid #a7f3d0'
+        ],
+        "error" => [
+          "color" => '#7f1d1d',
+          "background" => '#fee2e2',
+          "border" => '1px solid #fecaca'
+        ]
+      ],
+      "hide_after_ms" => 1600
+    ]
   ],
   "routing" => [
     "origin" => "Maglód",
