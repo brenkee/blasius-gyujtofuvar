@@ -1,6 +1,6 @@
 {
     "app": {
-        "title": "BLASIUS - Gy\u0171jt\u0151fuvar szervez\u0151",
+        "title": "BLASIUS - Gyűjtőfuvar szervező",
         "auto_sort_by_round": true,
         "round_zero_at_bottom": false,
         "default_collapsed": false
@@ -133,7 +133,7 @@
         }
     },
     "routing": {
-        "origin": "Magl\u00f3d",
+        "origin": "Maglód",
         "origin_coordinates": {
             "lat": 47.45,
             "lon": 19.35
@@ -154,22 +154,22 @@
         },
         {
             "id": 2,
-            "label": "Balaton D\u00e9li part: M7",
+            "label": "Balaton Déli part: M7",
             "color": "#FF1701"
         },
         {
             "id": 3,
-            "label": "Balaton \u00c9szaki part: M7",
+            "label": "Balaton Északi part: M7",
             "color": "#E6E601"
         },
         {
             "id": 4,
-            "label": "Gy\u0151r: M1",
+            "label": "Győr: M1",
             "color": "#5F00B8"
         },
         {
             "id": 5,
-            "label": "Kecskem\u00e9t: M5",
+            "label": "Kecskemét: M5",
             "color": "#FF7601"
         },
         {
@@ -189,7 +189,7 @@
         },
         {
             "id": 9,
-            "label": "Salg\u00f3tarj\u00e1n: M3",
+            "label": "Salgótarján: M3",
             "color": "#662C1D"
         },
         {
@@ -199,103 +199,103 @@
         },
         {
             "id": 11,
-            "label": "Szeksz\u00e1rd: M6",
+            "label": "Szekszárd: M6",
             "color": "#00FFE4"
         }
     ],
     "text": {
         "toolbar": {
             "expand_all": {
-                "label": "\u00d6sszes kinyit",
-                "title": "\u00d6sszes k\u00f6r kinyit\u00e1sa"
+                "label": "Összes kinyit",
+                "title": "Összes kör kinyitása"
             },
             "collapse_all": {
-                "label": "\u00d6sszes \u00f6sszez\u00e1r",
-                "title": "\u00d6sszes k\u00f6r \u00f6sszez\u00e1r\u00e1sa"
+                "label": "Összes összezár",
+                "title": "Összes kör összezárása"
             },
             "import_all": {
                 "label": "Import",
-                "title": "C\u00edmlista import\u00e1l\u00e1sa CSV-b\u0151l"
+                "title": "Címlista importálása CSV-ből"
             },
             "export_all": {
                 "label": "Export",
-                "title": "C\u00edmlista export\u00e1l\u00e1sa CSV-be"
+                "title": "Címlista exportálása CSV-be"
             },
             "print_all": {
-                "label": "Nyomtat\u00e1s",
-                "title": "Nyomtat\u00e1s"
+                "label": "Nyomtatás",
+                "title": "Nyomtatás"
             },
             "download_archive": {
-                "label": "Arch\u00edvum",
-                "title": "Arch\u00edvum let\u00f6lt\u00e9se (TXT)"
+                "label": "Archívum",
+                "title": "Archívum letöltése (TXT)"
             },
             "theme_toggle": {
-                "label": "\ud83c\udf19 / \u2600\ufe0f",
-                "title": "T\u00e9ma v\u00e1lt\u00e1sa"
+                "label": "🌙 / ☀️",
+                "title": "Téma váltása"
             },
             "undo": {
-                "label": "Visszavon\u00e1s",
-                "title": "Visszavon\u00e1s"
+                "label": "Visszavonás",
+                "title": "Visszavonás"
             }
         },
         "badges": {
-            "pin_counter_label": "C\u00edmek:",
-            "pin_counter_title": "Akt\u00edv pin jel\u00f6l\u0151k sz\u00e1ma"
+            "pin_counter_label": "Címek:",
+            "pin_counter_title": "Aktív pin jelölők száma"
         },
         "round": {
-            "planned_date_label": "Tervezett d\u00e1tum",
-            "planned_date_hint": "V\u00e1laszd ki a k\u00f6r tervezett d\u00e1tum\u00e1t"
+            "planned_date_label": "Tervezett dátum",
+            "planned_date_hint": "Válaszd ki a kör tervezett dátumát"
         },
         "group": {
-            "sum_template": "\u00d6sszesen: {parts}",
-            "sum_separator": " \u00b7 ",
+            "sum_template": "Összesen: {parts}",
+            "sum_separator": " · ",
             "actions": {
                 "open": "Kinyit",
-                "close": "\u00d6sszez\u00e1r",
-                "print": "Nyomtat\u00e1s",
+                "close": "Összezár",
+                "print": "Nyomtatás",
                 "export": "Export",
-                "navigate": "Navig\u00e1ci\u00f3",
-                "delete": "K\u00f6r t\u00f6rl\u00e9se"
+                "navigate": "Navigáció",
+                "delete": "Kör törlése"
             }
         },
         "quick_search": {
-            "placeholder": "Keres\u00e9s: c\u00edmke, v\u00e1ros, c\u00edm\u2026",
-            "clear_label": "\u2715",
-            "clear_title": "Sz\u0171r\u00e9s t\u00f6rl\u00e9se"
+            "placeholder": "Keresés: címke, város, cím…",
+            "clear_label": "✕",
+            "clear_title": "Szűrés törlése"
         },
         "actions": {
             "ok": "OK",
-            "delete": "T\u00f6rl\u00e9s",
-            "delete_disabled_hint": "Nem t\u00f6r\u00f6lhet\u0151 az alap sor"
+            "delete": "Törlés",
+            "delete_disabled_hint": "Nem törölhető az alap sor"
         },
         "items": {
-            "label_missing": "C\u00edmke n\u00e9lk\u00fcl",
-            "deadline_label": "Hat\u00e1rid\u0151",
-            "deadline_missing": "Nincs hat\u00e1rid\u0151",
-            "deadline_relative_future": "h\u00e1tra: {days} nap",
-            "deadline_relative_today": "ma esed\u00e9kes",
-            "deadline_relative_past": "lej\u00e1rt: {days} napja"
+            "label_missing": "Címke nélkül",
+            "deadline_label": "Határidő",
+            "deadline_missing": "Nincs határidő",
+            "deadline_relative_future": "hátra: {days} nap",
+            "deadline_relative_today": "ma esedékes",
+            "deadline_relative_past": "lejárt: {days} napja"
         },
         "messages": {
-            "address_required": "Adj meg val\u00f3s c\u00edmet!",
-            "load_error": "Bet\u00f6lt\u00e9si hiba: k\u00e9rlek friss\u00edtsd az oldalt.",
-            "delete_round_confirm": "Biztosan t\u00f6rl\u00f6d a(z) \"{name}\" k\u00f6r \u00f6sszes c\u00edm\u00e9t?",
-            "delete_round_success": "K\u00f6r t\u00f6r\u00f6lve. T\u00e9telek: {count}.",
-            "delete_round_error": "A k\u00f6r t\u00f6rl\u00e9se nem siker\u00fclt.",
-            "navigation_empty": "Nincs navig\u00e1lhat\u00f3 c\u00edm ebben a k\u00f6rben.",
-            "navigation_skip": "Figyelem: {count} c\u00edm nem ker\u00fclt bele (nincs geolok\u00e1ci\u00f3).",
-            "geocode_failed": "Geok\u00f3dol\u00e1s sikertelen.",
-            "geocode_failed_detailed": "Geok\u00f3dol\u00e1s sikertelen. Pr\u00f3b\u00e1ld pontos\u00edtani a c\u00edmet.",
-            "undo_unavailable": "Nincs visszavonhat\u00f3 m\u0171velet.",
-            "import_success": "Import k\u00e9sz.",
-            "import_error": "Az import\u00e1l\u00e1s nem siker\u00fclt.",
-            "import_mode_prompt": "Fel\u00fcl\u00edrjuk a jelenlegi adatokat az import\u00e1lt CSV-vel, vagy hozz\u00e1adjuk az \u00faj sorokat?",
-            "import_mode_replace": "Fel\u00fcl\u00edr\u00e1s",
-            "import_mode_append": "Hozz\u00e1ad\u00e1s",
-            "import_mode_confirm_replace": "Biztosan fel\u00fcl\u00edrjuk a jelenlegi adatokat a CSV tartalm\u00e1val?",
-            "import_mode_confirm_append": "Biztosan hozz\u00e1adjuk az \u00faj sorokat a megl\u00e9v\u0151 list\u00e1hoz?",
-            "import_geocode_partial": "Figyelem: {count} c\u00edmet nem siker\u00fclt automatikusan t\u00e9rk\u00e9pre tenni.",
-            "import_geocode_partial_detail": "Nem siker\u00fclt geok\u00f3dolni:\n{list}"
+            "address_required": "Adj meg valós címet!",
+            "load_error": "Betöltési hiba: kérlek frissítsd az oldalt.",
+            "delete_round_confirm": "Biztosan törlöd a(z) \"{name}\" kör összes címét?",
+            "delete_round_success": "Kör törölve. Tételek: {count}.",
+            "delete_round_error": "A kör törlése nem sikerült.",
+            "navigation_empty": "Nincs navigálható cím ebben a körben.",
+            "navigation_skip": "Figyelem: {count} cím nem került bele (nincs geolokáció).",
+            "geocode_failed": "Geokódolás sikertelen.",
+            "geocode_failed_detailed": "Geokódolás sikertelen. Próbáld pontosítani a címet.",
+            "undo_unavailable": "Nincs visszavonható művelet.",
+            "import_success": "Import kész.",
+            "import_error": "Az importálás nem sikerült.",
+            "import_mode_prompt": "Felülírjuk a jelenlegi adatokat az importált CSV-vel, vagy hozzáadjuk az új sorokat?",
+            "import_mode_replace": "Felülírás",
+            "import_mode_append": "Hozzáadás",
+            "import_mode_confirm_replace": "Biztosan felülírjuk a jelenlegi adatokat a CSV tartalmával?",
+            "import_mode_confirm_append": "Biztosan hozzáadjuk az új sorokat a meglévő listához?",
+            "import_geocode_partial": "Figyelem: {count} címet nem sikerült automatikusan térképre tenni.",
+            "import_geocode_partial_detail": "Nem sikerült geokódolni:\n{list}"
         }
     },
     "items": {
@@ -306,29 +306,29 @@
             {
                 "id": "label",
                 "type": "text",
-                "label": "C\u00edmke",
-                "placeholder": "pl. \u00dcgyf\u00e9l neve / k\u00f3d",
+                "label": "Címke",
+                "placeholder": "pl. Ügyfél neve / kód",
                 "default": ""
             },
             {
                 "id": "address",
                 "type": "text",
-                "label": "Teljes c\u00edm",
-                "placeholder": "C\u00edm",
+                "label": "Teljes cím",
+                "placeholder": "Cím",
                 "default": "",
                 "required": true
             },
             {
                 "id": "note",
                 "type": "text",
-                "label": "Megjegyz\u00e9s",
-                "placeholder": "Megjegyz\u00e9s",
+                "label": "Megjegyzés",
+                "placeholder": "Megjegyzés",
                 "default": ""
             },
             {
                 "id": "deadline",
                 "type": "date",
-                "label": "Kisz\u00e1ll\u00edt\u00e1s hat\u00e1rideje",
+                "label": "Kiszállítás határideje",
                 "placeholder": "",
                 "default": ""
             }
@@ -337,7 +337,7 @@
             {
                 "id": "weight",
                 "type": "number",
-                "label": "S\u00faly (kg)",
+                "label": "Súly (kg)",
                 "placeholder": "kg",
                 "step": 10,
                 "min": 0,
@@ -349,26 +349,26 @@
             {
                 "id": "volume",
                 "type": "number",
-                "label": "T\u00e9rfogat (m\u00b3)",
-                "placeholder": "m\u00b3",
+                "label": "Térfogat (m³)",
+                "placeholder": "m³",
                 "step": 0.5,
                 "min": 0,
                 "precision": 1,
-                "unit": "m\u00b3",
-                "row_format": "{value} m\u00b3",
-                "group_format": "{sum} m\u00b3"
+                "unit": "m³",
+                "row_format": "{value} m³",
+                "group_format": "{sum} m³"
             }
         ],
         "round_field": {
-            "label": "K\u00f6r",
+            "label": "Kör",
             "placeholder": ""
         },
         "meta_display": {
-            "separator": " \u00b7 ",
+            "separator": " · ",
             "missing_warning": {
                 "enabled": true,
                 "text": "!",
-                "title": "Hi\u00e1nyz\u00f3 s\u00faly \u00e9s t\u00e9rfogat",
+                "title": "Hiányzó súly és térfogat",
                 "class": "warn"
             }
         },
@@ -377,9 +377,17 @@
             "field_id": "deadline",
             "icon_size": 16,
             "steps": [
-                { "min_days": 7, "color": "#16a34a" },
-                { "min_days": 3, "color": "#f97316" },
-                { "color": "#dc2626" }
+                {
+                    "min_days": 7,
+                    "color": "#16a34a"
+                },
+                {
+                    "min_days": 3,
+                    "color": "#f97316"
+                },
+                {
+                    "color": "#dc2626"
+                }
             ]
         }
     },
@@ -387,10 +395,10 @@
         "include_label": true,
         "include_address": true,
         "include_note": true,
-        "group_header_template": "=== K\u00f6r {id} \u2013 {label} ==="
+        "group_header_template": "=== Kör {id} – {label} ==="
     },
     "print": {
-        "title_suffix": " \u2013 Nyomtat\u00e1s",
-        "list_title": "Sz\u00e1ll\u00edt\u00e1si lista"
+        "title_suffix": " – Nyomtatás",
+        "list_title": "Szállítási lista"
     }
 }
