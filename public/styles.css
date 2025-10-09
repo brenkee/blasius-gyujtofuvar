@@ -27,9 +27,15 @@ h1{font-size:18px;margin:0 0 6px}
 .planned-date-input.saved-flash{background:rgba(34,197,94,0.25);border-color:rgba(16,185,129,0.5)}
 .group-body{display:grid;gap:10px;padding:10px}
 .row{border:1px solid var(--border);border-radius:10px;background:var(--panel)}
-.row .header{display:flex;align-items:center;gap:8px;padding:10px;border-bottom:1px solid var(--border)}
+.row .header{display:flex;align-items:flex-start;gap:8px;padding:10px;border-bottom:1px solid var(--border)}
 .num{min-width:36px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff}
-.city{color:var(--text);font-weight:700;flex:1 1 auto;min-width:0}
+.header-main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}
+.title-label-row{display:flex;align-items:center;gap:6px;min-width:0}
+.title-label{font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.title-label.placeholder{color:var(--muted);font-style:italic;font-weight:600}
+.title-city{color:var(--muted);font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.deadline-indicator{width:0;height:0;background-color:var(--deadline-color,currentColor);-webkit-mask:url('../hatarido.svg') center/contain no-repeat;mask:url('../hatarido.svg') center/contain no-repeat;display:inline-flex;flex-shrink:0;opacity:0;transition:opacity .2s ease}
+.deadline-indicator[data-visible="true"]{width:var(--deadline-icon-size,16px);height:var(--deadline-icon-size,16px);opacity:1}
 .tools{display:flex;gap:6px;align-items:center}
 .iconbtn{border:1px solid var(--border);background:var(--panel);color:var(--text);border-radius:8px;padding:4px 8px;cursor:pointer;line-height:1}
 .iconbtn:hover{background:rgba(148,163,184,0.12)}

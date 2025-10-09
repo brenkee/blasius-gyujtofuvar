@@ -107,6 +107,157 @@
   const getAddressFieldId = ()=> cfg('items.address_field_id', 'address');
   const getLabelFieldId = ()=> cfg('items.label_field_id', 'label');
   const getNoteFieldId = ()=> cfg('items.note_field_id', 'note');
+  const getFieldDefById = (fid)=> getFieldDefs().find(field => field && field.id === fid);
+
+  const DEFAULT_DEADLINE_STEPS = [
+    {minDays: 7, color: '#16a34a'},
+    {minDays: 3, color: '#f97316'},
+    {minDays: null, color: '#dc2626'}
+  ];
+
+  function deadlineIndicatorCfg(){
+    const raw = cfg('items.deadline_indicator', null);
+    return (raw && typeof raw === 'object') ? raw : {};
+  }
+
+  function getDeadlineFieldId(){
+    const node = deadlineIndicatorCfg();
+    const candidate = node.field_id ?? cfg('items.deadline_field_id', null);
+    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
+    return 'deadline';
+  }
+
+  function isDeadlineFeatureEnabled(){
+    const node = deadlineIndicatorCfg();
+    if (node.enabled === false) return false;
+    const fid = getDeadlineFieldId();
+    if (!fid) return false;
+    const field = getFieldDefById(fid);
+    if (!field || field.enabled === false) return false;
+    return true;
+  }
+
+  function getDeadlineIconSize(){
+    const node = deadlineIndicatorCfg();
+    let size = node.icon_size;
+    if ((size == null) && node.icon && typeof node.icon === 'object') {
+      size = node.icon.size;
+    }
+    if (typeof size === 'string' && size.trim() !== '') {
+      const parsed = Number(size);
+      if (Number.isFinite(parsed)) size = parsed;
+    }
+    size = Number(size);
+    if (!Number.isFinite(size) || size <= 0) size = 16;
+    return size;
+  }
+
+  function normalizeNumber(val){
+    if (val == null || val === '') return null;
+    if (typeof val === 'number') return Number.isFinite(val) ? val : null;
+    if (typeof val === 'string') {
+      const trimmed = val.trim().toLowerCase();
+      if (!trimmed) return null;
+      if (['inf','infinity','+inf','+infinity'].includes(trimmed)) return Infinity;
+      if (['-inf','-infinity'].includes(trimmed)) return -Infinity;
+      const num = Number(trimmed);
+      return Number.isFinite(num) ? num : null;
+    }
+    return null;
+  }
+
+  function deadlineSteps(){
+    const node = deadlineIndicatorCfg();
+    const raw = Array.isArray(node.steps) ? node.steps : null;
+    if (!raw || !raw.length) return DEFAULT_DEADLINE_STEPS;
+    const normalized = [];
+    raw.forEach(step => {
+      if (!step || typeof step !== 'object') return;
+      const colorRaw = step.color;
+      if (typeof colorRaw !== 'string' || !colorRaw.trim()) return;
+      const min = normalizeNumber(step.min_days ?? step.min ?? step.days ?? step.from ?? step.start);
+      const max = normalizeNumber(step.max_days ?? step.max ?? step.to ?? step.end);
+      const label = typeof step.label === 'string' ? step.label : null;
+      normalized.push({
+        minDays: min,
+        maxDays: max,
+        color: colorRaw.trim(),
+        label,
+        isDefault: step.default === true
+      });
+    });
+    return normalized.length ? normalized : DEFAULT_DEADLINE_STEPS;
+  }
+
+  function chooseDeadlineStep(diffDays){
+    const steps = deadlineSteps();
+    let fallback = steps[steps.length - 1] || null;
+    for (const step of steps){
+      const min = step.minDays != null ? step.minDays : -Infinity;
+      const max = step.maxDays != null ? step.maxDays : Infinity;
+      if (diffDays >= min && diffDays <= max) return step;
+      if (step.isDefault) fallback = step;
+    }
+    return fallback;
+  }
+
+  function parseDeadlineValue(raw){
+    if (raw == null) return null;
+    const str = String(raw).trim();
+    if (!str) return null;
+    const m = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return null;
+    const year = Number(m[1]);
+    const month = Number(m[2]);
+    const day = Number(m[3]);
+    if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+    const dateUtc = Date.UTC(year, month - 1, day);
+    if (!Number.isFinite(dateUtc)) return null;
+    const now = new Date();
+    const todayUtc = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+    const diffDays = Math.round((dateUtc - todayUtc) / 86400000);
+    const step = chooseDeadlineStep(diffDays) || {};
+    return {
+      value: str,
+      year,
+      month,
+      day,
+      diffDays,
+      color: step.color || null,
+      stepLabel: step.label || null
+    };
+  }
+
+  function deadlineLabelText(){
+    const fid = getDeadlineFieldId();
+    const field = getFieldDefById(fid);
+    const fallback = field && typeof field.label === 'string' ? field.label : 'Határidő';
+    return text('items.deadline_label', fallback || 'Határidő');
+  }
+
+  function deadlineRelativeText(info){
+    if (!info) return '';
+    const days = info.diffDays;
+    if (days > 0) return format(text('items.deadline_relative_future', 'hátra: {days} nap'), {days});
+    if (days === 0) return text('items.deadline_relative_today', 'ma esedékes');
+    return format(text('items.deadline_relative_past', 'lejárt: {days} napja'), {days: Math.abs(days)});
+  }
+
+  function deadlineTooltip(info){
+    if (!info) return '';
+    const label = deadlineLabelText();
+    const rel = deadlineRelativeText(info);
+    if (rel) return `${label}: ${info.value} · ${rel}`;
+    return `${label}: ${info.value}`;
+  }
+
+  function deadlineDisplay(info){
+    if (!info) return '';
+    const label = deadlineLabelText();
+    const rel = deadlineRelativeText(info);
+    if (rel) return `${label}: ${info.value} (${rel})`;
+    return `${label}: ${info.value}`;
+  }
 
   function defaultValueForField(def){
     if (!def) return '';
@@ -364,6 +515,59 @@
   function updateRowHeaderMeta(row, it){
     const meta = row.querySelector('[data-meta]');
     if (meta) meta.innerHTML = metaHTML(it);
+  }
+
+  function updateRowHeaderLabel(row, it){
+    const labelEl = row?.querySelector('[data-label-display]');
+    if (!labelEl) return;
+    const labelFieldId = getLabelFieldId();
+    const raw = labelFieldId && it ? it[labelFieldId] : '';
+    const str = raw != null ? String(raw).trim() : '';
+    if (str) {
+      labelEl.textContent = str;
+      labelEl.title = str;
+      labelEl.classList.remove('placeholder');
+    } else {
+      const fallback = text('items.label_missing', 'Címke nélkül');
+      labelEl.textContent = fallback;
+      labelEl.title = fallback;
+      labelEl.classList.add('placeholder');
+    }
+  }
+
+  function updateDeadlineIndicator(row, it){
+    const indicator = row?.querySelector('[data-deadline-indicator]');
+    if (!indicator) return;
+    if (!isDeadlineFeatureEnabled()) {
+      indicator.style.display = 'none';
+      indicator.dataset.visible = 'false';
+      indicator.removeAttribute('title');
+      indicator.removeAttribute('aria-label');
+      indicator.removeAttribute('role');
+      indicator.setAttribute('aria-hidden', 'true');
+      return;
+    }
+    indicator.style.display = '';
+    indicator.style.setProperty('--deadline-icon-size', `${getDeadlineIconSize()}px`);
+    const fid = getDeadlineFieldId();
+    const info = it && fid ? parseDeadlineValue(it[fid]) : null;
+    if (info) {
+      const color = info.color || '#2563eb';
+      const tooltip = deadlineTooltip(info);
+      indicator.dataset.visible = 'true';
+      indicator.style.setProperty('--deadline-color', color);
+      indicator.setAttribute('title', tooltip);
+      indicator.setAttribute('aria-label', tooltip);
+      indicator.setAttribute('role', 'img');
+      indicator.setAttribute('aria-hidden', 'false');
+    } else {
+      indicator.dataset.visible = 'false';
+      indicator.style.setProperty('--deadline-color', 'transparent');
+      indicator.removeAttribute('title');
+      indicator.removeAttribute('aria-label');
+      indicator.removeAttribute('role');
+      indicator.setAttribute('aria-hidden', 'true');
+    }
   }
 
   // ======= SAVE STATUS (pill a jobb felső sarokban)
@@ -813,6 +1017,13 @@
     if (addrVal) popupFields.push(`<div style="color:#4b5563">${esc(addrVal)}</div>`);
     if (extras.length) popupFields.push(`<div style="margin-top:4px;color:#334155">${extras.map(esc).join(' · ')}</div>`);
     if (noteVal) popupFields.push(`<div style="margin-top:4px;">${esc(noteVal)}</div>`);
+    if (isDeadlineFeatureEnabled()) {
+      const deadlineFieldId = getDeadlineFieldId();
+      const info = deadlineFieldId ? parseDeadlineValue(it[deadlineFieldId]) : null;
+      if (info) {
+        popupFields.push(`<div style="margin-top:4px;color:#1f2937;">${esc(deadlineDisplay(info))}</div>`);
+      }
+    }
     let googleQuery = '';
     const latNum = Number(it.lat);
     const lonNum = Number(it.lon);
@@ -944,9 +1155,9 @@
   }
 
   function renderRow(it, globalIndex){
-    const addressField = getAddressFieldId();
-    const labelField = getLabelFieldId();
-    const city = cityFromDisplay(it[addressField], it.city);
+    const addressFieldId = getAddressFieldId();
+    const labelFieldId = getLabelFieldId();
+    const city = cityFromDisplay(it[addressFieldId], it.city);
     const row = document.createElement('div');
     row.className = 'row';
     row.dataset.rowId = it.id;
@@ -1026,10 +1237,23 @@
     const delLabel = actionsText.delete ?? 'Törlés';
     const roundLabelText = cfg('items.round_field.label', 'Kör');
 
+    const rawLabelValue = labelFieldId ? (it[labelFieldId] ?? '') : '';
+    const labelString = rawLabelValue != null ? String(rawLabelValue).trim() : '';
+    const labelPlaceholder = text('items.label_missing', 'Címke nélkül');
+    const deadlineFieldId = getDeadlineFieldId();
+    const deadlineEnabled = isDeadlineFeatureEnabled();
+    const deadlineSize = getDeadlineIconSize();
+
     row.innerHTML = `
       <div class="header">
         <div class="num" data-num style="background:${roundColor}; color:${numTextColor}">${String(globalIndex+1).padStart(2,'0')}</div>
-        <div class="city" data-city title="${esc(city||'—')}">${esc(city || '—')}</div>
+        <div class="header-main">
+          <div class="title-label-row">
+            <span class="title-label${labelString ? '' : ' placeholder'}" data-label-display title="${esc(labelString || labelPlaceholder)}">${esc(labelString || labelPlaceholder)}</span>
+            <span class="deadline-indicator" data-deadline-indicator style="--deadline-icon-size:${deadlineSize}px;${deadlineEnabled?'':'display:none;'}" aria-hidden="true"></span>
+          </div>
+          <div class="title-city" data-city title="${esc(city||'—')}">${esc(city || '—')}</div>
+        </div>
         <div class="meta" data-meta style="margin-left:auto;margin-right:8px;"></div>
         <div class="tools"><button class="iconbtn toggle" title="${collapsed?esc(text('toolbar.expand_all.title','Kinyit')):esc(text('toolbar.collapse_all.title','Összezár'))}">${collapsed?'▶':'▼'}</button></div>
       </div>
@@ -1058,6 +1282,10 @@
         </div>
       </div>
     `;
+
+    updateRowHeaderMeta(row, it);
+    updateRowHeaderLabel(row, it);
+    updateDeadlineIndicator(row, it);
 
     // Lista → Térkép fókusz: kattintás és fókusz események
     row.addEventListener('click', (e) => {
@@ -1104,7 +1332,6 @@
     const roundS = row.querySelector('#round_'+cssId(it.id));
     const okBtn  = row.querySelector('.ok');
     const delBtn = row.querySelector('.del');
-    const addressFieldId = getAddressFieldId();
 
     fieldInputs.forEach((inp, fid)=>{
       inp.addEventListener('change', ()=>{
@@ -1124,9 +1351,20 @@
         if (fid === addressFieldId){
           const cityNow = cityFromDisplay(state.items[idx][fid], state.items[idx].city);
           state.items[idx].city = cityNow;
-          row.querySelector('[data-city]').textContent = cityNow || '—';
+          const cityEl = row.querySelector('[data-city]');
+          if (cityEl){
+            cityEl.textContent = cityNow || '—';
+            cityEl.setAttribute('title', cityNow || '—');
+          }
           refreshDeleteButtonState(row, state.items[idx]);
         }
+        if (fid === labelFieldId){
+          updateRowHeaderLabel(row, state.items[idx]);
+        }
+        if (fid === deadlineFieldId){
+          updateDeadlineIndicator(row, state.items[idx]);
+        }
+        upsertMarker(state.items[idx], idx);
         saveAll();
         updateRowHeaderMeta(row, state.items[idx]);
       });
@@ -1143,6 +1381,7 @@
           const num = parseFloat(raw);
           state.items[idx][fid] = Number.isFinite(num) ? num : null;
         }
+        upsertMarker(state.items[idx], idx);
         saveAll();
         renderGroupHeaderTotalsForRound(+state.items[idx].round||0);
         updateRowHeaderMeta(row, state.items[idx]);

@@ -268,6 +268,14 @@
             "delete": "T\u00f6rl\u00e9s",
             "delete_disabled_hint": "Nem t\u00f6r\u00f6lhet\u0151 az alap sor"
         },
+        "items": {
+            "label_missing": "C\u00edmke n\u00e9lk\u00fcl",
+            "deadline_label": "Hat\u00e1rid\u0151",
+            "deadline_missing": "Nincs hat\u00e1rid\u0151",
+            "deadline_relative_future": "h\u00e1tra: {days} nap",
+            "deadline_relative_today": "ma esed\u00e9kes",
+            "deadline_relative_past": "lej\u00e1rt: {days} napja"
+        },
         "messages": {
             "address_required": "Adj meg val\u00f3s c\u00edmet!",
             "load_error": "Bet\u00f6lt\u00e9si hiba: k\u00e9rlek friss\u00edtsd az oldalt.",
@@ -316,6 +324,13 @@
                 "label": "Megjegyz\u00e9s",
                 "placeholder": "Megjegyz\u00e9s",
                 "default": ""
+            },
+            {
+                "id": "deadline",
+                "type": "date",
+                "label": "Kisz\u00e1ll\u00edt\u00e1s hat\u00e1rideje",
+                "placeholder": "",
+                "default": ""
             }
         ],
         "metrics": [
@@ -356,6 +371,16 @@
                 "title": "Hi\u00e1nyz\u00f3 s\u00faly \u00e9s t\u00e9rfogat",
                 "class": "warn"
             }
+        },
+        "deadline_indicator": {
+            "enabled": true,
+            "field_id": "deadline",
+            "icon_size": 16,
+            "steps": [
+                { "min_days": 7, "color": "#16a34a" },
+                { "min_days": 3, "color": "#f97316" },
+                { "color": "#dc2626" }
+            ]
         }
     },
     "export": {

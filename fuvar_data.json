@@ -11,7 +11,8 @@
             "address": "",
             "note": "",
             "weight": null,
-            "volume": null
+            "volume": null,
+            "deadline": ""
         },
         {
             "id": "row_23w2612se52",
@@ -24,7 +25,8 @@
             "round": 2,
             "collapsed": true,
             "weight": 200,
-            "volume": 5.5
+            "volume": 5.5,
+            "deadline": "2024-05-20"
         },
         {
             "id": "row_037sdru0o898",
@@ -37,7 +39,8 @@
             "lat": 46.7490826,
             "lon": 17.5582659,
             "round": 2,
-            "collapsed": true
+            "collapsed": true,
+            "deadline": "2024-05-10"
         },
         {
             "id": "row_0ftwkdtf8v4i",
@@ -50,7 +53,8 @@
             "lat": 46.3564692,
             "lon": 17.7886886,
             "round": 2,
-            "collapsed": true
+            "collapsed": true,
+            "deadline": "2024-05-06"
         },
         {
             "id": "row_jrq2hx9ahyk",
@@ -63,7 +67,8 @@
             "round": 3,
             "collapsed": true,
             "weight": 10,
-            "volume": 10
+            "volume": 10,
+            "deadline": "2024-05-04"
         },
         {
             "id": "row_w52hcj9wzx",
@@ -76,7 +81,8 @@
             "round": 3,
             "collapsed": true,
             "weight": 1000,
-            "volume": 3
+            "volume": 3,
+            "deadline": "2024-05-09"
         },
         {
             "id": "row_f7b42h18kyv",
@@ -89,7 +95,8 @@
             "round": 3,
             "collapsed": true,
             "volume": 3,
-            "weight": 1000
+            "weight": 1000,
+            "deadline": "2024-05-11"
         },
         {
             "id": "row_kpou94e3uj",
@@ -102,7 +109,8 @@
             "round": 3,
             "collapsed": true,
             "weight": 300,
-            "volume": 4
+            "volume": 4,
+            "deadline": "2024-05-03"
         },
         {
             "id": "row_lhh0naj1lul",
@@ -115,7 +123,8 @@
             "round": 4,
             "collapsed": true,
             "weight": 200,
-            "volume": 1
+            "volume": 1,
+            "deadline": "2024-05-15"
         },
         {
             "id": "row_f46d1qlxb18",
@@ -128,7 +137,8 @@
             "round": 4,
             "collapsed": true,
             "weight": 1000,
-            "volume": 3
+            "volume": 3,
+            "deadline": "2024-05-02"
         },
         {
             "id": "row_hblr1l96q5e",
@@ -141,7 +151,8 @@
             "round": 4,
             "collapsed": true,
             "weight": 300,
-            "volume": 10
+            "volume": 10,
+            "deadline": "2024-05-01"
         },
         {
             "id": "row_zoo1vqjge4",
@@ -154,7 +165,8 @@
             "round": 4,
             "collapsed": true,
             "weight": 30,
-            "volume": 30
+            "volume": 30,
+            "deadline": "2024-05-18"
         },
         {
             "id": "row_kkxpqs13jv",
@@ -167,7 +179,8 @@
             "round": 7,
             "collapsed": true,
             "weight": 10,
-            "volume": 10
+            "volume": 10,
+            "deadline": ""
         },
         {
             "id": "row_3oxwzqp5q3l",
@@ -180,7 +193,8 @@
             "round": 7,
             "collapsed": true,
             "weight": 1500,
-            "volume": 2
+            "volume": 2,
+            "deadline": ""
         },
         {
             "id": "row_qa0ncevku1",
@@ -193,7 +207,8 @@
             "round": 7,
             "collapsed": true,
             "weight": 10,
-            "volume": 10
+            "volume": 10,
+            "deadline": ""
         },
         {
             "id": "row_c6aw897o5h4",
@@ -206,12 +221,13 @@
             "round": 7,
             "collapsed": true,
             "weight": 10,
-            "volume": 10
+            "volume": 10,
+            "deadline": ""
         },
         {
             "id": "row_fzk21st1odf",
             "label": "Vajda Zsolt",
-            "address": "Orosháza 5900 Luther u.42\/2",
+            "address": "Orosháza 5900 Luther u.42/2",
             "city": "Orosháza",
             "note": "hungarocell és gyapot 150k",
             "lat": 46.5630622,
@@ -219,7 +235,8 @@
             "round": 7,
             "collapsed": true,
             "weight": 10,
-            "volume": 10
+            "volume": 10,
+            "deadline": ""
         },
         {
             "id": "row_foanm1qw27a",
@@ -232,7 +249,8 @@
             "round": 8,
             "collapsed": true,
             "weight": 1000,
-            "volume": 10
+            "volume": 10,
+            "deadline": ""
         },
         {
             "id": "row_pmt6tpqerdr",
@@ -245,7 +263,8 @@
             "round": 8,
             "collapsed": true,
             "weight": 200,
-            "volume": 2
+            "volume": 2,
+            "deadline": ""
         },
         {
             "id": "row_hd7ww7mruyp",
@@ -258,7 +277,8 @@
             "round": 10,
             "collapsed": true,
             "weight": 20,
-            "volume": 1
+            "volume": 1,
+            "deadline": ""
         },
         {
             "id": "row_iqu53imkf9f",
@@ -271,7 +291,8 @@
             "round": 10,
             "collapsed": true,
             "weight": 300,
-            "volume": 5
+            "volume": 5,
+            "deadline": ""
         },
         {
             "id": "row_awdsibwjl8t",
@@ -283,7 +304,8 @@
             "lon": 21.7204847,
             "round": 10,
             "collapsed": true,
-            "weight": 1123
+            "weight": 1123,
+            "deadline": ""
         },
         {
             "id": "row_f9k3hm7lu1t",
@@ -296,7 +318,8 @@
             "address": "debrecen",
             "note": "teszt",
             "weight": null,
-            "volume": null
+            "volume": null,
+            "deadline": ""
         },
         {
             "id": "row_b170x1n75k",
@@ -309,7 +332,8 @@
             "round": 11,
             "collapsed": true,
             "weight": 40,
-            "volume": 2
+            "volume": 2,
+            "deadline": ""
         }
     ],
     "round_meta": {

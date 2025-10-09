@@ -178,6 +178,14 @@ $CFG_DEFAULT = [
       "delete" => "Törlés",
       "delete_disabled_hint" => "Nem törölhető az alap sor"
     ],
+    "items" => [
+      "label_missing" => "Címke nélkül",
+      "deadline_label" => "Határidő",
+      "deadline_missing" => "Nincs határidő",
+      "deadline_relative_future" => "hátra: {days} nap",
+      "deadline_relative_today" => "ma esedékes",
+      "deadline_relative_past" => "lejárt: {days} napja"
+    ],
       "messages" => [
         "address_required" => "Adj meg teljes címet!",
         "load_error" => "Betöltési hiba: kérlek frissítsd az oldalt.",
@@ -226,6 +234,13 @@ $CFG_DEFAULT = [
         "label" => "Megjegyzés",
         "placeholder" => "időablak, kapucsengő, stb.",
         "default" => ""
+      ],
+      [
+        "id" => "deadline",
+        "type" => "date",
+        "label" => "Kiszállítás határideje",
+        "placeholder" => "",
+        "default" => ""
       ]
     ],
     "metrics" => [
@@ -265,6 +280,16 @@ $CFG_DEFAULT = [
         "text" => "!",
         "title" => "Hiányzó súly és térfogat",
         "class" => "warn"
+      ]
+    ],
+    "deadline_indicator" => [
+      "enabled" => true,
+      "field_id" => "deadline",
+      "icon_size" => 16,
+      "steps" => [
+        ["min_days" => 7, "color" => "#16a34a"],
+        ["min_days" => 3, "color" => "#f97316"],
+        ["color" => "#dc2626"]
       ]
     ]
   ],

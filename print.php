@@ -4,6 +4,7 @@ require __DIR__ . '/common.php';
 $roundFilter = isset($_GET['round']) ? (int)$_GET['round'] : null;
 
 $itemsCfg = $CFG['items'] ?? [];
+$fieldDefs = array_values(array_filter($itemsCfg['fields'] ?? [], function($f){ return ($f['enabled'] ?? true) !== false; }));
 $metricsCfg = array_values(array_filter($itemsCfg['metrics'] ?? [], function($m){ return ($m['enabled'] ?? true) !== false; }));
 $labelFieldId = $itemsCfg['label_field_id'] ?? 'label';
 $addressFieldId = $itemsCfg['address_field_id'] ?? 'address';
@@ -41,6 +42,27 @@ function format_metric_value($metric, $value, $context='row') {
   }
   return trim($num . ($unit ? ' '.$unit : ''));
 }
+
+$deadlineCfg = is_array($itemsCfg['deadline_indicator'] ?? null) ? $itemsCfg['deadline_indicator'] : [];
+$deadlineFieldId = is_string($deadlineCfg['field_id'] ?? null) && trim($deadlineCfg['field_id']) !== ''
+  ? trim($deadlineCfg['field_id'])
+  : 'deadline';
+$deadlineFieldLabel = $deadlineFieldId;
+$deadlineFieldEnabled = false;
+foreach ($fieldDefs as $field) {
+  $fid = $field['id'] ?? null;
+  if ($fid === $deadlineFieldId) {
+    $deadlineFieldEnabled = true;
+    if (!empty($field['label'])) {
+      $deadlineFieldLabel = $field['label'];
+    }
+    break;
+  }
+}
+$deadlineFeatureEnabled = $deadlineFieldEnabled && (($deadlineCfg['enabled'] ?? true) !== false);
+$deadlineLabelText = $deadlineFeatureEnabled
+  ? ($CFG['text']['items']['deadline_label'] ?? $deadlineFieldLabel ?? 'Határidő')
+  : '';
 
 $printTitleSuffix = $CFG['print']['title_suffix'] ?? ' – Nyomtatás';
 $printListTitle = $CFG['print']['list_title'] ?? 'Szállítási lista';
@@ -113,6 +135,12 @@ $printListTitle = $CFG['print']['list_title'] ?? 'Szállítási lista';
           $id = $metric['id'] ?? null; if (!$id) continue;
           if (isset($it[$id]) && $it[$id] !== '') {
             $extras[] = htmlspecialchars(format_metric_value($metric, $it[$id], 'row'));
+          }
+        }
+        if ($deadlineFeatureEnabled) {
+          $deadlineRaw = isset($it[$deadlineFieldId]) ? trim((string)$it[$deadlineFieldId]) : '';
+          if ($deadlineRaw !== '') {
+            $extras[] = htmlspecialchars($deadlineLabelText . ': ' . $deadlineRaw);
           }
         }
 
