@@ -12,7 +12,8 @@ $groupText = $CFG['text']['group'] ?? [];
 $sumTemplate = $groupText['sum_template'] ?? 'Összesen: {parts}';
 $sumSeparator = $groupText['sum_separator'] ?? ' · ';
 
-[$items] = data_store_read($DATA_FILE);
+[$items, $roundMeta] = data_store_read($DATA_FILE);
+if (!is_array($roundMeta)) { $roundMeta = []; }
 
 $auto = (bool)($CFG['app']['auto_sort_by_round'] ?? true);
 $zeroBottom = (bool)($CFG['app']['round_zero_at_bottom'] ?? true);
@@ -55,6 +56,7 @@ $printListTitle = $CFG['print']['list_title'] ?? 'Szállítási lista';
     h1{margin:0 0 10px;font-size:20px}
     .meta{color:#555;margin-bottom:16px}
     .round{margin:16px 0 10px;font-weight:800;border-bottom:2px solid #eee;padding-bottom:4px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+    .planned{color:#1f2937;font-weight:700;font-size:12px}
     .sum{color:#6b7280;font-weight:700;font-size:12px}
     .item{padding:6px 0;border-bottom:1px dashed #e5e7eb}
     .lbl{font-weight:700}.addr{color:#374151}.note{color:#6b7280;font-size:12px;margin-top:2px}
@@ -77,6 +79,11 @@ $printListTitle = $CFG['print']['list_title'] ?? 'Szállítási lista';
     foreach ($by as $rid=>$arr){
       if ($roundFilter!==null && $rid!==$roundFilter) continue;
       $rlabel = $ROUND_MAP[$rid]['label'] ?? (string)$rid;
+      $plannedKey = (string)$rid;
+      $plannedValue = '';
+      if (isset($roundMeta[$plannedKey]['planned_date'])) {
+        $plannedValue = trim((string)$roundMeta[$plannedKey]['planned_date']);
+      }
 
       $totalsParts = [];
       foreach ($metricsCfg as $metric){
@@ -87,6 +94,10 @@ $printListTitle = $CFG['print']['list_title'] ?? 'Szállítási lista';
       }
       $sumText = $totalsParts ? str_replace('{parts}', implode($sumSeparator, $totalsParts), $sumTemplate) : '';
       echo '<div class="round"><div>'.htmlspecialchars($rlabel).'</div>';
+      if ($plannedValue !== '') {
+        $plannedLabel = $CFG['text']['round']['planned_date_label'] ?? 'Tervezett dátum';
+        echo '<div class="planned">'.htmlspecialchars($plannedLabel.': '.$plannedValue).'</div>';
+      }
       if ($sumText !== '') echo '<div class="sum">'.htmlspecialchars($sumText).'</div>';
       echo '</div>';
 

@@ -10,6 +10,21 @@ $jsonHeader = function(){ header('Content-Type: application/json; charset=utf-8'
 
 if ($action === 'cfg') {
   $jsonHeader();
+  $panelStickyRaw = $CFG['ui']['panel']['sticky_top'] ?? false;
+  if (is_array($panelStickyRaw)) {
+    $panelSticky = ['enabled' => !empty($panelStickyRaw['enabled'])];
+    foreach (['top','offset','shadow','background','z_index','zIndex'] as $prop) {
+      if (array_key_exists($prop, $panelStickyRaw)) {
+        $panelSticky[$prop] = $panelStickyRaw[$prop];
+      }
+    }
+  } else {
+    $panelSticky = ['enabled' => (bool)$panelStickyRaw];
+  }
+  $saveStatusCfg = $CFG['ui']['save_status'] ?? [];
+  if (!is_array($saveStatusCfg)) {
+    $saveStatusCfg = [];
+  }
   $JS_CFG = [
     "app" => [
       "title" => $CFG['app']['title'],
@@ -33,7 +48,11 @@ if ($action === 'cfg') {
         "auto_contrast" => (bool)$CFG['ui']['marker']['auto_contrast'],
         "focus_ring_radius" => isset($CFG['ui']['marker']['focus_ring_radius']) ? (float)$CFG['ui']['marker']['focus_ring_radius'] : 80.0,
         "focus_ring_color" => $CFG['ui']['marker']['focus_ring_color'] ?? 'auto'
-      ]
+      ],
+      "panel" => [
+        "sticky_top" => $panelSticky
+      ],
+      "save_status" => $saveStatusCfg
     ],
     "map" => [
       "tiles" => [
@@ -125,7 +144,8 @@ if ($action === 'geocode') {
 if ($action === 'export') {
   $roundFilter = isset($_GET['round']) ? (int)$_GET['round'] : null;
 
-  [$items] = data_store_read($DATA_FILE);
+  [$items, $roundMeta] = data_store_read($DATA_FILE);
+  if (!is_array($roundMeta)) { $roundMeta = []; }
   $auto = (bool)($CFG['app']['auto_sort_by_round'] ?? true);
   $zeroBottom = (bool)($CFG['app']['round_zero_at_bottom'] ?? true);
   if ($auto) {
@@ -167,6 +187,7 @@ if ($action === 'export') {
   ksort($by);
   $tpl = (string)($CFG['export']['group_header_template'] ?? "=== Kör {id} – {label} ===");
   $lines = [];
+  $plannedLabel = $CFG['text']['round']['planned_date_label'] ?? 'Tervezett dátum';
   foreach ($by as $rid => $arr) {
     $label = $ROUND_MAP[$rid]['label'] ?? (string)$rid;
     $totalsParts = [];
@@ -178,7 +199,18 @@ if ($action === 'export') {
     }
     $hdrBase = str_replace(['{id}','{label}'], [$rid,$label], $tpl);
     $sumText = $totalsParts ? str_replace('{parts}', implode($sumSeparator, $totalsParts), $sumTemplate) : '';
-    $lines[] = $hdrBase . ($sumText ? '  | '.$sumText : '');
+    $metaPieces = [$hdrBase];
+    $plannedKey = (string)$rid;
+    if (isset($roundMeta[$plannedKey]['planned_date'])) {
+      $plannedValue = trim((string)$roundMeta[$plannedKey]['planned_date']);
+      if ($plannedValue !== '') {
+        $metaPieces[] = $plannedLabel . ': ' . $plannedValue;
+      }
+    }
+    if ($sumText !== '') {
+      $metaPieces[] = $sumText;
+    }
+    $lines[] = implode('  | ', $metaPieces);
     foreach ($arr as $t){
       $parts = [];
       if (!empty($CFG['export']['include_label'])   && trim((string)($t[$labelFieldId] ?? ''))!=='') $parts[] = trim((string)$t[$labelFieldId]);
@@ -241,7 +273,18 @@ if ($action === 'delete_round') {
       $totalParts[] = $formatMetric($metric, $sum, 'group');
     }
     $summary = $totalParts ? str_replace('{parts}', implode($sumSeparator, $totalParts), $sumTemplate) : '';
-    $headerLine = "[$dt] TÖRÖLT KÖR: $rid – $roundLabel" . ($summary ? '  | '.$summary : '');
+    $headerLine = "[$dt] TÖRÖLT KÖR: $rid – $roundLabel";
+    $plannedLabel = $CFG['text']['round']['planned_date_label'] ?? 'Tervezett dátum';
+    $plannedKey = (string)$rid;
+    if (isset($roundMeta[$plannedKey]['planned_date'])) {
+      $plannedValue = trim((string)$roundMeta[$plannedKey]['planned_date']);
+      if ($plannedValue !== '') {
+        $headerLine .= '  | ' . $plannedLabel . ': ' . $plannedValue;
+      }
+    }
+    if ($summary) {
+      $headerLine .= '  | ' . $summary;
+    }
     $lines = [$headerLine];
     foreach ($removed as $t) {
       $parts = [];

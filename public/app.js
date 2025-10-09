@@ -17,6 +17,8 @@
   const groupsEl = document.getElementById('groups');
   const pinCountEl = document.getElementById('pinCount');
   const themeToggle = document.getElementById('themeToggle');
+  const panelTopEl = document.getElementById('panelTop');
+  let quickSearchClearBtn = null;
 
   const flashTimers = new WeakMap();
 
@@ -139,6 +141,60 @@
     if (max!=null) root.style.setProperty('--panel-max', typeof max === 'number' ? `${max}px` : String(max));
   }
 
+  function applyPanelSticky(){
+    if (!panelTopEl) return;
+    const raw = cfg('ui.panel.sticky_top', false);
+    let enabled = false;
+    let opts = {};
+    if (typeof raw === 'boolean') {
+      enabled = raw;
+    } else if (raw && typeof raw === 'object') {
+      enabled = !!raw.enabled;
+      opts = raw;
+    }
+    panelTopEl.classList.toggle('sticky', enabled);
+    if (enabled && opts && typeof opts === 'object') {
+      const topVal = opts.top ?? opts.offset;
+      if (topVal != null) {
+        panelTopEl.style.top = typeof topVal === 'number' ? `${topVal}px` : String(topVal);
+      } else {
+        panelTopEl.style.top = '';
+      }
+      const shadowVal = opts.shadow;
+      if (shadowVal != null) {
+        panelTopEl.style.boxShadow = shadowVal === '' ? '' : String(shadowVal);
+      } else {
+        panelTopEl.style.boxShadow = '';
+      }
+      const bgVal = opts.background;
+      if (bgVal != null) {
+        panelTopEl.style.background = bgVal === '' ? '' : String(bgVal);
+      } else {
+        panelTopEl.style.background = '';
+      }
+      const zi = opts.z_index ?? opts.zIndex;
+      if (zi != null) {
+        panelTopEl.style.zIndex = String(zi);
+      } else {
+        panelTopEl.style.zIndex = '';
+      }
+    } else {
+      panelTopEl.style.top = '';
+      panelTopEl.style.boxShadow = '';
+      panelTopEl.style.background = '';
+      panelTopEl.style.zIndex = '';
+    }
+  }
+
+  function applyQuickSearchClearStyles(){
+    if (!quickSearchClearBtn) return;
+    const root = document.documentElement;
+    const dark = root.classList.contains('dark');
+    quickSearchClearBtn.style.background = dark ? '#1f2937' : '#f3f4f6';
+    quickSearchClearBtn.style.color = dark ? '#f8fafc' : '#111827';
+    quickSearchClearBtn.style.borderColor = dark ? '#475569' : '#d1d5db';
+  }
+
   // ======= UNDO
   function undoLimit(){
     const limit = Number(cfg('history.max_steps', 3));
@@ -209,10 +265,12 @@
     const saved = localStorage.getItem('fuvar_theme');
     const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
     root.classList.toggle('dark', saved ? (saved==='dark') : prefersDark);
+    applyQuickSearchClearStyles();
     if (themeToggle) {
       themeToggle.addEventListener('click', ()=>{
         root.classList.toggle('dark');
         localStorage.setItem('fuvar_theme', root.classList.contains('dark') ? 'dark' : 'light');
+        applyQuickSearchClearStyles();
       });
     }
   })();
@@ -314,18 +372,28 @@
     if (savePillEl) return savePillEl;
     const el = document.createElement('div');
     el.id = 'saveStatusPill';
-    el.style.position = 'fixed';
-    el.style.top = '10px';
-    el.style.right = '12px';
-    el.style.zIndex = '9999';
-    el.style.padding = '6px 10px';
-    el.style.borderRadius = '999px';
-    el.style.fontSize = '12px';
-    el.style.fontWeight = '600';
-    el.style.boxShadow = '0 2px 6px rgba(0,0,0,.15)';
-    el.style.transition = 'opacity .25s ease';
-    el.style.opacity = '0';
-    el.style.pointerEvents = 'none';
+    const baseStyle = {
+      position: 'fixed',
+      top: '10px',
+      right: '12px',
+      zIndex: '9999',
+      padding: '6px 10px',
+      borderRadius: '999px',
+      fontSize: '12px',
+      fontWeight: '600',
+      boxShadow: '0 2px 6px rgba(0,0,0,.15)',
+      transition: 'opacity .25s ease',
+      opacity: '0',
+      pointerEvents: 'none'
+    };
+    const cfgNode = cfg('ui.save_status', {}) || {};
+    const positionOverrides = (cfgNode.position && typeof cfgNode.position === 'object') ? cfgNode.position : {};
+    const styleOverrides = (cfgNode.style && typeof cfgNode.style === 'object') ? cfgNode.style : {};
+    const merged = {...baseStyle, ...positionOverrides, ...styleOverrides};
+    Object.entries(merged).forEach(([prop, val])=>{
+      if (val == null) return;
+      el.style[prop] = typeof val === 'number' ? `${val}` : String(val);
+    });
     document.body.appendChild(el);
     savePillEl = el;
     return el;
@@ -333,12 +401,33 @@
   function showSaveStatus(ok){
     const el = ensureSavePill();
     el.textContent = ok ? 'Mentve ✓' : 'Mentés sikertelen ✗';
-    el.style.color = ok ? '#065f46' : '#7f1d1d';
-    el.style.background = ok ? '#d1fae5' : '#fee2e2';
-    el.style.border = ok ? '1px solid #a7f3d0' : '1px solid #fecaca';
+    el.style.border = '';
+    el.style.borderColor = '';
+    el.style.background = '';
+    el.style.color = '';
+    const colorsCfg = cfg('ui.save_status.colors', {}) || {};
+    const okCfgRaw = (colorsCfg.success && typeof colorsCfg.success === 'object') ? {...colorsCfg.success} : {};
+    const failCfgRaw = (colorsCfg.error && typeof colorsCfg.error === 'object') ? {...colorsCfg.error} : {};
+    if ('text' in okCfgRaw && !('color' in okCfgRaw)) okCfgRaw.color = okCfgRaw.text;
+    if ('text' in failCfgRaw && !('color' in failCfgRaw)) failCfgRaw.color = failCfgRaw.text;
+    const okStyles = {...{color:'#065f46', background:'#d1fae5', border:'1px solid #a7f3d0'}, ...okCfgRaw};
+    const failStyles = {...{color:'#7f1d1d', background:'#fee2e2', border:'1px solid #fecaca'}, ...failCfgRaw};
+    const styles = ok ? okStyles : failStyles;
+    Object.entries(styles).forEach(([prop, val])=>{
+      if (val == null) return;
+      el.style[prop] = typeof val === 'number' ? `${val}` : String(val);
+    });
     el.style.opacity = '1';
     clearTimeout(savePillTimer);
-    savePillTimer = setTimeout(()=>{ el.style.opacity='0'; }, 1600);
+    const hideAfterRaw = cfg('ui.save_status.hide_after_ms', null);
+    let hideDelay = 1600;
+    if (typeof hideAfterRaw === 'number' && hideAfterRaw >= 0) {
+      hideDelay = hideAfterRaw;
+    } else if (typeof hideAfterRaw === 'string' && hideAfterRaw.trim() !== '') {
+      const parsed = Number(hideAfterRaw);
+      if (Number.isFinite(parsed) && parsed >= 0) hideDelay = parsed;
+    }
+    savePillTimer = setTimeout(()=>{ el.style.opacity='0'; }, hideDelay);
   }
 
   function flashSaved(el){
@@ -1093,9 +1182,16 @@
     wrap.appendChild(inp);
     wrap.appendChild(clearBtn);
 
-    // a groupsEl elé tesszük
-    const p = groupsEl.parentNode;
-    p.insertBefore(wrap, groupsEl);
+    quickSearchClearBtn = clearBtn;
+    applyQuickSearchClearStyles();
+
+    // a groupsEl elé tesszük vagy a panel tetejére
+    const parent = groupsEl.parentNode;
+    if (panelTopEl) {
+      panelTopEl.appendChild(wrap);
+    } else {
+      parent.insertBefore(wrap, groupsEl);
+    }
 
     const status = document.createElement('div');
     status.id = 'quickSearchStatus';
@@ -1109,7 +1205,11 @@
     status.style.fontWeight = '600';
     status.style.color = '#1d4ed8';
     status.setAttribute('role', 'status');
-    p.insertBefore(status, groupsEl);
+    if (panelTopEl) {
+      panelTopEl.appendChild(status);
+    } else {
+      parent.insertBefore(status, groupsEl);
+    }
 
     function updateIndicator(active, visibleCount){
       if (active){
@@ -1346,6 +1446,7 @@
       await loadCfg();
       applyThemeVariables();
       applyPanelSizes();
+      applyPanelSticky();
       updateUndoButton();
 
       // tile layer

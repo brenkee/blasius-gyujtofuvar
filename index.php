@@ -32,52 +32,54 @@
 <body>
 <div class="app">
   <aside class="panel">
-    <h1><?= htmlspecialchars($CFG['app']['title']) ?></h1>
-    <?php
-      $toolbarFeatures = $CFG['features']['toolbar'] ?? [];
-      $toolbarText = $CFG['text']['toolbar'] ?? [];
-      $badgeText = $CFG['text']['badges']['pin_counter_label'] ?? 'Pin-ek:';
-      $badgeTitle = $CFG['text']['badges']['pin_counter_title'] ?? '';
-    ?>
-    <div class="toolbar">
-      <?php if (!empty($toolbarFeatures['expand_all'])): ?>
-        <button id="expandAll" title="<?= htmlspecialchars($toolbarText['expand_all']['title'] ?? '') ?>">
-          <?= htmlspecialchars($toolbarText['expand_all']['label'] ?? 'Összes kinyit') ?>
-        </button>
-      <?php endif; ?>
-      <?php if (!empty($toolbarFeatures['collapse_all'])): ?>
-        <button id="collapseAll" title="<?= htmlspecialchars($toolbarText['collapse_all']['title'] ?? '') ?>">
-          <?= htmlspecialchars($toolbarText['collapse_all']['label'] ?? 'Összes összezár') ?>
-        </button>
-      <?php endif; ?>
-      <?php if (!empty($toolbarFeatures['export_all'])): ?>
-        <button id="exportBtn" title="<?= htmlspecialchars($toolbarText['export_all']['title'] ?? '') ?>">
-          <?= htmlspecialchars($toolbarText['export_all']['label'] ?? 'Export') ?>
-        </button>
-      <?php endif; ?>
-      <?php if (!empty($toolbarFeatures['print_all'])): ?>
-        <button id="printBtn" title="<?= htmlspecialchars($toolbarText['print_all']['title'] ?? '') ?>">
-          <?= htmlspecialchars($toolbarText['print_all']['label'] ?? 'Nyomtatás') ?>
-        </button>
-      <?php endif; ?>
-      <?php if (!empty($toolbarFeatures['download_archive'])): ?>
-        <button id="downloadArchiveBtn" title="<?= htmlspecialchars($toolbarText['download_archive']['title'] ?? '') ?>">
-          <?= htmlspecialchars($toolbarText['download_archive']['label'] ?? 'Archívum letöltése') ?>
-        </button>
-      <?php endif; ?>
-      <?php if (!empty($toolbarFeatures['theme_toggle'])): ?>
-        <button id="themeToggle" title="<?= htmlspecialchars($toolbarText['theme_toggle']['title'] ?? '') ?>">
-          <?= htmlspecialchars($toolbarText['theme_toggle']['label'] ?? '🌙 / ☀️') ?>
-        </button>
-      <?php endif; ?>
-      <?php if (!empty($toolbarFeatures['undo']) && !empty($CFG['history']['undo_enabled'])): ?>
-        <button id="undoBtn" title="<?= htmlspecialchars($toolbarText['undo']['title'] ?? '') ?>" disabled>
-          <?= htmlspecialchars($toolbarText['undo']['label'] ?? 'Visszavonás') ?>
-        </button>
-      <?php endif; ?>
-      <span title="<?= htmlspecialchars($badgeTitle) ?>">
-        <?= htmlspecialchars($badgeText) ?> <span id="pinCount" class="badge">0</span>
-      </span>
+    <div id="panelTop" class="panel-top">
+      <h1><?= htmlspecialchars($CFG['app']['title']) ?></h1>
+      <?php
+        $toolbarFeatures = $CFG['features']['toolbar'] ?? [];
+        $toolbarText = $CFG['text']['toolbar'] ?? [];
+        $badgeText = $CFG['text']['badges']['pin_counter_label'] ?? 'Pin-ek:';
+        $badgeTitle = $CFG['text']['badges']['pin_counter_title'] ?? '';
+      ?>
+      <div class="toolbar">
+        <?php if (!empty($toolbarFeatures['expand_all'])): ?>
+          <button id="expandAll" title="<?= htmlspecialchars($toolbarText['expand_all']['title'] ?? '') ?>">
+            <?= htmlspecialchars($toolbarText['expand_all']['label'] ?? 'Összes kinyit') ?>
+          </button>
+        <?php endif; ?>
+        <?php if (!empty($toolbarFeatures['collapse_all'])): ?>
+          <button id="collapseAll" title="<?= htmlspecialchars($toolbarText['collapse_all']['title'] ?? '') ?>">
+            <?= htmlspecialchars($toolbarText['collapse_all']['label'] ?? 'Összes összezár') ?>
+          </button>
+        <?php endif; ?>
+        <?php if (!empty($toolbarFeatures['export_all'])): ?>
+          <button id="exportBtn" title="<?= htmlspecialchars($toolbarText['export_all']['title'] ?? '') ?>">
+            <?= htmlspecialchars($toolbarText['export_all']['label'] ?? 'Export') ?>
+          </button>
+        <?php endif; ?>
+        <?php if (!empty($toolbarFeatures['print_all'])): ?>
+          <button id="printBtn" title="<?= htmlspecialchars($toolbarText['print_all']['title'] ?? '') ?>">
+            <?= htmlspecialchars($toolbarText['print_all']['label'] ?? 'Nyomtatás') ?>
+          </button>
+        <?php endif; ?>
+        <?php if (!empty($toolbarFeatures['download_archive'])): ?>
+          <button id="downloadArchiveBtn" title="<?= htmlspecialchars($toolbarText['download_archive']['title'] ?? '') ?>">
+            <?= htmlspecialchars($toolbarText['download_archive']['label'] ?? 'Archívum letöltése') ?>
+          </button>
+        <?php endif; ?>
+        <?php if (!empty($toolbarFeatures['theme_toggle'])): ?>
+          <button id="themeToggle" title="<?= htmlspecialchars($toolbarText['theme_toggle']['title'] ?? '') ?>">
+            <?= htmlspecialchars($toolbarText['theme_toggle']['label'] ?? '🌙 / ☀️') ?>
+          </button>
+        <?php endif; ?>
+        <?php if (!empty($toolbarFeatures['undo']) && !empty($CFG['history']['undo_enabled'])): ?>
+          <button id="undoBtn" title="<?= htmlspecialchars($toolbarText['undo']['title'] ?? '') ?>" disabled>
+            <?= htmlspecialchars($toolbarText['undo']['label'] ?? 'Visszavonás') ?>
+          </button>
+        <?php endif; ?>
+        <span title="<?= htmlspecialchars($badgeTitle) ?>">
+          <?= htmlspecialchars($badgeText) ?> <span id="pinCount" class="badge">0</span>
+        </span>
+      </div>
     </div>
     <div id="groups" class="groups"></div>
   </aside>
