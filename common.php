@@ -35,7 +35,8 @@ $CFG_DEFAULT = [
       "navigate" => true,
       "delete" => true
     ],
-    "group_totals" => true
+    "group_totals" => true,
+    "round_planned_date" => true
   ],
   "files" => [
     "data_file" => "fuvar_data.json",
@@ -114,6 +115,10 @@ $CFG_DEFAULT = [
     "badges" => [
       "pin_counter_label" => "Pin-ek:",
       "pin_counter_title" => "Aktív pin jelölők száma"
+    ],
+    "round" => [
+      "planned_date_label" => "Tervezett dátum",
+      "planned_date_hint" => "Válaszd ki a kör tervezett dátumát"
     ],
     "group" => [
       "sum_template" => "Összesen: {parts}",
@@ -344,4 +349,70 @@ function stream_file_download($path, $downloadName, $contentType='text/plain; ch
   header('Content-Length: '. filesize($path));
   header('Content-Disposition: attachment; filename="'. basename($downloadName) .'"');
   readfile($path); exit;
+}
+
+function is_list_array($value) {
+  if (!is_array($value)) return false;
+  if (function_exists('array_is_list')) {
+    return array_is_list($value);
+  }
+  $expected = 0;
+  foreach ($value as $key => $_) {
+    if ($key !== $expected) return false;
+    $expected++;
+  }
+  return true;
+}
+
+function normalize_round_meta($roundMeta) {
+  $out = [];
+  if (!is_array($roundMeta)) return $out;
+  foreach ($roundMeta as $rid => $meta) {
+    if (!is_array($meta)) continue;
+    $key = (string)$rid;
+    $entry = [];
+    if (array_key_exists('planned_date', $meta)) {
+      $val = trim((string)$meta['planned_date']);
+      if ($val !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $val)) {
+        $entry['planned_date'] = $val;
+      }
+    }
+    if (!empty($entry)) {
+      $out[$key] = $entry;
+    }
+  }
+  return $out;
+}
+
+function data_store_read($file) {
+  $items = [];
+  $roundMeta = [];
+  if (!is_file($file)) {
+    return [$items, $roundMeta];
+  }
+  $raw = file_get_contents($file);
+  $decoded = json_decode($raw ?: '[]', true);
+  if (!is_array($decoded)) {
+    return [$items, $roundMeta];
+  }
+  if (is_list_array($decoded)) {
+    $items = array_values($decoded);
+    return [$items, $roundMeta];
+  }
+  if (isset($decoded['items']) && is_array($decoded['items'])) {
+    $items = array_values($decoded['items']);
+  }
+  if (isset($decoded['round_meta']) && is_array($decoded['round_meta'])) {
+    $roundMeta = normalize_round_meta($decoded['round_meta']);
+  }
+  return [$items, $roundMeta];
+}
+
+function data_store_write($file, $items, $roundMeta) {
+  $normalizedMeta = normalize_round_meta($roundMeta);
+  $payload = [
+    'items' => array_values(is_array($items) ? $items : []),
+    'round_meta' => !empty($normalizedMeta) ? $normalizedMeta : (object)[]
+  ];
+  return file_put_contents($file, json_encode($payload, JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT));
 }
