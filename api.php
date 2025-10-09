@@ -64,13 +64,9 @@ if ($action === 'cfg') {
 
 if ($action === 'load') {
   $jsonHeader();
-  $items = [];
-  if (file_exists($DATA_FILE)) {
-    $raw = file_get_contents($DATA_FILE);
-    $arr = json_decode($raw ?: '[]', true);
-    if (is_array($arr)) $items = $arr;
-  }
-  echo json_encode(["items"=>$items, "rounds"=>$CFG["rounds"]], JSON_UNESCAPED_UNICODE);
+  [$items, $roundMeta] = data_store_read($DATA_FILE);
+  if (!$roundMeta) { $roundMeta = (object)[]; }
+  echo json_encode(["items"=>$items, "round_meta"=>$roundMeta, "rounds"=>$CFG["rounds"]], JSON_UNESCAPED_UNICODE);
   exit;
 }
 
@@ -79,7 +75,17 @@ if ($action === 'save') {
   $body = file_get_contents('php://input');
   $arr = json_decode($body, true);
   if (!is_array($arr)) { http_response_code(400); echo json_encode(['ok'=>false]); exit; }
-  $ok = file_put_contents($DATA_FILE, json_encode($arr, JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT));
+  $items = [];
+  $roundMeta = [];
+  if (isset($arr['items'])) {
+    $items = is_array($arr['items']) ? array_values($arr['items']) : [];
+    $roundMeta = normalize_round_meta($arr['round_meta'] ?? []);
+  } elseif (is_list_array($arr)) {
+    $items = array_values($arr);
+  } else {
+    http_response_code(400); echo json_encode(['ok'=>false]); exit;
+  }
+  $ok = data_store_write($DATA_FILE, $items, $roundMeta);
   if ($ok !== false) backup_now($CFG, $DATA_FILE);
   echo json_encode(['ok' => $ok !== false]);
   exit;
@@ -119,12 +125,7 @@ if ($action === 'geocode') {
 if ($action === 'export') {
   $roundFilter = isset($_GET['round']) ? (int)$_GET['round'] : null;
 
-  $items = [];
-  if (file_exists($DATA_FILE)) {
-    $raw = file_get_contents($DATA_FILE);
-    $arr = json_decode($raw ?: '[]', true);
-    if (is_array($arr)) $items = $arr;
-  }
+  [$items] = data_store_read($DATA_FILE);
   $auto = (bool)($CFG['app']['auto_sort_by_round'] ?? true);
   $zeroBottom = (bool)($CFG['app']['round_zero_at_bottom'] ?? true);
   if ($auto) {
@@ -223,12 +224,7 @@ if ($action === 'delete_round') {
     return trim($formatted . ($unit ? ' '.$unit : ''));
   };
 
-  $items = [];
-  if (file_exists($DATA_FILE)) {
-    $raw = file_get_contents($DATA_FILE);
-    $arr = json_decode($raw ?: '[]', true);
-    if (is_array($arr)) $items = $arr;
-  }
+  [$items, $roundMeta] = data_store_read($DATA_FILE);
   $kept = []; $removed = [];
   foreach ($items as $it) {
     if ((int)($it['round'] ?? 0) === $rid) $removed[] = $it; else $kept[] = $it;
@@ -262,7 +258,10 @@ if ($action === 'delete_round') {
     $lines[] = "";
     @file_put_contents($ARCHIVE_FILE, implode(PHP_EOL,$lines).PHP_EOL, FILE_APPEND|LOCK_EX);
   }
-  file_put_contents($DATA_FILE, json_encode($kept, JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT));
+  if (isset($roundMeta[(string)$rid])) {
+    unset($roundMeta[(string)$rid]);
+  }
+  data_store_write($DATA_FILE, $kept, $roundMeta);
   backup_now($CFG, $DATA_FILE);
   echo json_encode(['ok'=>true,'deleted'=>count($removed)]);
   exit;

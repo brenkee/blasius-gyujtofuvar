@@ -4,6 +4,7 @@
   const state = {
     cfg: null,
     items: [],                 // {id,label,address,city,note,lat,lon,round,weight,volume,collapsed,_pendingRound}
+    roundMeta: {},             // { [roundId]: {planned_date:string} }
     markersById: new Map(),
     rowsById: new Map(),
     ORIGIN: {lat:47.4500, lon:19.3500}, // Maglód tartalék
@@ -16,6 +17,58 @@
   const groupsEl = document.getElementById('groups');
   const pinCountEl = document.getElementById('pinCount');
   const themeToggle = document.getElementById('themeToggle');
+
+  const flashTimers = new WeakMap();
+
+  const roundMetaKey = (rid)=> {
+    const num = Number(rid);
+    return Number.isFinite(num) ? String(num) : String(rid);
+  };
+
+  function getPlannedDateForRound(rid){
+    const meta = state.roundMeta || {};
+    const entry = meta[roundMetaKey(rid)];
+    if (entry && typeof entry === 'object' && typeof entry.planned_date === 'string') {
+      return entry.planned_date;
+    }
+    return '';
+  }
+
+  function setPlannedDateForRound(rid, value){
+    const key = roundMetaKey(rid);
+    if (!state.roundMeta || typeof state.roundMeta !== 'object') {
+      state.roundMeta = {};
+    }
+    const val = (value || '').trim();
+    const valid = /^\d{4}-\d{2}-\d{2}$/.test(val) ? val : '';
+    if (valid) {
+      state.roundMeta[key] = {...(state.roundMeta[key] || {}), planned_date: valid};
+    } else if (state.roundMeta[key]) {
+      delete state.roundMeta[key].planned_date;
+      if (Object.keys(state.roundMeta[key]).length === 0) {
+        delete state.roundMeta[key];
+      }
+    }
+  }
+
+  function clearRoundMeta(rid){
+    const key = roundMetaKey(rid);
+    if (state.roundMeta && Object.prototype.hasOwnProperty.call(state.roundMeta, key)) {
+      delete state.roundMeta[key];
+    }
+  }
+
+  function normalizedRoundMeta(){
+    const meta = state.roundMeta;
+    const out = {};
+    if (!meta || typeof meta !== 'object') return out;
+    for (const [rid, entry] of Object.entries(meta)){
+      if (!entry || typeof entry !== 'object') continue;
+      const date = typeof entry.planned_date === 'string' ? entry.planned_date.trim() : '';
+      if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) out[rid] = {planned_date: date};
+    }
+    return out;
+  }
 
   function cfg(path, fallback){
     if (!state.cfg) return fallback;
@@ -96,7 +149,10 @@
   }
   function pushSnapshot() {
     if (!undoFeatureEnabled()) return;
-    const snap = JSON.parse(JSON.stringify(state.items));
+    const snap = {
+      items: JSON.parse(JSON.stringify(state.items)),
+      roundMeta: JSON.parse(JSON.stringify(normalizedRoundMeta()))
+    };
     const limit = undoLimit();
     if (limit <= 0) return;
     if (history.length >= limit) history.shift();
@@ -118,7 +174,25 @@
   async function doUndo(){
     if (!undoFeatureEnabled() || !canUndo()) return;
     const prev = history.pop();
-    state.items = prev;
+    if (Array.isArray(prev)) {
+      state.items = prev;
+    } else if (prev && typeof prev === 'object') {
+      state.items = Array.isArray(prev.items) ? prev.items : [];
+      state.roundMeta = {};
+      const prevMeta = prev.roundMeta;
+      if (prevMeta && typeof prevMeta === 'object' && !Array.isArray(prevMeta)) {
+        Object.entries(prevMeta).forEach(([rid, entry])=>{
+          if (!entry || typeof entry !== 'object') return;
+          const date = typeof entry.planned_date === 'string' ? entry.planned_date.trim() : '';
+          if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+            state.roundMeta[String(rid)] = {planned_date: date};
+          }
+        });
+      }
+    } else {
+      state.items = [];
+      state.roundMeta = {};
+    }
     await saveAll();
     renderEverything();
     updateUndoButton();
@@ -266,6 +340,22 @@
     savePillTimer = setTimeout(()=>{ el.style.opacity='0'; }, 1600);
   }
 
+  function flashSaved(el){
+    if (!el) return;
+    if (flashTimers.has(el)) {
+      clearTimeout(flashTimers.get(el));
+      flashTimers.delete(el);
+    }
+    el.classList.remove('saved-flash');
+    void el.offsetWidth;
+    el.classList.add('saved-flash');
+    const timer = setTimeout(()=>{
+      el.classList.remove('saved-flash');
+      flashTimers.delete(el);
+    }, 1600);
+    flashTimers.set(el, timer);
+  }
+
   // ======= BACKEND
   async function fetchJSON(url, opts){
     const r = await fetch(url, opts);
@@ -278,10 +368,21 @@
   async function loadAll(){
     const j = await fetchJSON(EP.load);
     state.items = Array.isArray(j.items)? j.items : [];
+    state.roundMeta = {};
+    const meta = j.round_meta;
+    if (meta && typeof meta === 'object' && !Array.isArray(meta)){
+      Object.entries(meta).forEach(([rid, entry])=>{
+        if (!entry || typeof entry !== 'object') return;
+        const date = typeof entry.planned_date === 'string' ? entry.planned_date.trim() : '';
+        if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+          state.roundMeta[String(rid)] = {planned_date: date};
+        }
+      });
+    }
   }
   async function saveAll(){
     try{
-      const payload = JSON.stringify(state.items);
+      const payload = JSON.stringify({items: state.items, round_meta: normalizedRoundMeta()});
       const r = await fetch(EP.save, {method:'POST', headers:{'Content-Type':'application/json'}, body: payload});
       const t = await r.text();
       let j=null; try{ j = JSON.parse(t); }catch(_){}
@@ -447,6 +548,10 @@
     const color = colorForRound(rid);
     const sumTxt = groupTotalsText(rid, totals);
     const actionsText = cfg('text.group.actions', {});
+    const plannedDateEnabled = feature('round_planned_date', false);
+    const plannedDateLabel = text('round.planned_date_label', 'Tervezett dátum');
+    const plannedDateHint = cfg('text.round.planned_date_hint', '');
+    const plannedDateValue = getPlannedDateForRound(rid);
     const actionButtons = [];
     if (feature('group_actions.open', true)) actionButtons.push(`<button class="iconbtn grp-open" data-round="${rid}">${esc(actionsText.open ?? 'Kinyit')}</button>`);
     if (feature('group_actions.close', true)) actionButtons.push(`<button class="iconbtn grp-close" data-round="${rid}">${esc(actionsText.close ?? 'Összezár')}</button>`);
@@ -461,6 +566,13 @@
           ${esc(roundLabel(rid))}
           ${sumTxt ? `<span class="__sum" style="margin-left:8px;color:#6b7280;font-weight:600;font-size:12px;">${esc(sumTxt)}</span>` : ''}
         </div>
+        ${plannedDateEnabled ? `
+        <div class="group-planned-date">
+          <label>
+            <span>${esc(plannedDateLabel)}</span>
+            <input type="date" class="planned-date-input" data-round="${rid}" value="${esc(plannedDateValue)}"${plannedDateHint ? ` title="${esc(plannedDateHint)}"` : ''}>
+          </label>
+        </div>` : ''}
         <div class="group-tools">
           ${actionButtons.join('')}
         </div>
@@ -1124,6 +1236,7 @@
           if (!ok) throw new Error('delete_failed');
 
           state.items = state.items.filter(it => (+it.round||0)!==rid);
+          clearRoundMeta(rid);
           removedIds.forEach(id=>{
             const mk = state.markersById.get(id);
             if (mk){ markerLayer.removeLayer(mk); state.markersById.delete(id); }
@@ -1139,6 +1252,22 @@
 
       const btnNav = groupEl.querySelector('.grp-nav');
       if (btnNav) btnNav.addEventListener('click', ()=>{ openGmapsForRound(rid); });
+
+      const plannedDateInput = groupEl.querySelector('.planned-date-input');
+      if (plannedDateInput) {
+        plannedDateInput.addEventListener('change', async ()=>{
+          const newVal = plannedDateInput.value.trim();
+          const prevVal = getPlannedDateForRound(rid);
+          if (newVal === prevVal) return;
+          pushSnapshot();
+          setPlannedDateForRound(rid, newVal);
+          const ok = await saveAll();
+          if (ok) {
+            plannedDateInput.value = getPlannedDateForRound(rid);
+            flashSaved(plannedDateInput);
+          }
+        });
+      }
 
       groupsEl.appendChild(groupEl);
     });

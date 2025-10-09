@@ -12,12 +12,7 @@ $groupText = $CFG['text']['group'] ?? [];
 $sumTemplate = $groupText['sum_template'] ?? 'Összesen: {parts}';
 $sumSeparator = $groupText['sum_separator'] ?? ' · ';
 
-$items = [];
-if (file_exists($DATA_FILE)) {
-  $raw = file_get_contents($DATA_FILE);
-  $arr = json_decode($raw ?: '[]', true);
-  if (is_array($arr)) $items = $arr;
-}
+[$items] = data_store_read($DATA_FILE);
 
 $auto = (bool)($CFG['app']['auto_sort_by_round'] ?? true);
 $zeroBottom = (bool)($CFG['app']['round_zero_at_bottom'] ?? true);

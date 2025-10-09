@@ -31,7 +31,8 @@
       "navigate": true,
       "delete": true
     },
-    "group_totals": true
+    "group_totals": true,
+    "round_planned_date": true
   },
   "files": {
     "data_file": "fuvar_data.json",
@@ -124,6 +125,10 @@
     "badges": {
       "pin_counter_label": "Címek:",
       "pin_counter_title": "Aktív pin jelölők száma"
+    },
+    "round": {
+      "planned_date_label": "Tervezett dátum",
+      "planned_date_hint": "Válaszd ki a kör tervezett dátumát"
     },
     "group": {
       "sum_template": "Összesen: {parts}",
