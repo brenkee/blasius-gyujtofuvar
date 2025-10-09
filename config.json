@@ -7,7 +7,7 @@
   },
   "history": {
     "undo_enabled": true,
-    "max_steps": 3
+    "max_steps": 10
   },
   "features": {
     "toolbar": {
@@ -82,9 +82,9 @@
     },
     "marker": {
       "icon_size": 40,
-      "font_size": 12,
+      "font_size": 15,
       "auto_contrast": true,
-      "focus_ring_radius": 80,
+      "focus_ring_radius": 50000,
       "focus_ring_color": "auto"
     }
   },
@@ -117,12 +117,12 @@
       "collapse_all": {"label": "Összes összezár", "title": "Összes kör összezárása"},
       "export_all": {"label": "Export", "title": "Export TXT"},
       "print_all": {"label": "Nyomtatás", "title": "Nyomtatás"},
-      "download_archive": {"label": "Archívum letöltése", "title": "Archívum letöltése (TXT)"},
+      "download_archive": {"label": "Archívum", "title": "Archívum letöltése (TXT)"},
       "theme_toggle": {"label": "🌙 / ☀️", "title": "Téma váltása"},
       "undo": {"label": "Visszavonás", "title": "Visszavonás"}
     },
     "badges": {
-      "pin_counter_label": "Pin-ek:",
+      "pin_counter_label": "Címek:",
       "pin_counter_title": "Aktív pin jelölők száma"
     },
     "group": {
@@ -131,9 +131,9 @@
       "actions": {
         "open": "Kinyit",
         "close": "Összezár",
-        "print": "Nyomtatás (kör)",
-        "export": "Export (kör)",
-        "navigate": "Navigáció (GMaps)",
+        "print": "Nyomtatás",
+        "export": "Export",
+        "navigate": "Navigáció",
         "delete": "Kör törlése"
       }
     },
@@ -148,7 +148,7 @@
       "delete_disabled_hint": "Nem törölhető az alap sor"
     },
     "messages": {
-      "address_required": "Adj meg teljes címet!",
+      "address_required": "Adj meg valós címet!",
       "load_error": "Betöltési hiba: kérlek frissítsd az oldalt.",
       "delete_round_confirm": "Biztosan törlöd a(z) \"{name}\" kör összes címét?",
       "delete_round_success": "Kör törölve. Tételek: {count}.",
@@ -176,7 +176,7 @@
         "id": "address",
         "type": "text",
         "label": "Teljes cím",
-        "placeholder": "pl. 2234 Maglód, Fő utca 1.",
+        "placeholder": "Cím",
         "default": "",
         "required": true
       },
@@ -184,7 +184,7 @@
         "id": "note",
         "type": "text",
         "label": "Megjegyzés",
-        "placeholder": "időablak, kapucsengő, stb.",
+        "placeholder": "Megjegyzés",
         "default": ""
       }
     ],
@@ -193,8 +193,8 @@
         "id": "weight",
         "type": "number",
         "label": "Súly (kg)",
-        "placeholder": "pl. 12.5",
-        "step": 0.1,
+        "placeholder": "kg",
+        "step": 10,
         "min": 0,
         "precision": 1,
         "unit": "kg",
@@ -205,10 +205,10 @@
         "id": "volume",
         "type": "number",
         "label": "Térfogat (m³)",
-        "placeholder": "pl. 0.80",
-        "step": 0.01,
+        "placeholder": "m³",
+        "step": 0.5,
         "min": 0,
-        "precision": 2,
+        "precision": 1,
         "unit": "m³",
         "row_format": "{value} m³",
         "group_format": "{sum} m³"
