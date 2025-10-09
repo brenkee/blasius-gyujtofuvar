@@ -265,6 +265,8 @@ if ($action === 'import_csv') {
   if (empty($_FILES['file']) || !is_array($_FILES['file'])) {
     $sendJsonError('Nem található feltöltött fájl.');
   }
+  $modeRaw = isset($_POST['mode']) ? strtolower(trim((string)$_POST['mode'])) : 'replace';
+  $importMode = $modeRaw === 'append' ? 'append' : 'replace';
   $uploadErr = (int)($_FILES['file']['error'] ?? UPLOAD_ERR_OK);
   if ($uploadErr !== UPLOAD_ERR_OK) {
     $sendJsonError('A fájl feltöltése nem sikerült.');
@@ -314,6 +316,10 @@ if ($action === 'import_csv') {
     $headers[$idx] = $name !== '' ? $name : null;
   }
 
+  [$existingItems, $existingRoundMeta] = data_store_read($DATA_FILE);
+  if (!is_array($existingItems)) { $existingItems = []; }
+  if (!is_array($existingRoundMeta)) { $existingRoundMeta = []; }
+
   $itemsCfg = $CFG['items'] ?? [];
   $fieldDefs = array_values(array_filter($itemsCfg['fields'] ?? [], function($f){ return ($f['enabled'] ?? true) !== false; }));
   $metricDefs = array_values(array_filter($itemsCfg['metrics'] ?? [], function($m){ return ($m['enabled'] ?? true) !== false; }));
@@ -329,6 +335,13 @@ if ($action === 'import_csv') {
   }
 
   $usedIds = [];
+  if ($importMode === 'append') {
+    foreach ($existingItems as $existing) {
+      if (!is_array($existing)) { continue; }
+      $eid = isset($existing['id']) ? trim((string)$existing['id']) : '';
+      if ($eid !== '') { $usedIds[$eid] = true; }
+    }
+  }
   $makeId = function() use (&$usedIds) {
     do {
       try {
@@ -477,12 +490,26 @@ if ($action === 'import_csv') {
   }
   fclose($fh);
 
-  [, $roundMeta] = data_store_read($DATA_FILE);
+  $roundMeta = $existingRoundMeta;
   if (!is_array($roundMeta)) { $roundMeta = []; }
-  data_store_write($DATA_FILE, $items, $roundMeta);
+
+  $finalItems = $importMode === 'append' ? array_merge($existingItems, $items) : $items;
+  data_store_write($DATA_FILE, $finalItems, $roundMeta);
 
   $jsonHeader();
-  echo json_encode(['ok' => true, 'items' => $items, 'round_meta' => $roundMeta], JSON_UNESCAPED_UNICODE);
+  $importedIds = [];
+  foreach ($items as $item) {
+    if (!is_array($item)) { continue; }
+    $iid = isset($item['id']) ? trim((string)$item['id']) : '';
+    if ($iid !== '') { $importedIds[] = $iid; }
+  }
+  echo json_encode([
+    'ok' => true,
+    'items' => $finalItems,
+    'round_meta' => $roundMeta,
+    'imported_ids' => $importedIds,
+    'mode' => $importMode
+  ], JSON_UNESCAPED_UNICODE);
   exit;
 }
 

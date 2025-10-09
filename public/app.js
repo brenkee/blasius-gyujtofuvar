@@ -500,6 +500,41 @@
     try{ return await one(); } catch(_){ return await one(); }
   }
 
+  async function autoGeocodeImported(targetIds){
+    const idSet = Array.isArray(targetIds) && targetIds.length ? new Set(targetIds.map(id => String(id))) : null;
+    const addressFieldId = getAddressFieldId();
+    let changed = false;
+    let attempted = 0;
+    let failed = 0;
+    for (let i = 0; i < state.items.length; i += 1) {
+      const item = state.items[i];
+      if (!item || typeof item !== 'object') continue;
+      const idStr = item.id != null ? String(item.id) : '';
+      if (idSet && !idSet.has(idStr)) continue;
+      if (item.lat != null && item.lon != null) continue;
+      const address = (item[addressFieldId] ?? '').toString().trim();
+      if (!address) continue;
+      attempted += 1;
+      try {
+        const geo = await geocodeRobust(address);
+        const updated = {...item};
+        updated.lat = geo.lat;
+        updated.lon = geo.lon;
+        updated.city = geo.city || cityFromDisplay(address, item.city);
+        state.items[i] = updated;
+        changed = true;
+      } catch (err) {
+        console.error('auto geocode failed for import', err);
+        failed += 1;
+      }
+    }
+    let saveOk = true;
+    if (changed) {
+      saveOk = await saveAll();
+    }
+    return {changed, saveOk, failed, attempted};
+  }
+
   // ======= AUTO SORT (kör + körön belül távolság)
   function autoSortItems(){
     if (!cfg('app.auto_sort_by_round', true)) return;
@@ -1425,10 +1460,22 @@
     importInput.addEventListener('change', async ()=>{
       const file = importInput.files && importInput.files[0];
       if (!file) return;
+      const primaryPrompt = text('messages.import_mode_prompt', 'Felülírjuk a jelenlegi adatokat az importált CSV-vel? (OK = Felülír, Mégse = Hozzáadás)');
+      const replaceSelected = window.confirm(primaryPrompt);
+      const mode = replaceSelected ? 'replace' : 'append';
+      const confirmPrompt = replaceSelected
+        ? text('messages.import_mode_confirm_replace', 'Biztosan felülírjuk a jelenlegi adatokat a CSV tartalmával?')
+        : text('messages.import_mode_confirm_append', 'Biztosan hozzáadjuk az új sorokat a meglévő listához?');
+      const proceed = window.confirm(confirmPrompt);
+      if (!proceed) {
+        importInput.value = '';
+        return;
+      }
       importBtn.disabled = true;
       try {
         const form = new FormData();
         form.append('file', file);
+        form.append('mode', mode);
         const resp = await fetch(EP.importCsv, {method:'POST', body: form});
         const raw = await resp.text();
         let data;
@@ -1440,11 +1487,22 @@
           if (detail) err.detail = detail;
           throw err;
         }
+        const importedIds = Array.isArray(data.imported_ids) ? data.imported_ids : null;
         applyLoadedData(data);
         history.length = 0;
+        const geo = await autoGeocodeImported(importedIds);
         renderEverything();
-        showSaveStatus(true);
-        alert(text('messages.import_success', 'Import kész.'));
+        if (!geo.changed) {
+          showSaveStatus(true);
+        } else if (!geo.saveOk) {
+          showSaveStatus(false);
+        }
+        let successMsg = text('messages.import_success', 'Import kész.');
+        if (geo.failed > 0 && geo.attempted > 0) {
+          const tpl = text('messages.import_geocode_partial', 'Figyelem: {count} címet nem sikerült automatikusan térképre tenni.');
+          successMsg += `\n\n${format(tpl, {count: geo.failed})}`;
+        }
+        alert(successMsg);
       } catch (e) {
         console.error(e);
         showSaveStatus(false);

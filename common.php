@@ -190,7 +190,11 @@ $CFG_DEFAULT = [
         "geocode_failed_detailed" => "Geokódolás sikertelen. Próbáld pontosítani a címet.",
         "undo_unavailable" => "Nincs visszavonható művelet.",
         "import_success" => "Import kész.",
-        "import_error" => "Az importálás nem sikerült."
+        "import_error" => "Az importálás nem sikerült.",
+        "import_mode_prompt" => "Felülírjuk a jelenlegi adatokat az importált CSV-vel? (OK = Felülír, Mégse = Hozzáadás)",
+        "import_mode_confirm_replace" => "Biztosan felülírjuk a jelenlegi adatokat a CSV tartalmával?",
+        "import_mode_confirm_append" => "Biztosan hozzáadjuk az új sorokat a meglévő listához?",
+        "import_geocode_partial" => "Figyelem: {count} címet nem sikerült automatikusan térképre tenni."
       ]
     ],
   "items" => [
