@@ -18,8 +18,8 @@
       load: 'api.php?action=load',
       save: 'api.php?action=save',
       geocode: 'api.php?action=geocode',
+      importCsv: 'api.php?action=import_csv',
       exportAll: 'api.php?action=export',
-      exportRound: (rid)=>'api.php?action=export&round='+encodeURIComponent(rid),
       deleteRound: 'api.php?action=delete_round',
       downloadArchive: 'api.php?action=download_archive',
       printAll: 'print.php',
@@ -50,6 +50,12 @@
           <button id="collapseAll" title="<?= htmlspecialchars($toolbarText['collapse_all']['title'] ?? '') ?>">
             <?= htmlspecialchars($toolbarText['collapse_all']['label'] ?? 'Összes összezár') ?>
           </button>
+        <?php endif; ?>
+        <?php if (!empty($toolbarFeatures['import_all'])): ?>
+          <button id="importBtn" title="<?= htmlspecialchars($toolbarText['import_all']['title'] ?? '') ?>">
+            <?= htmlspecialchars($toolbarText['import_all']['label'] ?? 'Import (CSV)') ?>
+          </button>
+          <input type="file" id="importFileInput" accept=".csv,text/csv" style="display:none" />
         <?php endif; ?>
         <?php if (!empty($toolbarFeatures['export_all'])): ?>
           <button id="exportBtn" title="<?= htmlspecialchars($toolbarText['export_all']['title'] ?? '') ?>">

@@ -17,6 +17,7 @@ $CFG_DEFAULT = [
     "toolbar" => [
       "expand_all" => true,
       "collapse_all" => true,
+      "import_all" => true,
       "export_all" => true,
       "print_all" => true,
       "download_archive" => true,
@@ -40,8 +41,8 @@ $CFG_DEFAULT = [
   ],
   "files" => [
     "data_file" => "fuvar_data.json",
-    "export_file" => "fuvar_export.txt",
-    "export_download_name" => "fuvar_export.txt",
+    "export_file" => "fuvar_export.csv",
+    "export_download_name" => "fuvar_export.csv",
     "archive_file" => "fuvar_archive.log"
   ],
   "map" => [
@@ -140,7 +141,8 @@ $CFG_DEFAULT = [
     "toolbar" => [
       "expand_all" => ["label" => "Összes kinyit", "title" => "Összes kör kinyitása"],
       "collapse_all" => ["label" => "Összes összezár", "title" => "Összes kör összezárása"],
-      "export_all" => ["label" => "Export", "title" => "Export TXT"],
+      "import_all" => ["label" => "Import (CSV)", "title" => "Címlista importálása CSV-ből"],
+      "export_all" => ["label" => "Export (CSV)", "title" => "Címlista exportálása CSV-be"],
       "print_all" => ["label" => "Nyomtatás", "title" => "Nyomtatás"],
       "download_archive" => ["label" => "Archívum letöltése", "title" => "Archívum letöltése (TXT)"],
       "theme_toggle" => ["label" => "🌙 / ☀️", "title" => "Téma váltása"],
@@ -176,19 +178,28 @@ $CFG_DEFAULT = [
       "delete" => "Törlés",
       "delete_disabled_hint" => "Nem törölhető az alap sor"
     ],
-    "messages" => [
-      "address_required" => "Adj meg teljes címet!",
-      "load_error" => "Betöltési hiba: kérlek frissítsd az oldalt.",
-      "delete_round_confirm" => "Biztosan törlöd a(z) \"{name}\" kör összes címét?",
-      "delete_round_success" => "Kör törölve. Tételek: {count}.",
-      "delete_round_error" => "A kör törlése nem sikerült.",
-      "navigation_empty" => "Nincs navigálható cím ebben a körben.",
-      "navigation_skip" => "Figyelem: {count} cím nem került bele (nincs geolokáció).",
-      "geocode_failed" => "Geokódolás sikertelen.",
-      "geocode_failed_detailed" => "Geokódolás sikertelen. Próbáld pontosítani a címet.",
-      "undo_unavailable" => "Nincs visszavonható művelet."
-    ]
-  ],
+      "messages" => [
+        "address_required" => "Adj meg teljes címet!",
+        "load_error" => "Betöltési hiba: kérlek frissítsd az oldalt.",
+        "delete_round_confirm" => "Biztosan törlöd a(z) \"{name}\" kör összes címét?",
+        "delete_round_success" => "Kör törölve. Tételek: {count}.",
+        "delete_round_error" => "A kör törlése nem sikerült.",
+        "navigation_empty" => "Nincs navigálható cím ebben a körben.",
+        "navigation_skip" => "Figyelem: {count} cím nem került bele (nincs geolokáció).",
+        "geocode_failed" => "Geokódolás sikertelen.",
+        "geocode_failed_detailed" => "Geokódolás sikertelen. Próbáld pontosítani a címet.",
+        "undo_unavailable" => "Nincs visszavonható művelet.",
+        "import_success" => "Import kész.",
+        "import_error" => "Az importálás nem sikerült.",
+        "import_mode_prompt" => "Felülírjuk a jelenlegi adatokat az importált CSV-vel, vagy hozzáadjuk az új sorokat?",
+        "import_mode_replace" => "Felülírás",
+        "import_mode_append" => "Hozzáadás",
+        "import_mode_confirm_replace" => "Biztosan felülírjuk a jelenlegi adatokat a CSV tartalmával?",
+        "import_mode_confirm_append" => "Biztosan hozzáadjuk az új sorokat a meglévő listához?",
+        "import_geocode_partial" => "Figyelem: {count} címet nem sikerült automatikusan térképre tenni.",
+        "import_geocode_partial_detail" => "Nem sikerült geokódolni:\n{list}"
+      ]
+    ],
   "items" => [
     "address_field_id" => "address",
     "label_field_id" => "label",
