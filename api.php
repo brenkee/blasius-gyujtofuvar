@@ -89,9 +89,14 @@ if ($action === 'cfg') {
 
 if ($action === 'load') {
   $jsonHeader();
-  [$items, $roundMeta] = data_store_read($DATA_FILE);
+  [$items, $roundMeta, $version] = data_store_read($DATA_FILE);
   if (!$roundMeta) { $roundMeta = (object)[]; }
-  echo json_encode(["items"=>$items, "round_meta"=>$roundMeta, "rounds"=>$CFG["rounds"]], JSON_UNESCAPED_UNICODE);
+  echo json_encode([
+    "items" => $items,
+    "round_meta" => $roundMeta,
+    "rounds" => $CFG["rounds"],
+    "version" => $version
+  ], JSON_UNESCAPED_UNICODE);
   exit;
 }
 
@@ -100,6 +105,13 @@ if ($action === 'save') {
   $body = file_get_contents('php://input');
   $arr = json_decode($body, true);
   if (!is_array($arr)) { http_response_code(400); echo json_encode(['ok'=>false]); exit; }
+  $clientVersion = isset($arr['version']) ? (string)$arr['version'] : '';
+  $currentVersion = data_store_version($DATA_FILE);
+  if ($clientVersion === '' || $clientVersion !== $currentVersion) {
+    http_response_code(409);
+    echo json_encode(['ok' => false, 'error' => 'version_conflict', 'version' => $currentVersion], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
   $items = [];
   $roundMeta = [];
   if (isset($arr['items'])) {
@@ -110,9 +122,13 @@ if ($action === 'save') {
   } else {
     http_response_code(400); echo json_encode(['ok'=>false]); exit;
   }
+  $newVersion = $currentVersion;
   $ok = data_store_write($DATA_FILE, $items, $roundMeta);
-  if ($ok !== false) backup_now($CFG, $DATA_FILE);
-  echo json_encode(['ok' => $ok !== false]);
+  if ($ok !== false) {
+    backup_now($CFG, $DATA_FILE);
+    $newVersion = data_store_version($DATA_FILE);
+  }
+  echo json_encode(['ok' => $ok !== false, 'version' => $newVersion]);
   exit;
 }
 
@@ -316,9 +332,17 @@ if ($action === 'import_csv') {
     $headers[$idx] = $name !== '' ? $name : null;
   }
 
-  [$existingItems, $existingRoundMeta] = data_store_read($DATA_FILE);
+  [$existingItems, $existingRoundMeta, $currentVersion] = data_store_read($DATA_FILE);
   if (!is_array($existingItems)) { $existingItems = []; }
   if (!is_array($existingRoundMeta)) { $existingRoundMeta = []; }
+
+  $clientVersion = isset($_POST['version']) ? (string)$_POST['version'] : '';
+  if ($clientVersion === '' || $clientVersion !== $currentVersion) {
+    $jsonHeader();
+    http_response_code(409);
+    echo json_encode(['ok' => false, 'error' => 'version_conflict', 'version' => $currentVersion], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
 
   $itemsCfg = $CFG['items'] ?? [];
   $fieldDefs = array_values(array_filter($itemsCfg['fields'] ?? [], function($f){ return ($f['enabled'] ?? true) !== false; }));
@@ -495,6 +519,7 @@ if ($action === 'import_csv') {
 
   $finalItems = $importMode === 'append' ? array_merge($existingItems, $items) : $items;
   data_store_write($DATA_FILE, $finalItems, $roundMeta);
+  $newVersion = data_store_version($DATA_FILE);
 
   $jsonHeader();
   $importedIds = [];
@@ -508,7 +533,8 @@ if ($action === 'import_csv') {
     'items' => $finalItems,
     'round_meta' => $roundMeta,
     'imported_ids' => $importedIds,
-    'mode' => $importMode
+    'mode' => $importMode,
+    'version' => $newVersion
   ], JSON_UNESCAPED_UNICODE);
   exit;
 }
@@ -518,6 +544,12 @@ if ($action === 'delete_round') {
   $body = file_get_contents('php://input');
   $req = json_decode($body, true);
   $rid = isset($req['round']) ? (int)$req['round'] : (int)($_GET['round'] ?? 0);
+  $clientVersion = '';
+  if (is_array($req) && array_key_exists('version', $req)) {
+    $clientVersion = (string)$req['version'];
+  } elseif (isset($_GET['version'])) {
+    $clientVersion = (string)$_GET['version'];
+  }
 
   $itemsCfg = $CFG['items'] ?? [];
   $metricsCfg = array_values(array_filter($itemsCfg['metrics'] ?? [], function($m){ return ($m['enabled'] ?? true) !== false; }));
@@ -538,7 +570,12 @@ if ($action === 'delete_round') {
     return trim($formatted . ($unit ? ' '.$unit : ''));
   };
 
-  [$items, $roundMeta] = data_store_read($DATA_FILE);
+  [$items, $roundMeta, $currentVersion] = data_store_read($DATA_FILE);
+  if ($clientVersion === '' || $clientVersion !== $currentVersion) {
+    http_response_code(409);
+    echo json_encode(['ok' => false, 'error' => 'version_conflict', 'version' => $currentVersion]);
+    exit;
+  }
   $kept = []; $removed = [];
   foreach ($items as $it) {
     if ((int)($it['round'] ?? 0) === $rid) $removed[] = $it; else $kept[] = $it;
@@ -587,8 +624,16 @@ if ($action === 'delete_round') {
     unset($roundMeta[(string)$rid]);
   }
   data_store_write($DATA_FILE, $kept, $roundMeta);
+  $newVersion = data_store_version($DATA_FILE);
   backup_now($CFG, $DATA_FILE);
-  echo json_encode(['ok'=>true,'deleted'=>count($removed)]);
+  echo json_encode(['ok'=>true,'deleted'=>count($removed),'version'=>$newVersion]);
+  exit;
+}
+
+if ($action === 'version') {
+  $jsonHeader();
+  $version = data_store_version($DATA_FILE);
+  echo json_encode(['ok' => true, 'version' => $version], JSON_UNESCAPED_UNICODE);
   exit;
 }
 
