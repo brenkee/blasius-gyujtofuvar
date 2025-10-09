@@ -105,6 +105,7 @@
         "save_status": {
             "position": {
                 "top": "10px",
+                "right": "auto",
                 "left": "12px"
             },
             "style": {
