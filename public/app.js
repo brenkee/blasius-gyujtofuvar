@@ -147,6 +147,15 @@
   const markerLayer = L.featureGroup().addTo(map);
   function updatePinCount(){ if (pinCountEl) pinCountEl.textContent = markerLayer.getLayers().length.toString(); }
 
+  function openMarkerPopup(mk, featureKey){
+    if (!mk) return;
+    if (featureKey && !feature(featureKey, true)) return;
+    mk.openPopup();
+    setTimeout(()=>{
+      if (!mk.isPopupOpen()) mk.openPopup();
+    }, 0);
+  }
+
   // ======= HELPERS
   const esc = (s)=> (s??'').toString()
     .replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
@@ -481,7 +490,7 @@
           if (body && body.style.display==='none'){ body.style.display=''; if (tog) tog.textContent='▼'; }
           const first = row.querySelector('input,select'); if (first){ first.focus(); }
         }
-        if (feature('marker_popup_on_click', true)) mk.openPopup();
+        openMarkerPopup(mk, 'marker_popup_on_click');
         map.panTo(mk.getLatLng());
       });
       state.markersById.set(it.id, mk);
@@ -745,7 +754,7 @@
       highlightRow(it.id);
       const mk = state.markersById.get(it.id);
       if (mk) {
-        if (feature('marker_popup_on_click', true)) mk.openPopup();
+        openMarkerPopup(mk, 'marker_popup_on_click');
         if (feature('marker_focus_feedback', true)) pingMarker(it.id);
         map.panTo(mk.getLatLng());
       }
@@ -754,7 +763,7 @@
       // bármely input/elem fókuszba kerül a soron belül → pin ping + popup
       const mk = state.markersById.get(it.id);
       if (mk) {
-        if (feature('marker_popup_on_focus', true)) mk.openPopup();
+        openMarkerPopup(mk, 'marker_popup_on_focus');
         if (feature('marker_focus_feedback', true)) pingMarker(it.id);
       }
     });
