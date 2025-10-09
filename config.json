@@ -105,12 +105,12 @@
         "save_status": {
             "position": {
                 "top": "10px",
-                "right": "12px"
+                "left": "12px"
             },
             "style": {
                 "padding": "6px 10px",
                 "borderRadius": "999px",
-                "fontSize": "12px",
+                "fontSize": "15px",
                 "fontWeight": "600",
                 "boxShadow": "0 2px 6px rgba(0,0,0,.15)",
                 "zIndex": 9999
@@ -127,7 +127,7 @@
                     "border": "1px solid #fecaca"
                 }
             },
-            "hide_after_ms": 1600
+            "hide_after_ms": 2000
         }
     },
     "routing": {
@@ -142,7 +142,7 @@
     "rounds": [
         {
             "id": 0,
-            "label": "M\u00e9g nincs besorolva",
+            "label": "ÚJ CÍMEK",
             "color": "#888"
         },
         {
