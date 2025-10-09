@@ -15,16 +15,16 @@
         },
         {
             "id": "row_23w2612se52",
-            "label": "Márkus Lászlóné",
+            "label": "Márkus Lászlóné321",
             "address": "Csősz Bartók Béla u 2B",
             "city": "Csősz",
-            "note": "",
+            "note": "21",
             "lat": 47.0394575,
             "lon": 18.4163602,
             "round": 2,
             "collapsed": true,
             "weight": 200,
-            "volume": 2
+            "volume": 5.5
         },
         {
             "id": "row_037sdru0o898",
@@ -308,8 +308,8 @@
             "lon": 18.7052466,
             "round": 11,
             "collapsed": true,
-            "weight": 0.1,
-            "volume": 0.03
+            "weight": 40,
+            "volume": 2
         }
     ],
     "round_meta": {
