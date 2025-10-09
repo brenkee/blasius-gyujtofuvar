@@ -1,0 +1,59 @@
+{
+  "app": {
+    "title": "BLASIUS - Gyűjtőfuvar szervező",
+    "export_button_label": "Export",
+    "auto_sort_by_round": true,
+    "round_zero_at_bottom": false,
+    "default_collapsed": false
+  },
+  "files": {
+    "data_file": "fuvar_data.json",
+    "export_file": "fuvar_export.txt",
+    "export_download_name": "fuvar_export.txt",
+    "archive_file": "fuvar_archive.log"
+  },
+  "map": {
+    "tiles": {
+      "url": "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+      "attribution": ""
+    },
+    "fit_bounds": [[45.737, 16.113], [48.585, 22.897]],
+    "max_bounds_pad": 0.6
+  },
+  "geocode": {
+    "countrycodes": "hu",
+    "language": "hu",
+    "user_agent": "fuvarszervezo-internal/1.4 (+contact@example.com)"
+  },
+  "ui": {
+    "panel_min_px": 330,
+    "panel_pref_vw": 36,
+    "panel_max_px": 520,
+    "show_note_field": true,
+    "marker": {
+      "icon_size": 40,
+      "font_size": 12,
+      "auto_contrast": true
+    }
+  },
+  "rounds": [
+    { "id": 0,  "label": "Még nincs besorolva", "color": "#888" },
+    { "id": 1,  "label": "Berkenye: M2",   "color": "#1F00F5" },
+    { "id": 2,  "label": "Balaton Déli part: M7",   "color": "#FF1701" },
+    { "id": 3,  "label": "Balaton Északi part: M7",   "color": "#E6E601" },
+    { "id": 4,  "label": "Győr: M1",   "color": "#5F00B8" },
+    { "id": 5,  "label": "Kecskemét: M5",   "color": "#FF7601" },
+    { "id": 6,  "label": "Szeged: M5",   "color": "#FA00F1" },
+    { "id": 7,  "label": "Szolnok: M4",   "color": "#9A75FF" },
+    { "id": 8,  "label": "Hatvan: M3",   "color": "#FFDD83" },
+    { "id": 9,  "label": "Salgótarján: M3",   "color": "#662C1D" },
+    { "id": 10, "label": "Miskolc: M3",  "color": "#237028" },
+    { "id": 11,  "label": "Szekszárd: M6",   "color": "#00FFE4" }
+  ],
+  "export": {
+    "include_label": true,
+    "include_address": true,
+    "include_note": true,
+    "group_header_template": "=== Kör {id} – {label} ==="
+  }
+}
