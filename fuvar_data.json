@@ -1,16 +1,16 @@
 [
     {
-        "id": "row_037sdru0o898",
-        "label": "",
-        "address": "",
+        "id": "row_vrilwio0bwi",
         "city": "",
-        "note": "",
-        "weight": null,
-        "volume": null,
         "lat": null,
         "lon": null,
         "round": 0,
-        "collapsed": false
+        "collapsed": true,
+        "label": "",
+        "address": "",
+        "note": "",
+        "weight": null,
+        "volume": null
     },
     {
         "id": "row_23w2612se52",
@@ -24,6 +24,19 @@
         "collapsed": true,
         "weight": 200,
         "volume": 2
+    },
+    {
+        "id": "row_037sdru0o898",
+        "label": "Rossmann 23",
+        "address": "Fonyód, Ady Endre u. 7, 8640",
+        "city": "Fonyód",
+        "note": "",
+        "weight": null,
+        "volume": null,
+        "lat": 46.7490826,
+        "lon": 17.5582659,
+        "round": 2,
+        "collapsed": true
     },
     {
         "id": "row_0ftwkdtf8v4i",
@@ -270,6 +283,19 @@
         "round": 10,
         "collapsed": true,
         "weight": 1123
+    },
+    {
+        "id": "row_f9k3hm7lu1t",
+        "city": "Debrecen",
+        "lat": 47.531399,
+        "lon": 21.6259782,
+        "round": 10,
+        "collapsed": true,
+        "label": "teszt",
+        "address": "debrecen",
+        "note": "teszt",
+        "weight": null,
+        "volume": null
     },
     {
         "id": "row_b170x1n75k",
