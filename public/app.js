@@ -8,7 +8,11 @@
     markersById: new Map(),
     rowsById: new Map(),
     ORIGIN: {lat:47.4500, lon:19.3500}, // Maglód tartalék
-    filterText: ''
+    filterText: '',
+    dataVersion: null,
+    remoteDataVersion: null,
+    needsReload: false,
+    reloadAlertShown: false
   };
 
   const history = [];
@@ -21,6 +25,10 @@
   let quickSearchClearBtn = null;
 
   const flashTimers = new WeakMap();
+  const VERSION_POLL_INTERVAL = 15000;
+  let versionWatcherActive = false;
+  let versionPollTimer = null;
+  let syncWarningElements = null;
 
   const roundMetaKey = (rid)=> {
     const num = Number(rid);
@@ -100,6 +108,78 @@
 
   function format(template, vars={}){
     return (template || '').replace(/\{(\w+)\}/g, (_, k)=> (k in vars ? String(vars[k]) : ''));
+  }
+
+  function ensureSyncWarningElements(){
+    if (syncWarningElements) return syncWarningElements;
+    const el = document.createElement('div');
+    el.id = 'syncWarning';
+    const msg = document.createElement('span');
+    msg.className = 'sync-warning-message';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'sync-warning-reload';
+    btn.textContent = text('messages.reload_now', 'Oldal frissítése');
+    btn.addEventListener('click', ()=>{ window.location.reload(); });
+    el.append(msg, btn);
+    document.body.appendChild(el);
+    syncWarningElements = {el, msg, btn};
+    return syncWarningElements;
+  }
+
+  function showSyncWarning(message){
+    const elements = ensureSyncWarningElements();
+    const msg = (message && message.trim()) || text('messages.remote_change_detected', 'Időközben más felhasználó módosította az adatokat. Az aktuális verzió eléréséhez frissítsd az oldalt.');
+    elements.msg.textContent = msg;
+    elements.btn.textContent = text('messages.reload_now', 'Oldal frissítése');
+    elements.el.dataset.visible = 'true';
+  }
+
+  function hideSyncWarning(){
+    if (!syncWarningElements) return;
+    syncWarningElements.el.dataset.visible = 'false';
+  }
+
+  function markNeedsReload(remoteVersion, opts = {}){
+    if (remoteVersion && typeof remoteVersion === 'string') {
+      state.remoteDataVersion = remoteVersion;
+    }
+    const customMessage = opts && typeof opts.message === 'string' ? opts.message.trim() : '';
+    const message = customMessage || text('messages.remote_change_detected', 'Időközben más felhasználó módosította az adatokat. Az aktuális verzió eléréséhez frissítsd az oldalt.');
+    showSyncWarning(message);
+    state.needsReload = true;
+  }
+
+  async function pollVersionOnce(){
+    if (!EP.version) return;
+    try {
+      const j = await fetchJSON(EP.version, {cache: 'no-store'});
+      const remoteVersion = (j && typeof j.version === 'string') ? j.version : null;
+      if (remoteVersion) {
+        state.remoteDataVersion = remoteVersion;
+        if (state.dataVersion && remoteVersion !== state.dataVersion) {
+          markNeedsReload(remoteVersion);
+        }
+      }
+    } catch (err) {
+      console.error('version poll failed', err);
+    }
+  }
+
+  function scheduleVersionPoll(){
+    if (!versionWatcherActive) return;
+    versionPollTimer = setTimeout(async ()=>{
+      versionPollTimer = null;
+      await pollVersionOnce();
+      scheduleVersionPoll();
+    }, VERSION_POLL_INTERVAL);
+  }
+
+  function startVersionWatcher(){
+    if (versionWatcherActive || !EP.version) return;
+    versionWatcherActive = true;
+    pollVersionOnce();
+    scheduleVersionPoll();
   }
 
   const getFieldDefs = ()=> (cfg('items.fields', []) || []).filter(f => f && f.enabled !== false);
@@ -674,6 +754,12 @@
         }
       });
     }
+    const version = (j && typeof j.version === 'string') ? j.version : null;
+    state.dataVersion = version;
+    state.remoteDataVersion = version;
+    state.needsReload = false;
+    state.reloadAlertShown = false;
+    hideSyncWarning();
     markerLayer.clearLayers();
     state.markersById.clear();
     updatePinCount();
@@ -681,14 +767,41 @@
   async function loadAll(){
     const j = await fetchJSON(EP.load);
     applyLoadedData(j);
+    startVersionWatcher();
   }
   async function saveAll(){
     try{
-      const payload = JSON.stringify({items: state.items, round_meta: normalizedRoundMeta()});
+      if (state.needsReload && state.remoteDataVersion && state.remoteDataVersion !== state.dataVersion) {
+        markNeedsReload(state.remoteDataVersion);
+        if (!state.reloadAlertShown) {
+          alert(text('messages.version_conflict', 'Időközben más felhasználó módosította az adatokat. A legfrissebb verzióhoz frissítsd az oldalt.'));
+          state.reloadAlertShown = true;
+        }
+        showSaveStatus(false);
+        return false;
+      }
+      const payload = JSON.stringify({
+        items: state.items,
+        round_meta: normalizedRoundMeta(),
+        version: typeof state.dataVersion === 'string' ? state.dataVersion : ''
+      });
       const r = await fetch(EP.save, {method:'POST', headers:{'Content-Type':'application/json'}, body: payload});
       const t = await r.text();
       let j=null; try{ j = JSON.parse(t); }catch(_){}
       const ok = !!(r.ok && j && j.ok===true);
+      if (ok && j && typeof j.version === 'string') {
+        state.dataVersion = j.version;
+        state.remoteDataVersion = j.version;
+        state.needsReload = false;
+        state.reloadAlertShown = false;
+        hideSyncWarning();
+      } else if (!ok && j && j.error === 'version_conflict') {
+        markNeedsReload(typeof j.version === 'string' ? j.version : null);
+        if (!state.reloadAlertShown) {
+          alert(text('messages.version_conflict', 'Időközben más felhasználó módosította az adatokat. A legfrissebb verzióhoz frissítsd az oldalt.'));
+          state.reloadAlertShown = true;
+        }
+      }
       showSaveStatus(ok);
       return ok;
     }catch(e){
@@ -1611,16 +1724,37 @@
         try{
           pushSnapshot();
           const removedIds = state.items.filter(it => (+it.round||0)===rid).map(it=>it.id);
+          const payload = {
+            round: rid,
+            version: typeof state.dataVersion === 'string' ? state.dataVersion : ''
+          };
           const r = await fetch(EP.deleteRound, {
             method:'POST',
             headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({round:rid})
+            body: JSON.stringify(payload)
           });
           const t = await r.text();
           let ok=false, j=null;
           try { j = JSON.parse(t); ok = !!j.ok; }
           catch(_) { ok = r.ok; }
-          if (!ok) throw new Error('delete_failed');
+          if (!ok) {
+            if (j && j.error === 'version_conflict') {
+              markNeedsReload(typeof j.version === 'string' ? j.version : null);
+              if (!state.reloadAlertShown) {
+                alert(text('messages.version_conflict', 'Időközben más felhasználó módosította az adatokat. A legfrissebb verzióhoz frissítsd az oldalt.'));
+                state.reloadAlertShown = true;
+              }
+            }
+            throw new Error('delete_failed');
+          }
+
+          if (j && typeof j.version === 'string') {
+            state.dataVersion = j.version;
+            state.remoteDataVersion = j.version;
+            state.needsReload = false;
+            state.reloadAlertShown = false;
+            hideSyncWarning();
+          }
 
           state.items = state.items.filter(it => (+it.round||0)!==rid);
           clearRoundMeta(rid);
@@ -1833,6 +1967,7 @@
         const form = new FormData();
         form.append('file', file);
         form.append('mode', mode);
+        form.append('version', typeof state.dataVersion === 'string' ? state.dataVersion : '');
         const resp = await fetch(EP.importCsv, {method:'POST', body: form});
         const raw = await resp.text();
         let data;
@@ -1840,8 +1975,14 @@
         catch(_) { throw Object.assign(new Error('bad_json'), {raw}); }
         if (!resp.ok || !data || data.ok !== true) {
           const detail = (data && typeof data.error === 'string') ? data.error : null;
+          if (detail === 'version_conflict') {
+            markNeedsReload(typeof data.version === 'string' ? data.version : null);
+          }
           const err = new Error('import_failed');
           if (detail) err.detail = detail;
+          if (detail === 'version_conflict' && data && typeof data.version === 'string') {
+            err.serverVersion = data.version;
+          }
           throw err;
         }
         const importedIds = Array.isArray(data.imported_ids) ? data.imported_ids : null;
@@ -1868,10 +2009,17 @@
       } catch (e) {
         console.error(e);
         showSaveStatus(false);
-        let msg = text('messages.import_error', 'Az importálás nem sikerült.');
-        const extra = e && (e.detail || e.message);
-        if (extra && typeof extra === 'string' && extra.trim() && !['import_failed','bad_json'].includes(extra)) {
-          msg += `\n\n${extra.trim()}`;
+        let msg;
+        if (e && e.detail === 'version_conflict') {
+          markNeedsReload(e && typeof e.serverVersion === 'string' ? e.serverVersion : null);
+          msg = text('messages.version_conflict', 'Időközben más felhasználó módosította az adatokat. A legfrissebb verzióhoz frissítsd az oldalt.');
+          state.reloadAlertShown = true;
+        } else {
+          msg = text('messages.import_error', 'Az importálás nem sikerült.');
+          const extra = e && (e.detail || e.message);
+          if (extra && typeof extra === 'string' && extra.trim() && !['import_failed','bad_json'].includes(extra)) {
+            msg += `\n\n${extra.trim()}`;
+          }
         }
         alert(msg);
       } finally {

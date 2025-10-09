@@ -17,6 +17,7 @@
       cfg: 'api.php?action=cfg',
       load: 'api.php?action=load',
       save: 'api.php?action=save',
+      version: 'api.php?action=version',
       geocode: 'api.php?action=geocode',
       importCsv: 'api.php?action=import_csv',
       exportAll: 'api.php?action=export',
