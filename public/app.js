@@ -8,7 +8,15 @@
     markersById: new Map(),
     rowsById: new Map(),
     ORIGIN: {lat:47.4500, lon:19.3500}, // Maglód tartalék
-    filterText: ''
+    filterText: '',
+    clientId: null,
+    baselineRevision: 0,
+    latestRevision: 0,
+    changeWatcher: null,
+    foreignRevisionSet: new Set(),
+    activeEditor: null,
+    conflictNotified: new Set(),
+    conflictOverlay: null
   };
 
   const history = [];
@@ -26,6 +34,448 @@
   const COLLAPSE_STORAGE_KEY = 'app_panel_collapsed_rows_v1';
   const DEFAULT_COLLAPSED = true;
   let collapsePrefsStorageError = false;
+
+  function makeRequestId(){
+    if (window.crypto?.randomUUID) {
+      return 'req_' + window.crypto.randomUUID().replace(/-/g, '');
+    }
+    return 'req_' + Math.random().toString(36).slice(2, 14);
+  }
+
+  function makeBatchId(){
+    if (window.crypto?.randomUUID) {
+      return 'batch_' + window.crypto.randomUUID().replace(/-/g, '');
+    }
+    return 'batch_' + Math.random().toString(36).slice(2, 14);
+  }
+
+  function buildHeaders(raw){
+    const headers = new Headers();
+    if (raw instanceof Headers) {
+      raw.forEach((value, key)=>{ headers.set(key, value); });
+    } else if (raw && typeof raw === 'object') {
+      Object.entries(raw).forEach(([key, value])=>{
+        if (value == null) return;
+        headers.set(key, value);
+      });
+    }
+    if (state.clientId) {
+      headers.set('X-Client-ID', state.clientId);
+    }
+    return headers;
+  }
+
+  function updateKnownRevision(rev){
+    if (!Number.isFinite(rev)) return;
+    const num = Number(rev);
+    if (num > state.latestRevision) {
+      state.latestRevision = num;
+    }
+    if (num > state.baselineRevision) {
+      state.baselineRevision = num;
+    }
+    if (state.changeWatcher) {
+      state.changeWatcher.setBaseline(num);
+    }
+  }
+
+  function registerForeignRevision(rev){
+    if (!Number.isFinite(rev)) return false;
+    const num = Number(rev);
+    if (state.foreignRevisionSet.has(num)) return false;
+    state.foreignRevisionSet.add(num);
+    return true;
+  }
+
+  function resetForeignRevisions(){
+    state.foreignRevisionSet.clear();
+  }
+
+  class ChangeWatcher {
+    constructor(opts){
+      this.clientId = opts?.clientId || null;
+      this.changesUrl = opts?.changesUrl || '';
+      this.revisionUrl = opts?.revisionUrl || '';
+      this.onForeignChange = typeof opts?.onForeignChange === 'function' ? opts.onForeignChange : ()=>{};
+      this.since = Number(opts?.baselineRev || 0);
+      this.batchIds = new Set();
+      this.active = false;
+      this.pollingPromise = null;
+      this.visibilityListener = this.handleVisibilityChange.bind(this);
+      this.revisionTimer = null;
+    }
+
+    setBaseline(rev){
+      if (Number.isFinite(rev) && Number(rev) > this.since) {
+        this.since = Number(rev);
+      }
+    }
+
+    registerBatch(batchId){
+      if (batchId) this.batchIds.add(batchId);
+    }
+
+    unregisterBatch(batchId){
+      if (batchId) this.batchIds.delete(batchId);
+    }
+
+    start(){
+      if (this.active) return;
+      this.active = true;
+      document.addEventListener('visibilitychange', this.visibilityListener);
+      this.loop();
+      this.revisionTimer = setInterval(()=> this.checkRevision(), 12000);
+    }
+
+    stop(){
+      if (!this.active) return;
+      this.active = false;
+      document.removeEventListener('visibilitychange', this.visibilityListener);
+      if (this.revisionTimer) clearInterval(this.revisionTimer);
+      this.revisionTimer = null;
+    }
+
+    handleVisibilityChange(){
+      if (!this.active) return;
+      if (this.isVisible() && !this.pollingPromise) {
+        this.loop();
+      }
+    }
+
+    isVisible(){
+      return document.visibilityState !== 'hidden';
+    }
+
+    loop(){
+      if (!this.active) return;
+      if (this.pollingPromise) return;
+      this.pollingPromise = (async ()=>{
+        while (this.active) {
+          if (!this.isVisible()) {
+            await this.waitUntilVisible();
+            if (!this.active) break;
+          }
+          try {
+            await this.poll();
+          } catch (err) {
+            console.warn('változásfigyelés hiba', err);
+            await this.delay(1200);
+          }
+        }
+        this.pollingPromise = null;
+      })();
+    }
+
+    async poll(){
+      const params = new URLSearchParams({since: String(this.since)});
+      if (this.clientId) params.set('exclude_actor', this.clientId);
+      if (this.batchIds.size) params.set('exclude_batch', Array.from(this.batchIds).join(','));
+      const url = this.buildUrl(this.changesUrl, params.toString());
+      const resp = await fetch(url, {cache:'no-store', headers: buildHeaders()});
+      if (resp.status === 204) {
+        return;
+      }
+      if (!resp.ok) {
+        throw new Error('changes_fetch_failed');
+      }
+      const data = await resp.json();
+      const events = Array.isArray(data.events) ? data.events : [];
+      const latest = Number.isFinite(Number(data.latest_rev)) ? Number(data.latest_rev) : this.since;
+      if (latest > this.since) {
+        this.since = latest;
+      }
+      if (events.length) {
+        const foreign = events.filter(ev => !ev.actor_id || ev.actor_id !== this.clientId);
+        if (foreign.length) {
+          this.onForeignChange(foreign, latest || this.since);
+        }
+      }
+    }
+
+    async checkRevision(){
+      if (!this.active) return;
+      try {
+        const resp = await fetch(this.revisionUrl, {cache:'no-store', headers: buildHeaders()});
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const rev = Number(data.rev);
+        if (Number.isFinite(rev) && rev > this.since) {
+          this.since = rev;
+          this.onForeignChange([], rev, {fromRevisionPing: true});
+        }
+      } catch (err) {
+        console.warn('revision lekérdezés hiba', err);
+      }
+    }
+
+    buildUrl(base, qs){
+      if (!qs) return base;
+      return base + (base.includes('?') ? '&' : '?') + qs;
+    }
+
+    waitUntilVisible(){
+      if (this.isVisible()) return Promise.resolve();
+      return new Promise(resolve => {
+        const handler = ()=>{
+          if (this.isVisible()) {
+            document.removeEventListener('visibilitychange', handler);
+            resolve();
+          }
+        };
+        document.addEventListener('visibilitychange', handler);
+      });
+    }
+
+    delay(ms){
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+  }
+
+  const changeNotice = (function(){
+    const wrap = document.createElement('div');
+    wrap.id = 'changeNoticeBanner';
+    wrap.className = 'change-notice change-notice--hidden';
+    wrap.setAttribute('role', 'status');
+    wrap.setAttribute('aria-live', 'polite');
+    const msg = document.createElement('span');
+    msg.className = 'change-notice__message';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'change-notice__button';
+    btn.textContent = 'Frissítés';
+    btn.addEventListener('click', ()=>{
+      window.location.reload();
+    });
+    wrap.appendChild(msg);
+    wrap.appendChild(btn);
+    document.body.appendChild(wrap);
+    return {
+      show(count){
+        const tpl = count > 1 ? `Közben ${count} módosítás történt` : 'Közben változás történt';
+        msg.textContent = `${tpl} – kérlek frissíts!`;
+        wrap.classList.remove('change-notice--hidden');
+      },
+      hide(){
+        wrap.classList.add('change-notice--hidden');
+      }
+    };
+  })();
+
+  async function ensureClientId(){
+    if (state.clientId) return state.clientId;
+    const resp = await fetchJSON(EP.session);
+    if (resp && resp.ok && typeof resp.client_id === 'string') {
+      state.clientId = resp.client_id;
+      return state.clientId;
+    }
+    if (resp && typeof resp.client_id === 'string') {
+      state.clientId = resp.client_id;
+      return state.clientId;
+    }
+    throw new Error('client_id_missing');
+  }
+
+  function initChangeWatcher(){
+    if (!state.clientId) return;
+    const opts = {
+      clientId: state.clientId,
+      changesUrl: EP.changes,
+      revisionUrl: EP.revision,
+      baselineRev: state.baselineRevision,
+      onForeignChange: handleForeignChange
+    };
+    if (!state.changeWatcher) {
+      state.changeWatcher = new ChangeWatcher(opts);
+      state.changeWatcher.start();
+    } else {
+      state.changeWatcher.clientId = state.clientId;
+      state.changeWatcher.setBaseline(state.baselineRevision);
+    }
+  }
+
+  function closeConflictOverlay(){
+    if (state.conflictOverlay) {
+      state.conflictOverlay.remove();
+      state.conflictOverlay = null;
+    }
+  }
+
+  function fieldLabel(fieldId){
+    const fields = getFieldDefs();
+    const foundField = fields.find(f => f?.id === fieldId);
+    if (foundField && foundField.label) return foundField.label;
+    const metrics = getMetricDefs();
+    const foundMetric = metrics.find(m => m?.id === fieldId);
+    if (foundMetric && foundMetric.label) return foundMetric.label;
+    const fallback = {
+      round: cfg('items.round_field.label', 'Kör'),
+      city: 'Város',
+      note: 'Megjegyzés',
+      address: 'Cím',
+      label: 'Címke'
+    };
+    return fallback[fieldId] || fieldId;
+  }
+
+  function formatValueForDiff(value){
+    if (value == null) return '—';
+    if (typeof value === 'number') return String(value);
+    if (value === false) return 'nem';
+    if (value === true) return 'igen';
+    if (value instanceof Date) return value.toISOString();
+    if (typeof value === 'object') {
+      try { return JSON.stringify(value); }
+      catch(_) { return String(value); }
+    }
+    return String(value);
+  }
+
+  function computeConflictDiff(original, remote, local){
+    const before = original || {};
+    const after = remote || {};
+    const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+    const diffs = [];
+    keys.forEach(key => {
+      if (key === 'id' || key === '_pendingRound' || key === 'collapsed') return;
+      const prevVal = before[key];
+      const newVal = after[key];
+      const prevJson = JSON.stringify(prevVal);
+      const newJson = JSON.stringify(newVal);
+      if (prevJson === newJson) return;
+      const entry = {
+        field: key,
+        label: fieldLabel(key),
+        before: formatValueForDiff(prevVal),
+        after: formatValueForDiff(newVal),
+        local: local ? formatValueForDiff(local[key]) : '—'
+      };
+      diffs.push(entry);
+    });
+    return diffs;
+  }
+
+  function showConflictDialog(itemId, original, remote, local, options={}){
+    closeConflictOverlay();
+    const overlay = document.createElement('div');
+    overlay.className = 'conflict-overlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-labelledby', 'conflictDialogTitle');
+
+    const box = document.createElement('div');
+    box.className = 'conflict-dialog';
+
+    const title = document.createElement('h2');
+    title.id = 'conflictDialogTitle';
+    title.textContent = 'Konfliktus észlelve';
+    box.appendChild(title);
+
+    const intro = document.createElement('p');
+    if (remote == null) {
+      intro.textContent = 'A tételt időközben törölték vagy másik körbe helyezték.';
+    } else if (options?.loadFailed) {
+      intro.textContent = 'A frissített adatok lekérése nem sikerült, de másik felhasználó módosította a tételt.';
+    } else {
+      intro.textContent = 'Miközben szerkesztetted, egy másik felhasználó módosította ezt a tételt.';
+    }
+    box.appendChild(intro);
+
+    const diff = computeConflictDiff(original, remote, local);
+    if (diff.length) {
+      const list = document.createElement('ul');
+      list.className = 'conflict-diff';
+      diff.forEach(entry => {
+        const li = document.createElement('li');
+        li.innerHTML = `<strong>${entry.label}:</strong> <span class="conflict-before">${entry.before}</span> → <span class="conflict-after">${entry.after}</span> <span class="conflict-local">(helyi: ${entry.local})</span>`;
+        list.appendChild(li);
+      });
+      box.appendChild(list);
+    }
+
+    const actions = document.createElement('div');
+    actions.className = 'conflict-actions';
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.textContent = 'Bezár';
+    closeBtn.addEventListener('click', ()=>{
+      closeConflictOverlay();
+    });
+
+    const reloadBtn = document.createElement('button');
+    reloadBtn.type = 'button';
+    reloadBtn.className = 'primary';
+    reloadBtn.textContent = 'Frissítés';
+    reloadBtn.addEventListener('click', ()=>{
+      window.location.reload();
+    });
+
+    actions.appendChild(reloadBtn);
+    actions.appendChild(closeBtn);
+    box.appendChild(actions);
+    overlay.appendChild(box);
+    overlay.addEventListener('click', (event)=>{
+      if (event.target === overlay) {
+        closeConflictOverlay();
+      }
+    });
+    document.addEventListener('keydown', function escHandler(ev){
+      if (ev.key === 'Escape') {
+        document.removeEventListener('keydown', escHandler);
+        closeConflictOverlay();
+      }
+    }, {once:true});
+    document.body.appendChild(overlay);
+    state.conflictOverlay = overlay;
+  }
+
+  async function triggerConflictForItem(itemId){
+    if (!itemId) return;
+    if (state.conflictNotified.has(itemId)) return;
+    state.conflictNotified.add(itemId);
+    try {
+      const payload = await fetchJSON(EP.load, {cache:'no-store'});
+      const remoteItems = Array.isArray(payload.items) ? payload.items : [];
+      const remote = remoteItems.find(it => it && it.id === itemId) || null;
+      const local = state.items.find(it => it && it.id === itemId) || null;
+      const original = state.activeEditor?.snapshot || null;
+      showConflictDialog(itemId, original, remote, local);
+    } catch (err) {
+      console.error('Konfliktus frissítés hiba', err);
+      const local = state.items.find(it => it && it.id === itemId) || null;
+      showConflictDialog(itemId, state.activeEditor?.snapshot || null, null, local, {loadFailed: true});
+    }
+  }
+
+  function handleForeignChange(events, latestRev, opts={}){
+    if (Number.isFinite(latestRev)) {
+      state.latestRevision = Math.max(state.latestRevision, Number(latestRev));
+    }
+    let anyNew = false;
+    if (Array.isArray(events)) {
+      events.forEach(ev => {
+        if (Number.isFinite(ev?.rev)) {
+          if (registerForeignRevision(Number(ev.rev))) {
+            anyNew = true;
+          }
+        }
+      });
+    }
+    if (!anyNew && Number.isFinite(latestRev)) {
+      if (registerForeignRevision(Number(latestRev))) {
+        anyNew = true;
+      }
+    }
+    if (anyNew) {
+      changeNotice.show(state.foreignRevisionSet.size);
+    }
+    if (Array.isArray(events) && state.activeEditor) {
+      const affected = events.some(ev => ev?.entity === 'item' && ev.entity_id === state.activeEditor.id);
+      if (affected) {
+        triggerConflictForItem(state.activeEditor.id);
+      }
+    }
+  }
 
   function loadCollapsePrefs(){
     collapsePrefs.clear();
@@ -784,7 +1234,9 @@
 
   // ======= BACKEND
   async function fetchJSON(url, opts){
-    const r = await fetch(url, opts);
+    const options = opts ? {...opts} : {};
+    options.headers = buildHeaders(options.headers || {});
+    const r = await fetch(url, options);
     const text = await r.text();
     let j; try{ j = JSON.parse(text); } catch(e){ throw new Error('bad_json'); }
     j.__http_ok = r.ok; j.__status = r.status;
@@ -821,8 +1273,15 @@
     updatePinCount();
   }
   async function loadAll(){
-    const j = await fetchJSON(EP.load);
+    const j = await fetchJSON(EP.load, {cache:'no-store'});
     applyLoadedData(j);
+    const rev = Number(j.revision ?? 0) || 0;
+    state.baselineRevision = rev;
+    state.latestRevision = Math.max(state.latestRevision, rev);
+    resetForeignRevisions();
+    changeNotice.hide();
+    closeConflictOverlay();
+    state.conflictNotified.clear();
   }
   async function saveAll(){
     try{
@@ -835,11 +1294,20 @@
         return copy;
       });
       const payload = JSON.stringify({items: sanitizedItems, round_meta: normalizedRoundMeta()});
-      const r = await fetch(EP.save, {method:'POST', headers:{'Content-Type':'application/json'}, body: payload});
+      const headers = buildHeaders({'Content-Type':'application/json'});
+      const requestId = makeRequestId();
+      headers.set('X-Request-ID', requestId);
+      const r = await fetch(EP.save, {method:'POST', headers, body: payload});
       const t = await r.text();
       let j=null; try{ j = JSON.parse(t); }catch(_){}
       const ok = !!(r.ok && j && j.ok===true);
       showSaveStatus(ok);
+      const revNum = Number(j?.rev);
+      if (ok && j && Number.isFinite(revNum)) {
+        updateKnownRevision(revNum);
+        resetForeignRevisions();
+        changeNotice.hide();
+      }
       return ok;
     }catch(e){
       console.error(e);
@@ -1594,6 +2062,21 @@
     updateRowHeaderMeta(row, it);
     state.rowsById.set(it.id, row);
     refreshDeleteButtonState(row, it);
+
+    row.addEventListener('focusin', ()=>{
+      const current = state.items.find(x => x?.id === it.id);
+      state.activeEditor = {
+        id: it.id,
+        snapshot: current ? JSON.parse(JSON.stringify(current)) : null
+      };
+      state.conflictNotified.delete(it.id);
+    });
+    row.addEventListener('focusout', (event)=>{
+      if (!row.contains(event.relatedTarget)) {
+        state.activeEditor = null;
+      }
+    });
+
     return row;
   }
 
@@ -1791,9 +2274,12 @@
         try{
           pushSnapshot();
           const removedIds = state.items.filter(it => (+it.round||0)===rid).map(it=>it.id);
+          const headers = buildHeaders({'Content-Type':'application/json'});
+          const requestId = makeRequestId();
+          headers.set('X-Request-ID', requestId);
           const r = await fetch(EP.deleteRound, {
             method:'POST',
-            headers:{'Content-Type':'application/json'},
+            headers,
             body: JSON.stringify({round:rid})
           });
           const t = await r.text();
@@ -1801,6 +2287,13 @@
           try { j = JSON.parse(t); ok = !!j.ok; }
           catch(_) { ok = r.ok; }
           if (!ok) throw new Error('delete_failed');
+
+          const revNum = Number(j?.rev);
+          if (Number.isFinite(revNum)) {
+            updateKnownRevision(revNum);
+            resetForeignRevisions();
+            changeNotice.hide();
+          }
 
           state.items = state.items.filter(it => (+it.round||0)!==rid);
           clearRoundMeta(rid);
@@ -2013,7 +2506,18 @@
         const form = new FormData();
         form.append('file', file);
         form.append('mode', mode);
-        const resp = await fetch(EP.importCsv, {method:'POST', body: form});
+        const batchId = makeBatchId();
+        if (state.changeWatcher) state.changeWatcher.registerBatch(batchId);
+        let resp;
+        try {
+          const headers = buildHeaders();
+          const requestId = makeRequestId();
+          headers.set('X-Request-ID', requestId);
+          headers.set('X-Batch-ID', batchId);
+          resp = await fetch(EP.importCsv, {method:'POST', headers, body: form});
+        } finally {
+          if (state.changeWatcher) state.changeWatcher.unregisterBatch(batchId);
+        }
         const raw = await resp.text();
         let data;
         try { data = JSON.parse(raw); }
@@ -2025,6 +2529,12 @@
           throw err;
         }
         const importedIds = Array.isArray(data.imported_ids) ? data.imported_ids : null;
+        const revNum = Number(data?.rev);
+        if (Number.isFinite(revNum)) {
+          updateKnownRevision(revNum);
+          resetForeignRevisions();
+          changeNotice.hide();
+        }
         applyLoadedData(data);
         history.length = 0;
         const geo = await autoGeocodeImported(importedIds);
@@ -2139,8 +2649,10 @@
         }catch(e){}
       }
 
+      await ensureClientId();
       // load data
       await loadAll();
+      initChangeWatcher();
 
       // mindig legyen üres sor a 0-s körben
       if (!Array.isArray(state.items) || state.items.length===0){
