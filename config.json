@@ -299,9 +299,22 @@
             "import_geocode_partial_detail": "Nem sikerült geokódolni:\n{list}",
             "import_geocode_partial_list_title": "Nem sikerült geokódolni:",
             "import_geocode_use_city": "Település alapján helyezze el",
+            "import_geocode_skip_addresses": "Címek kihagyása",
+            "import_geocode_copy": "Címek másolása",
+            "import_geocode_copy_success": "Címek a vágólapra kerültek",
+            "import_geocode_copy_error": "Nem sikerült a másolás.",
+            "import_geocode_reset": "Import visszaállítása",
             "import_geocode_skip_city": "Bezárás",
             "import_city_fallback_progress": "Települések geokódolása…",
-            "import_city_fallback_result": "Település-alapú geokódolás – sikeres: {success}, sikertelen: {failed}."
+            "import_city_fallback_result": "Település-alapú geokódolás – sikeres: {success}, sikertelen: {failed}.",
+            "import_skip_progress": "Címek eltávolítása…",
+            "import_skip_result": "{count} cím kihagyva az importból.",
+            "import_skip_none": "Nem történt módosítás.",
+            "import_skip_error": "A címek eltávolítása nem mentődött el teljesen.",
+            "import_reset_progress": "Import visszaállítása…",
+            "import_reset_success": "Az import visszaállítása megtörtént.",
+            "import_reset_error": "Az import visszaállítása nem sikerült teljesen.",
+            "import_reset_missing": "Az eredeti adatok nem érhetők el."
         }
     },
     "items": {

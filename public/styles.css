@@ -234,6 +234,11 @@ button.del:disabled{opacity:.5;cursor:not-allowed}
   display:flex;
   justify-content:flex-end;
   gap:12px;
+  flex-wrap:wrap;
+  align-items:center;
+}
+.import-dialog__actions--wrap{
+  gap:10px;
 }
 .import-dialog__actions button{
   border-radius:10px;
@@ -248,5 +253,27 @@ button.del:disabled{opacity:.5;cursor:not-allowed}
   background:var(--accent);
   border-color:var(--accent);
   color:#fff;
+}
+.import-dialog__actions button.secondary{
+  background:var(--panel);
+  color:var(--text);
+}
+.import-dialog__actions button.ghost{
+  background:transparent;
+  color:var(--text);
+}
+.import-dialog__actions button.danger{
+  background:#dc2626;
+  border-color:#dc2626;
+  color:#fff;
+}
+.import-dialog__actions button.success{
+  background:#16a34a;
+  border-color:#16a34a;
+  color:#fff;
+}
+.import-dialog__actions button:disabled{
+  opacity:0.65;
+  cursor:default;
 }
 .import-dialog__actions button:hover{filter:brightness(0.98);}

@@ -20,6 +20,7 @@
   };
 
   const history = [];
+  let importRollbackSnapshot = null;
   const undoBtn = document.getElementById('undoBtn');
 
   const groupsEl = document.getElementById('groups');
@@ -594,6 +595,50 @@
       if (date) out[rid] = {planned_date: date.slice(0, 120)};
     }
     return out;
+  }
+
+  function captureImportRollbackSnapshot(){
+    importRollbackSnapshot = {
+      items: JSON.parse(JSON.stringify(state.items)),
+      roundMeta: JSON.parse(JSON.stringify(normalizedRoundMeta())),
+      baselineRevision: state.baselineRevision,
+      latestRevision: state.latestRevision
+    };
+  }
+
+  function hasImportRollbackSnapshot(){
+    return !!(importRollbackSnapshot && Array.isArray(importRollbackSnapshot.items));
+  }
+
+  function clearImportRollbackSnapshot(){
+    importRollbackSnapshot = null;
+  }
+
+  async function restoreImportRollbackSnapshot(){
+    if (!hasImportRollbackSnapshot()) {
+      return {restored: false, saveOk: false};
+    }
+    const payload = {
+      items: JSON.parse(JSON.stringify(importRollbackSnapshot.items || [])),
+      round_meta: JSON.parse(JSON.stringify(importRollbackSnapshot.roundMeta || {}))
+    };
+    applyLoadedData(payload);
+    const base = Number(importRollbackSnapshot.baselineRevision ?? state.baselineRevision);
+    const latest = Number(importRollbackSnapshot.latestRevision ?? state.latestRevision);
+    state.baselineRevision = Number.isFinite(base) ? base : state.baselineRevision;
+    state.latestRevision = Number.isFinite(latest) ? latest : state.latestRevision;
+    history.length = 0;
+    ensureBlankRowInDefaultRound();
+    renderEverything();
+    const ok = await saveAll();
+    if (ok) {
+      resetForeignRevisions();
+      changeNotice.hide();
+    } else {
+      showSaveStatus(false);
+    }
+    clearImportRollbackSnapshot();
+    return {restored: true, saveOk: ok};
   }
 
   function cfg(path, fallback){
@@ -2554,7 +2599,80 @@
     });
   }
 
-  function showGeocodeFailureDialog(message, failures){
+  function geocodeFailureClipboardText(failures){
+    if (!Array.isArray(failures)) return '';
+    const lines = failures
+      .map(entry => {
+        if (!entry || typeof entry !== 'object') return '';
+        const parts = [entry.summary, entry.address, entry.label, entry.fallbackCity, entry.city, entry.id]
+          .map(part => (part == null ? '' : String(part).trim()))
+          .filter(Boolean);
+        return parts.join(' – ');
+      })
+      .filter(line => line && line.trim());
+    return lines.join('\n');
+  }
+
+  async function copyImportFailuresToClipboard(failures){
+    const text = geocodeFailureClipboardText(failures);
+    if (!text) throw new Error('empty');
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    if (!ok) throw new Error('copy_failed');
+    return true;
+  }
+
+  async function dropImportFailures(failures){
+    const indices = Array.isArray(failures)
+      ? failures
+          .map(entry => (Number.isInteger(entry?.index) && entry.index >= 0 ? entry.index : null))
+          .filter(idx => idx != null)
+      : [];
+    if (!indices.length) {
+      return {changed: false, removed: 0, saveOk: true};
+    }
+    const unique = Array.from(new Set(indices)).sort((a, b) => b - a);
+    pushSnapshot();
+    let removed = 0;
+    unique.forEach(idx => {
+      if (idx < 0 || idx >= state.items.length) return;
+      const item = state.items[idx];
+      if (!item || typeof item !== 'object') return;
+      removed += 1;
+      if (item.id != null) {
+        clearCollapsePref(item.id);
+        const marker = state.markersById.get(item.id);
+        if (marker) {
+          markerLayer.removeLayer(marker);
+          state.markersById.delete(item.id);
+        }
+      }
+      state.items.splice(idx, 1);
+    });
+    if (!removed) {
+      return {changed: false, removed: 0, saveOk: true};
+    }
+    ensureBlankRowInDefaultRound();
+    renderEverything();
+    const saveOk = await saveAll();
+    if (!saveOk) {
+      showSaveStatus(false);
+    }
+    return {changed: true, removed, saveOk};
+  }
+
+  function showGeocodeFailureDialog(message, failures, options = {}){
     if (!Array.isArray(failures) || failures.length === 0) {
       alert(message);
       return Promise.resolve('dismiss');
@@ -2580,13 +2698,26 @@
       });
 
       const buttonRow = document.createElement('div');
-      buttonRow.className = 'import-dialog__actions';
+      buttonRow.className = 'import-dialog__actions import-dialog__actions--wrap';
+      const copyBtn = document.createElement('button');
+      copyBtn.type = 'button';
+      copyBtn.className = 'ghost';
+      copyBtn.textContent = text('messages.import_geocode_copy', 'Címek másolása');
+      const skipBtn = document.createElement('button');
+      skipBtn.type = 'button';
+      skipBtn.className = 'secondary';
+      skipBtn.textContent = text('messages.import_geocode_skip_addresses', 'Címek kihagyása');
       const useCityBtn = document.createElement('button');
       useCityBtn.type = 'button';
       useCityBtn.className = 'primary';
       useCityBtn.textContent = text('messages.import_geocode_use_city', 'Település alapján helyezze el');
+      const resetBtn = document.createElement('button');
+      resetBtn.type = 'button';
+      resetBtn.className = 'danger';
+      resetBtn.textContent = text('messages.import_geocode_reset', 'Import visszaállítása');
       const closeBtn = document.createElement('button');
       closeBtn.type = 'button';
+      closeBtn.className = 'ghost';
       closeBtn.textContent = text('messages.import_geocode_skip_city', 'Bezárás');
 
       let finished = false;
@@ -2605,13 +2736,43 @@
         resolve(result);
       };
 
+      copyBtn.addEventListener('click', async ()=>{
+        if (copyBtn.disabled) return;
+        try {
+          copyBtn.disabled = true;
+          await (typeof options.onCopy === 'function'
+            ? options.onCopy(failures)
+            : copyImportFailuresToClipboard(failures));
+          const successLabel = text('messages.import_geocode_copy_success', 'Címek a vágólapra kerültek');
+          const originalLabel = text('messages.import_geocode_copy', 'Címek másolása');
+          copyBtn.classList.add('success');
+          copyBtn.textContent = successLabel;
+          setTimeout(()=>{
+            copyBtn.classList.remove('success');
+            copyBtn.textContent = originalLabel;
+            copyBtn.disabled = false;
+          }, 2200);
+        } catch (err) {
+          console.error('copy geocode failures', err);
+          copyBtn.disabled = false;
+          alert(text('messages.import_geocode_copy_error', 'Nem sikerült a másolás.'));
+        }
+      });
+      skipBtn.addEventListener('click', ()=> cleanup('skip'));
       useCityBtn.addEventListener('click', ()=> cleanup('city'));
+      resetBtn.addEventListener('click', ()=> cleanup('reset'));
+      if (options.allowReset === false) {
+        resetBtn.disabled = true;
+      }
       closeBtn.addEventListener('click', ()=> cleanup('dismiss'));
       overlay.addEventListener('click', (event)=>{ if (event.target === overlay) cleanup('dismiss'); });
       document.addEventListener('keydown', escListener);
 
-      buttonRow.appendChild(closeBtn);
+      buttonRow.appendChild(copyBtn);
+      buttonRow.appendChild(skipBtn);
       buttonRow.appendChild(useCityBtn);
+      buttonRow.appendChild(resetBtn);
+      buttonRow.appendChild(closeBtn);
 
       box.appendChild(textWrap);
       box.appendChild(listTitle);
@@ -2628,6 +2789,8 @@
     if (!validEntries.length) {
       return {changed:false, saveOk:true, attempted:0, failed:0, success:0};
     }
+    pushSnapshot();
+    const addressFieldId = getAddressFieldId();
     let changed = false;
     let attempted = 0;
     let failed = 0;
@@ -2642,19 +2805,25 @@
         continue;
       }
       attempted += 1;
+      const updated = {...item};
+      updated[addressFieldId] = cityCandidate;
+      updated.city = cityCandidate;
+      updated.lat = null;
+      updated.lon = null;
       try {
         const geo = await geocodeRobust(cityCandidate);
-        const updated = {...item};
         updated.lat = geo.lat;
         updated.lon = geo.lon;
-        updated.city = geo.city || cityCandidate;
-        state.items[idx] = updated;
-        changed = true;
+        if (geo.city) {
+          updated.city = geo.city;
+        }
         success += 1;
       } catch (err) {
         console.error('city-level geocode failed for import', err);
         failed += 1;
       }
+      state.items[idx] = updated;
+      changed = true;
     }
     let saveOk = true;
     if (changed) {
@@ -2688,6 +2857,7 @@
         importInput.value = '';
         return;
       }
+      captureImportRollbackSnapshot();
       importBtn.disabled = true;
       let loaderCtrl = null;
       const ensureLoaderRemoved = ()=>{
@@ -2744,7 +2914,9 @@
         if (geo.failed > 0 && geo.attempted > 0) {
           const tpl = text('messages.import_geocode_partial', 'Figyelem: {count} címet nem sikerült automatikusan térképre tenni.');
           successMsg += `\n\n${format(tpl, {count: geo.failed})}`;
-          const decision = await showGeocodeFailureDialog(successMsg, geo.failures);
+          const decision = await showGeocodeFailureDialog(successMsg, geo.failures, {
+            allowReset: hasImportRollbackSnapshot()
+          });
           if (decision === 'city') {
             loaderCtrl = showImportProgressOverlay(text('messages.import_city_fallback_progress', 'Települések geokódolása…'));
             const fallback = await geocodeFailuresByCity(geo.failures);
@@ -2758,10 +2930,36 @@
               success: fallback.success ?? 0,
               failed: fallback.failed ?? 0
             }));
+          } else if (decision === 'skip') {
+            loaderCtrl = showImportProgressOverlay(text('messages.import_skip_progress', 'Címek eltávolítása…'));
+            const dropped = await dropImportFailures(geo.failures);
+            ensureLoaderRemoved();
+            if (!dropped.changed) {
+              alert(text('messages.import_skip_none', 'Nem történt módosítás.'));
+            } else {
+              if (!dropped.saveOk) {
+                alert(text('messages.import_skip_error', 'A címek eltávolítása nem mentődött el teljesen.'));
+              } else {
+                const skipTpl = text('messages.import_skip_result', '{count} cím kihagyva az importból.');
+                alert(format(skipTpl, {count: dropped.removed ?? 0}));
+              }
+            }
+          } else if (decision === 'reset') {
+            loaderCtrl = showImportProgressOverlay(text('messages.import_reset_progress', 'Import visszaállítása…'));
+            const resetResult = await restoreImportRollbackSnapshot();
+            ensureLoaderRemoved();
+            if (!resetResult.restored) {
+              alert(text('messages.import_reset_missing', 'Az eredeti adatok nem érhetők el.'));
+            } else if (!resetResult.saveOk) {
+              alert(text('messages.import_reset_error', 'Az import visszaállítása nem sikerült teljesen.'));
+            } else {
+              alert(text('messages.import_reset_success', 'Az import visszaállítása megtörtént.'));
+            }
           }
         } else {
           alert(successMsg);
         }
+        clearImportRollbackSnapshot();
       } catch (e) {
         console.error(e);
         showSaveStatus(false);
@@ -2772,6 +2970,7 @@
           msg += `\n\n${extra.trim()}`;
         }
         alert(msg);
+        clearImportRollbackSnapshot();
       } finally {
         ensureLoaderRemoved();
         importInput.value = '';
