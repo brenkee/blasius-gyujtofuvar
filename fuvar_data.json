@@ -2,23 +2,34 @@
     "items": [
         {
             "id": "row_f64896cb39d5",
-            "round": 0,
-            "collapsed": false,
-            "city": "",
-            "lat": null,
-            "lon": null,
-            "label": "",
-            "address": "",
+            "round": 3,
+            "city": "Tihany",
+            "lat": 46.9132712,
+            "lon": 17.8882318,
+            "label": "teszt",
+            "address": "tihany",
             "note": "",
-            "deadline": "",
+            "deadline": "2025-10-30",
             "weight": null,
             "volume": null,
             "﻿id": "row_2tm8isvwklq"
         },
         {
+            "id": "row_hwvlwo39tbu",
+            "city": "",
+            "lat": null,
+            "lon": null,
+            "round": 0,
+            "label": "",
+            "address": "",
+            "note": "",
+            "deadline": "",
+            "weight": null,
+            "volume": null
+        },
+        {
             "id": "row_5e916a527d1b",
             "round": 2,
-            "collapsed": false,
             "city": "Csősz",
             "lat": 47.0394575,
             "lon": 18.4163602,
@@ -33,7 +44,6 @@
         {
             "id": "row_3e582b04f220",
             "round": 2,
-            "collapsed": true,
             "city": "Fonyód",
             "lat": 46.7490826,
             "lon": 17.5582659,
@@ -48,7 +58,6 @@
         {
             "id": "row_82576aecd534",
             "round": 2,
-            "collapsed": true,
             "city": "Kaposvár",
             "lat": 46.3564692,
             "lon": 17.7886886,
@@ -63,7 +72,6 @@
         {
             "id": "row_d01d697aa2d3",
             "round": 3,
-            "collapsed": true,
             "city": "Szentkirályszabadja",
             "lat": 47.0556516,
             "lon": 17.9702828,
@@ -78,7 +86,6 @@
         {
             "id": "row_21e4ba2f9043",
             "round": 3,
-            "collapsed": true,
             "city": "Tapolca",
             "lat": 46.8820972,
             "lon": 17.4389619,
@@ -93,7 +100,6 @@
         {
             "id": "row_e0ce878a4247",
             "round": 3,
-            "collapsed": true,
             "city": "Keszthely",
             "lat": 46.7675081,
             "lon": 17.2462801,
@@ -108,7 +114,6 @@
         {
             "id": "row_e567774e9715",
             "round": 3,
-            "collapsed": true,
             "city": "Zalaegerszeg",
             "lat": 46.8415803,
             "lon": 16.8456316,
@@ -123,7 +128,6 @@
         {
             "id": "row_4c4bce477903",
             "round": 4,
-            "collapsed": true,
             "city": "Tokodaltáró",
             "lat": 47.7287809,
             "lon": 18.6903316,
@@ -138,7 +142,6 @@
         {
             "id": "row_b929e54eec2f",
             "round": 4,
-            "collapsed": true,
             "city": "Nyúl",
             "lat": 47.5952824,
             "lon": 17.6849241,
@@ -153,7 +156,6 @@
         {
             "id": "row_5b0b8f1bdc09",
             "round": 4,
-            "collapsed": true,
             "city": "Lébény",
             "lat": 47.7354942,
             "lon": 17.3906258,
@@ -168,7 +170,6 @@
         {
             "id": "row_8c7c24f5c0ec",
             "round": 4,
-            "collapsed": true,
             "city": "Mosonszolnok",
             "lat": 47.8534736,
             "lon": 17.1737528,
@@ -183,7 +184,6 @@
         {
             "id": "row_faa8d7517041",
             "round": 7,
-            "collapsed": true,
             "city": "Bénye",
             "lat": 47.3519946,
             "lon": 19.5429526,
@@ -198,7 +198,6 @@
         {
             "id": "row_0d5286089010",
             "round": 7,
-            "collapsed": true,
             "city": "Tápiószele",
             "lat": 47.3320634,
             "lon": 19.875582,
@@ -213,7 +212,6 @@
         {
             "id": "row_88e65f252a49",
             "round": 7,
-            "collapsed": true,
             "city": "Szolnok",
             "lat": 47.1753833,
             "lon": 20.1946279,
@@ -228,7 +226,6 @@
         {
             "id": "row_1538773344f1",
             "round": 7,
-            "collapsed": true,
             "city": "Martfű",
             "lat": 47.0186153,
             "lon": 20.2813933,
@@ -243,7 +240,6 @@
         {
             "id": "row_5009e5222528",
             "round": 7,
-            "collapsed": true,
             "city": "Mezőtúr",
             "lat": 47.0004724,
             "lon": 20.6299513,
@@ -258,7 +254,6 @@
         {
             "id": "row_7068d62669d5",
             "round": 8,
-            "collapsed": true,
             "city": "Gyöngyös",
             "lat": 47.7808538,
             "lon": 19.9218364,
@@ -273,7 +268,6 @@
         {
             "id": "row_1002c42d0450",
             "round": 8,
-            "collapsed": false,
             "city": "Verpelét",
             "lat": 47.8490107,
             "lon": 20.2279112,
@@ -288,7 +282,6 @@
         {
             "id": "row_75ac003dd18a",
             "round": 8,
-            "collapsed": true,
             "city": "Eger",
             "lat": 47.9023902,
             "lon": 20.3768584,
@@ -303,7 +296,6 @@
         {
             "id": "row_35262bb64dc3",
             "round": 10,
-            "collapsed": true,
             "city": "Nagybarca",
             "lat": 48.2500172,
             "lon": 20.5338161,
@@ -318,7 +310,6 @@
         {
             "id": "row_d1bbd93c2d45",
             "round": 10,
-            "collapsed": true,
             "city": "Sajószentpéter",
             "lat": 48.2239639,
             "lon": 20.7231042,
@@ -333,7 +324,6 @@
         {
             "id": "row_16d81b5c89d2",
             "round": 10,
-            "collapsed": true,
             "city": "Nyíregyháza",
             "lat": 47.9542598,
             "lon": 21.7204847,
@@ -348,7 +338,6 @@
         {
             "id": "row_af0623f9b634",
             "round": 10,
-            "collapsed": true,
             "city": "Debrecen",
             "lat": 47.531399,
             "lon": 21.6259782,
@@ -363,7 +352,6 @@
         {
             "id": "row_f754b0b3550f",
             "round": 11,
-            "collapsed": true,
             "city": "Paks",
             "lat": 46.6229468,
             "lon": 18.8589364,
@@ -378,7 +366,6 @@
         {
             "id": "row_0cbdf2c276f7",
             "round": 11,
-            "collapsed": true,
             "city": "Szekszárd",
             "lat": 46.3573675,
             "lon": 18.7052466,

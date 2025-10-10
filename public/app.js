@@ -3,7 +3,7 @@
   const EP = window.APP_BOOTSTRAP?.endpoints || {};
   const state = {
     cfg: null,
-    items: [],                 // {id,label,address,city,note,lat,lon,round,weight,volume,collapsed,_pendingRound}
+    items: [],                 // {id,label,address,city,note,lat,lon,round,weight,volume,_pendingRound}
     roundMeta: {},             // { [roundId]: {planned_date:string} }
     markersById: new Map(),
     rowsById: new Map(),
@@ -21,6 +21,80 @@
   let quickSearchClearBtn = null;
 
   const flashTimers = new WeakMap();
+
+  const collapsePrefs = new Map();
+  const COLLAPSE_STORAGE_KEY = 'app_panel_collapsed_rows_v1';
+  const DEFAULT_COLLAPSED = true;
+  let collapsePrefsStorageError = false;
+
+  function loadCollapsePrefs(){
+    collapsePrefs.clear();
+    try {
+      const storage = window.localStorage;
+      if (!storage) return;
+      const raw = storage.getItem(COLLAPSE_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return;
+      Object.entries(parsed).forEach(([key, val])=>{
+        collapsePrefs.set(String(key), !!val);
+      });
+    } catch (err) {
+      if (!collapsePrefsStorageError) {
+        console.warn('Failed to load collapse preferences', err);
+        collapsePrefsStorageError = true;
+      }
+      collapsePrefs.clear();
+    }
+  }
+
+  function persistCollapsePrefs(){
+    try {
+      const storage = window.localStorage;
+      if (!storage) return;
+      const obj = {};
+      collapsePrefs.forEach((val, key)=>{ obj[key] = !!val; });
+      storage.setItem(COLLAPSE_STORAGE_KEY, JSON.stringify(obj));
+    } catch (err) {
+      if (!collapsePrefsStorageError) {
+        console.warn('Failed to persist collapse preferences', err);
+        collapsePrefsStorageError = true;
+      }
+    }
+  }
+
+  function setCollapsePref(id, collapsed){
+    if (id == null) return;
+    const key = String(id);
+    collapsePrefs.set(key, !!collapsed);
+    persistCollapsePrefs();
+  }
+
+  function getCollapsePref(id){
+    if (id == null) return null;
+    const key = String(id);
+    return collapsePrefs.has(key) ? !!collapsePrefs.get(key) : null;
+  }
+
+  function clearCollapsePref(id){
+    if (id == null) return;
+    const key = String(id);
+    const deleted = collapsePrefs.delete(key);
+    if (deleted) persistCollapsePrefs();
+  }
+
+  function pruneCollapsePrefs(validIds){
+    if (!Array.isArray(validIds)) return;
+    const valid = new Set(validIds.map(id => String(id)));
+    let changed = false;
+    collapsePrefs.forEach((_, key)=>{
+      if (!valid.has(key)){
+        collapsePrefs.delete(key);
+        changed = true;
+      }
+    });
+    if (changed) persistCollapsePrefs();
+  }
 
   const roundMetaKey = (rid)=> {
     const num = Number(rid);
@@ -517,6 +591,61 @@
     if (meta) meta.innerHTML = metaHTML(it);
   }
 
+  function valueHasContent(val){
+    if (val == null) return false;
+    if (typeof val === 'string') return val.trim() !== '';
+    if (typeof val === 'number') return Number.isFinite(val);
+    if (typeof val === 'boolean') return true;
+    if (val && typeof val === 'object') return true;
+    return false;
+  }
+
+  function isItemCompletelyBlank(it){
+    if (!it || typeof it !== 'object') return true;
+    const addressFieldId = getAddressFieldId();
+    const labelFieldId = getLabelFieldId();
+    if (valueHasContent(it[addressFieldId])) return false;
+    if (labelFieldId && valueHasContent(it[labelFieldId])) return false;
+    for (const field of getFieldDefs()){
+      if (!field || !field.id) continue;
+      if (field.id === addressFieldId || field.id === labelFieldId) continue;
+      if (valueHasContent(it[field.id])) return false;
+    }
+    for (const metric of getMetricDefs()){
+      if (!metric || !metric.id) continue;
+      if (valueHasContent(it[metric.id])) return false;
+    }
+    return true;
+  }
+
+  function updateRowPlaceholderState(row, it, forced){
+    if (!row) return false;
+    const prev = row.dataset.placeholder === 'true';
+    const placeholder = typeof forced === 'boolean' ? forced : isItemCompletelyBlank(it);
+    row.dataset.placeholder = placeholder ? 'true' : 'false';
+    const toggleBtn = row.querySelector('.toggle');
+    const body = row.querySelector('.body');
+    if (toggleBtn){
+      if (placeholder){
+        toggleBtn.disabled = true;
+        toggleBtn.style.visibility = 'hidden';
+        toggleBtn.setAttribute('aria-hidden', 'true');
+      } else {
+        toggleBtn.disabled = false;
+        toggleBtn.style.visibility = '';
+        toggleBtn.removeAttribute('aria-hidden');
+      }
+      if (body) toggleBtn.textContent = body.style.display === 'none' ? '▶' : '▼';
+    }
+    if (placeholder){
+      if (body) body.style.display = '';
+      clearCollapsePref(it?.id);
+    } else if (placeholder !== prev && body && it){
+      setCollapsePref(it.id, body.style.display === 'none');
+    }
+    return placeholder;
+  }
+
   function updateRowHeaderLabel(row, it){
     const labelEl = row?.querySelector('[data-label-display]');
     if (!labelEl) return;
@@ -528,7 +657,10 @@
       labelEl.title = str;
       labelEl.classList.remove('placeholder');
     } else {
-      const fallback = text('items.label_missing', 'Címke nélkül');
+      const placeholder = isItemCompletelyBlank(it);
+      const fallback = placeholder
+        ? text('items.new_address_placeholder', 'Új cím hozzáadása')
+        : text('items.label_missing', 'Címke nélkül');
       labelEl.textContent = fallback;
       labelEl.title = fallback;
       labelEl.classList.add('placeholder');
@@ -661,7 +793,17 @@
   async function loadCfg(){ state.cfg = await fetchJSON(EP.cfg); }
   function applyLoadedData(payload){
     const j = payload || {};
-    state.items = Array.isArray(j.items) ? j.items : [];
+    state.items = Array.isArray(j.items)
+      ? j.items.map(item => {
+          if (!item || typeof item !== 'object') return item;
+          const copy = {...item};
+          if (Object.prototype.hasOwnProperty.call(copy, 'collapsed')) {
+            delete copy.collapsed;
+          }
+          return copy;
+        })
+      : [];
+    pruneCollapsePrefs(state.items.map(it => it?.id).filter(id => id != null));
     state.roundMeta = {};
     const meta = j.round_meta;
     if (meta && typeof meta === 'object' && !Array.isArray(meta)){
@@ -684,7 +826,15 @@
   }
   async function saveAll(){
     try{
-      const payload = JSON.stringify({items: state.items, round_meta: normalizedRoundMeta()});
+      const sanitizedItems = state.items.map(item => {
+        if (!item || typeof item !== 'object') return item;
+        const copy = {...item};
+        if (Object.prototype.hasOwnProperty.call(copy, 'collapsed')) {
+          delete copy.collapsed;
+        }
+        return copy;
+      });
+      const payload = JSON.stringify({items: sanitizedItems, round_meta: normalizedRoundMeta()});
       const r = await fetch(EP.save, {method:'POST', headers:{'Content-Type':'application/json'}, body: payload});
       const t = await r.text();
       let j=null; try{ j = JSON.parse(t); }catch(_){}
@@ -832,7 +982,7 @@
         id:'row_'+Math.random().toString(36).slice(2),
         city:'',
         lat:null, lon:null,
-        round:0, collapsed:state.cfg.app.default_collapsed
+        round:0
       };
       getFieldDefs().forEach(field => {
         blank[field.id] = defaultValueForField(field);
@@ -1146,6 +1296,7 @@
       delete state.items[idx]._pendingRound;
       upsertMarker(state.items[idx], idx);
       ensureBlankRowInDefaultRound();
+      setCollapsePref(state.items[idx].id, false);
       await saveAll();
       if (row) updateRowHeaderMeta(row, state.items[idx]);
       renderEverything();
@@ -1161,7 +1312,9 @@
     const row = document.createElement('div');
     row.className = 'row';
     row.dataset.rowId = it.id;
-    const collapsed = (typeof it.collapsed==='boolean') ? it.collapsed : !!state.cfg.app.default_collapsed;
+    const isPlaceholderItem = isItemCompletelyBlank(it);
+    const storedCollapsed = getCollapsePref(it.id);
+    const collapsed = isPlaceholderItem ? false : (storedCollapsed == null ? DEFAULT_COLLAPSED : storedCollapsed);
     const roundColor = colorForRound(+it.round||0);
     const numTextColor = idealTextColor(roundColor);
 
@@ -1239,10 +1392,14 @@
 
     const rawLabelValue = labelFieldId ? (it[labelFieldId] ?? '') : '';
     const labelString = rawLabelValue != null ? String(rawLabelValue).trim() : '';
-    const labelPlaceholder = text('items.label_missing', 'Címke nélkül');
+    const labelPlaceholder = isPlaceholderItem
+      ? text('items.new_address_placeholder', 'Új cím hozzáadása')
+      : text('items.label_missing', 'Címke nélkül');
     const deadlineFieldId = getDeadlineFieldId();
     const deadlineEnabled = isDeadlineFeatureEnabled();
     const deadlineSize = getDeadlineIconSize();
+    const toggleExtraAttrs = isPlaceholderItem ? ' disabled aria-hidden="true" style="visibility:hidden;"' : '';
+    const bodyStyle = (!isPlaceholderItem && collapsed) ? 'display:none' : '';
 
     row.innerHTML = `
       <div class="header">
@@ -1255,9 +1412,9 @@
           <div class="title-city" data-city title="${esc(city||'—')}">${esc(city || '—')}</div>
         </div>
         <div class="meta" data-meta style="margin-left:auto;margin-right:8px;"></div>
-        <div class="tools"><button class="iconbtn toggle" title="${collapsed?esc(text('toolbar.expand_all.title','Kinyit')):esc(text('toolbar.collapse_all.title','Összezár'))}">${collapsed?'▶':'▼'}</button></div>
+        <div class="tools"><button class="iconbtn toggle"${toggleExtraAttrs} title="${collapsed?esc(text('toolbar.expand_all.title','Kinyit')):esc(text('toolbar.collapse_all.title','Összezár'))}">${collapsed?'▶':'▼'}</button></div>
       </div>
-      <div class="body" style="${collapsed?'display:none':''}">
+      <div class="body" style="${bodyStyle}">
         <div class="form-grid">
           ${fieldHtml}
         </div>
@@ -1284,6 +1441,7 @@
     `;
 
     updateRowHeaderMeta(row, it);
+    updateRowPlaceholderState(row, it, isPlaceholderItem);
     updateRowHeaderLabel(row, it);
     updateDeadlineIndicator(row, it);
 
@@ -1307,16 +1465,20 @@
       }
     });
 
-    row.querySelector('.toggle').addEventListener('click', (e)=>{
-      e.stopPropagation();
-      const body = row.querySelector('.body');
-      const btn  = e.currentTarget;
-      const hidden = body.style.display === 'none';
-      body.style.display = hidden ? '' : 'none';
-      btn.textContent = hidden ? '▼' : '▶';
-      const idx = state.items.findIndex(x => x.id===it.id);
-      if (idx>=0){ pushSnapshot(); state.items[idx].collapsed = !hidden; saveAll(); }
-    });
+    const toggleBtn = row.querySelector('.toggle');
+    if (toggleBtn){
+      toggleBtn.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        if (!(e.currentTarget instanceof HTMLButtonElement)) return;
+        if (e.currentTarget.disabled) return;
+        const body = row.querySelector('.body');
+        if (!body) return;
+        const hidden = body.style.display === 'none';
+        body.style.display = hidden ? '' : 'none';
+        e.currentTarget.textContent = hidden ? '▼' : '▶';
+        setCollapsePref(it.id, !hidden);
+      });
+    }
 
     const fieldInputs = new Map();
     const metricInputs = new Map();
@@ -1358,9 +1520,8 @@
           }
           refreshDeleteButtonState(row, state.items[idx]);
         }
-        if (fid === labelFieldId){
-          updateRowHeaderLabel(row, state.items[idx]);
-        }
+        updateRowPlaceholderState(row, state.items[idx]);
+        updateRowHeaderLabel(row, state.items[idx]);
         if (fid === deadlineFieldId){
           updateDeadlineIndicator(row, state.items[idx]);
         }
@@ -1381,6 +1542,8 @@
           const num = parseFloat(raw);
           state.items[idx][fid] = Number.isFinite(num) ? num : null;
         }
+        updateRowPlaceholderState(row, state.items[idx]);
+        updateRowHeaderLabel(row, state.items[idx]);
         upsertMarker(state.items[idx], idx);
         saveAll();
         renderGroupHeaderTotalsForRound(+state.items[idx].round||0);
@@ -1419,6 +1582,7 @@
         pushSnapshot();
         const rPrev = +state.items[idx].round||0;
         state.items.splice(idx,1);
+        clearCollapsePref(it.id);
         renderGroupHeaderTotalsForRound(rPrev);
       }
       const mk = state.markersById.get(it.id);
@@ -1588,17 +1752,33 @@
 
       const btnOpen = groupEl.querySelector('.grp-open');
       if (btnOpen) btnOpen.addEventListener('click', ()=>{
-        body.querySelectorAll('.body').forEach(b=>b.style.display='');
-        pushSnapshot();
-        state.items.filter(it => (+it.round||0)===rid).forEach(it=>{ it.collapsed = false; });
-        saveAll();
+        body.querySelectorAll('.row').forEach(rowEl => {
+          const bodyEl = rowEl.querySelector('.body');
+          const toggle = rowEl.querySelector('.toggle');
+          if (bodyEl) bodyEl.style.display = '';
+          if (toggle instanceof HTMLButtonElement && !toggle.disabled) toggle.textContent = '▼';
+        });
+        state.items
+          .filter(item => (+item.round||0)===rid && !isItemCompletelyBlank(item))
+          .forEach(item => setCollapsePref(item.id, false));
       });
       const btnClose = groupEl.querySelector('.grp-close');
       if (btnClose) btnClose.addEventListener('click', ()=>{
-        body.querySelectorAll('.body').forEach(b=>b.style.display='none');
-        pushSnapshot();
-        state.items.filter(it => (+it.round||0)===rid).forEach(it=>{ it.collapsed = true; });
-        saveAll();
+        body.querySelectorAll('.row').forEach(rowEl => {
+          const bodyEl = rowEl.querySelector('.body');
+          const toggle = rowEl.querySelector('.toggle');
+          const isPlaceholderRow = rowEl.dataset.placeholder === 'true';
+          if (isPlaceholderRow) {
+            if (bodyEl) bodyEl.style.display = '';
+            if (toggle instanceof HTMLButtonElement) toggle.textContent = '▼';
+            return;
+          }
+          if (bodyEl) bodyEl.style.display = 'none';
+          if (toggle instanceof HTMLButtonElement && !toggle.disabled) toggle.textContent = '▶';
+        });
+        state.items
+          .filter(item => (+item.round||0)===rid && !isItemCompletelyBlank(item))
+          .forEach(item => setCollapsePref(item.id, true));
       });
       const btnPrint = groupEl.querySelector('.grp-print');
       if (btnPrint) btnPrint.addEventListener('click', ()=>{ window.open(EP.printRound(rid), '_blank'); });
@@ -1888,15 +2068,29 @@
   if (archiveBtn) archiveBtn.addEventListener('click', ()=>{ window.open(EP.downloadArchive, '_blank'); });
   const expandAllBtn = document.getElementById('expandAll');
   if (expandAllBtn) expandAllBtn.addEventListener('click', ()=>{
-    groupsEl.querySelectorAll('.body').forEach(b=>b.style.display='');
-    pushSnapshot();
-    state.items.forEach(it=>it.collapsed=false); saveAll();
+    groupsEl.querySelectorAll('.row').forEach(rowEl => {
+      const body = rowEl.querySelector('.body');
+      const toggle = rowEl.querySelector('.toggle');
+      if (body) body.style.display = '';
+      if (toggle instanceof HTMLButtonElement && !toggle.disabled) toggle.textContent = '▼';
+    });
+    state.items.filter(it => !isItemCompletelyBlank(it)).forEach(it => setCollapsePref(it.id, false));
   });
   const collapseAllBtn = document.getElementById('collapseAll');
   if (collapseAllBtn) collapseAllBtn.addEventListener('click', ()=>{
-    groupsEl.querySelectorAll('.body').forEach(b=>b.style.display='none');
-    pushSnapshot();
-    state.items.forEach(it=>it.collapsed=true); saveAll();
+    groupsEl.querySelectorAll('.row').forEach(rowEl => {
+      const body = rowEl.querySelector('.body');
+      const toggle = rowEl.querySelector('.toggle');
+      const isPlaceholderRow = rowEl.dataset.placeholder === 'true';
+      if (isPlaceholderRow){
+        if (body) body.style.display = '';
+        if (toggle instanceof HTMLButtonElement) toggle.textContent = '▼';
+        return;
+      }
+      if (body) body.style.display = 'none';
+      if (toggle instanceof HTMLButtonElement && !toggle.disabled) toggle.textContent = '▶';
+    });
+    state.items.filter(it => !isItemCompletelyBlank(it)).forEach(it => setCollapsePref(it.id, true));
   });
 
   function renderEverything(){
@@ -1909,6 +2103,7 @@
 
   (async function start(){
     try{
+      loadCollapsePrefs();
       await loadCfg();
       applyThemeVariables();
       applyPanelSizes();
