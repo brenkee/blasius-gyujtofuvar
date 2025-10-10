@@ -205,10 +205,7 @@ $CFG_DEFAULT = [
         "import_mode_confirm_replace" => "Biztosan felülírjuk a jelenlegi adatokat a CSV tartalmával?",
         "import_mode_confirm_append" => "Biztosan hozzáadjuk az új sorokat a meglévő listához?",
         "import_geocode_partial" => "Figyelem: {count} címet nem sikerült automatikusan térképre tenni.",
-        "import_geocode_partial_detail" => "Nem sikerült geokódolni:\n{list}",
-        "version_conflict" => "Időközben más felhasználó módosította az adatokat. A legfrissebb verzióhoz frissítsd az oldalt.",
-        "remote_change_detected" => "Időközben más felhasználó módosította az adatokat. Az aktuális verzió eléréséhez frissítsd az oldalt.",
-        "reload_now" => "Oldal frissítése"
+        "import_geocode_partial_detail" => "Nem sikerült geokódolni:\n{list}"
       ]
     ],
   "items" => [
@@ -462,34 +459,20 @@ function normalize_round_meta($roundMeta) {
   return $out;
 }
 
-function data_store_version($file) {
-  if (!is_file($file)) {
-    return '0:0:0';
-  }
-  $mtime = @filemtime($file);
-  $size = @filesize($file);
-  $hash = @sha1_file($file);
-  $mtimePart = $mtime ? (int)$mtime : 0;
-  $sizePart = ($size !== false) ? (int)$size : 0;
-  $hashPart = $hash ? $hash : '0';
-  return $mtimePart . ':' . $sizePart . ':' . $hashPart;
-}
-
 function data_store_read($file) {
   $items = [];
   $roundMeta = [];
-  $version = data_store_version($file);
   if (!is_file($file)) {
-    return [$items, $roundMeta, $version];
+    return [$items, $roundMeta];
   }
   $raw = file_get_contents($file);
   $decoded = json_decode($raw ?: '[]', true);
   if (!is_array($decoded)) {
-    return [$items, $roundMeta, $version];
+    return [$items, $roundMeta];
   }
   if (is_list_array($decoded)) {
     $items = array_values($decoded);
-    return [$items, $roundMeta, $version];
+    return [$items, $roundMeta];
   }
   if (isset($decoded['items']) && is_array($decoded['items'])) {
     $items = array_values($decoded['items']);
@@ -497,7 +480,7 @@ function data_store_read($file) {
   if (isset($decoded['round_meta']) && is_array($decoded['round_meta'])) {
     $roundMeta = normalize_round_meta($decoded['round_meta']);
   }
-  return [$items, $roundMeta, $version];
+  return [$items, $roundMeta];
 }
 
 function data_store_write($file, $items, $roundMeta) {
