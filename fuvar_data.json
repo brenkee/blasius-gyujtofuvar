@@ -1,8 +1,9 @@
 {
     "items": [
         {
-            "id": "row_c3ec61f1a091",
+            "id": "row_c903604a86bc",
             "round": 0,
+            "collapsed": false,
             "city": "Szigetszentmiklós",
             "lat": 47.3580372,
             "lon": 19.0349059,
@@ -15,8 +16,24 @@
             "﻿id": ""
         },
         {
-            "id": "row_3191550d2321",
+            "id": "row_01a27163bed1",
+            "round": 0,
+            "collapsed": false,
+            "city": "",
+            "lat": null,
+            "lon": null,
+            "label": "",
+            "address": "",
+            "note": "",
+            "deadline": "",
+            "weight": null,
+            "volume": null,
+            "﻿id": ""
+        },
+        {
+            "id": "row_0b758cb7c7ad",
             "round": 2,
+            "collapsed": false,
             "city": "Szigetszentmiklós",
             "lat": 47.3580372,
             "lon": 19.0349059,
@@ -29,8 +46,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_861f1adc6e5b",
+            "id": "row_c0841bf03e76",
             "round": 2,
+            "collapsed": false,
             "city": "Siófok",
             "lat": 46.8981297,
             "lon": 18.0477158,
@@ -43,8 +61,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_57c593747018",
+            "id": "row_41fda3917714",
             "round": 2,
+            "collapsed": false,
             "city": "Kaposvár",
             "lat": 46.3564692,
             "lon": 17.7886886,
@@ -57,8 +76,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_b376b70d8fb0",
+            "id": "row_b41b0cf7492d",
             "round": 2,
+            "collapsed": false,
             "city": "Nagykanizsa",
             "lat": 46.4548261,
             "lon": 16.9923923,
@@ -71,8 +91,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_5e2fce330e8a",
+            "id": "row_bb9060682530",
             "round": 3,
+            "collapsed": false,
             "city": "Budaörs",
             "lat": 47.4587001,
             "lon": 18.953873,
@@ -85,8 +106,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_a24f7bb9e217",
+            "id": "row_65a1195a8faf",
             "round": 3,
+            "collapsed": false,
             "city": "Székesfehérvár",
             "lat": 47.1944099,
             "lon": 18.4342423,
@@ -99,8 +121,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_16e9cd436adc",
+            "id": "row_0a12e6373557",
             "round": 3,
+            "collapsed": false,
             "city": "Balatonalmádi",
             "lat": 47.0248592,
             "lon": 18.0026013,
@@ -113,22 +136,24 @@
             "﻿id": ""
         },
         {
-            "id": "row_ca824c930c8e",
+            "id": "row_7996d02f8ba4",
             "round": 3,
+            "collapsed": false,
             "city": "Tapolca",
-            "lat": 46.8820972,
-            "lon": 17.4389619,
-            "label": "Mészáros Balázs",
-            "address": "3600 Ózd, Dózsa György utca 164.",
+            "lat": 46.8908069,
+            "lon": 17.4381375,
+            "label": "Fehér István",
+            "address": "8300 Tapolca",
             "note": "Kerülni a földutat.",
             "deadline": "",
-            "weight": 2200,
-            "volume": 14,
+            "weight": 3900,
+            "volume": 10.5,
             "﻿id": ""
         },
         {
-            "id": "row_e9e7e2d82d59",
+            "id": "row_8f49aabdf602",
             "round": 3,
+            "collapsed": false,
             "city": "Zalaegerszeg",
             "lat": 46.8401729,
             "lon": 16.8401659,
@@ -141,8 +166,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_1d760812375b",
+            "id": "row_bc7af8ce7665",
             "round": 4,
+            "collapsed": false,
             "city": "Budapest",
             "lat": 47.5826789,
             "lon": 19.0882252,
@@ -155,8 +181,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_8fa2a09e2134",
+            "id": "row_bebc8cf46620",
             "round": 4,
+            "collapsed": false,
             "city": "Tokod",
             "lat": 47.7237728,
             "lon": 18.6637106,
@@ -169,8 +196,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_174a3e6ab2c7",
+            "id": "row_9bdd22ece779",
             "round": 4,
+            "collapsed": false,
             "city": "Tatabánya",
             "lat": 47.546728,
             "lon": 18.4447008,
@@ -183,8 +211,24 @@
             "﻿id": ""
         },
         {
-            "id": "row_53575b76dc92",
+            "id": "row_29959ab0ae0f",
             "round": 4,
+            "collapsed": false,
+            "city": "Tata",
+            "lat": 47.629452,
+            "lon": 18.303389,
+            "label": "Takács Balázs",
+            "address": "2890 Tata",
+            "note": "Emelőhátfal szükséges.",
+            "deadline": "",
+            "weight": 200,
+            "volume": 11.5,
+            "﻿id": ""
+        },
+        {
+            "id": "row_2f33b86f5535",
+            "round": 4,
+            "collapsed": false,
             "city": "Győr",
             "lat": 47.6885516,
             "lon": 17.6393737,
@@ -197,8 +241,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_65134f612543",
+            "id": "row_a2bb2feaf5d0",
             "round": 4,
+            "collapsed": false,
             "city": "Mosonmagyaróvár",
             "lat": 47.8541539,
             "lon": 17.2639522,
@@ -211,8 +256,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_d663e4f69c5b",
+            "id": "row_4f31f93a93b7",
             "round": 4,
+            "collapsed": false,
             "city": "Sopron",
             "lat": 47.6935024,
             "lon": 16.5897441,
@@ -225,8 +271,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_c7daaf400621",
+            "id": "row_99a6d5734905",
             "round": 4,
+            "collapsed": false,
             "city": "Szombathely",
             "lat": 47.2291184,
             "lon": 16.6187625,
@@ -239,8 +286,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_efcab0a58430",
+            "id": "row_618693f05b82",
             "round": 4,
+            "collapsed": false,
             "city": "Körmend",
             "lat": 47.0181962,
             "lon": 16.5976978,
@@ -253,8 +301,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_d8ee4394f4e1",
+            "id": "row_9ccf0634c1f0",
             "round": 4,
+            "collapsed": false,
             "city": "Pápa",
             "lat": 47.3368659,
             "lon": 17.4584362,
@@ -267,8 +316,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_2fb12962f984",
+            "id": "row_2f4fa8aab0af",
             "round": 5,
+            "collapsed": false,
             "city": "Kecskemét",
             "lat": 46.931132,
             "lon": 19.5603625,
@@ -281,8 +331,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_a7328916d620",
+            "id": "row_5ddfb4d3aa10",
             "round": 5,
+            "collapsed": false,
             "city": "Kiskunfélegyháza",
             "lat": 46.7114381,
             "lon": 19.8501648,
@@ -295,8 +346,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_e223e86aace5",
+            "id": "row_5fcace16cbc3",
             "round": 5,
+            "collapsed": false,
             "city": "Szentes",
             "lat": 46.6504323,
             "lon": 20.2569744,
@@ -309,8 +361,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_d453693dc57c",
+            "id": "row_0bcb93651e17",
             "round": 5,
+            "collapsed": false,
             "city": "Orosháza",
             "lat": 46.555191,
             "lon": 20.668845,
@@ -323,8 +376,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_9617818e3266",
+            "id": "row_ef991c49976b",
             "round": 6,
+            "collapsed": false,
             "city": "Kiskőrös",
             "lat": 46.6148131,
             "lon": 19.2912764,
@@ -337,8 +391,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_2212286c5fbd",
+            "id": "row_a74cfd73e699",
             "round": 6,
+            "collapsed": false,
             "city": "Szeged",
             "lat": 46.2510146,
             "lon": 20.1490055,
@@ -351,8 +406,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_c30ac79f1bf6",
+            "id": "row_5a46c59289a3",
             "round": 6,
+            "collapsed": false,
             "city": "Hódmezővásárhely",
             "lat": 46.4171344,
             "lon": 20.3196068,
@@ -365,8 +421,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_815b71daeafc",
+            "id": "row_a66b4187e9e3",
             "round": 7,
+            "collapsed": false,
             "city": "Jászberény",
             "lat": 47.4900663,
             "lon": 19.9128651,
@@ -379,8 +436,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_c2cf002eae6c",
+            "id": "row_ee3553698617",
             "round": 7,
+            "collapsed": false,
             "city": "Szolnok",
             "lat": 47.1778233,
             "lon": 20.1990769,
@@ -393,8 +451,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_dedea9a3d793",
+            "id": "row_69f3bbe3125f",
             "round": 7,
+            "collapsed": false,
             "city": "Mezőtúr",
             "lat": 46.9903869,
             "lon": 20.6030129,
@@ -407,8 +466,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_68892350146e",
+            "id": "row_9d0c20175049",
             "round": 7,
+            "collapsed": false,
             "city": "Békéscsaba",
             "lat": 46.6738417,
             "lon": 21.0918552,
@@ -421,8 +481,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_6b0cdd045e7c",
+            "id": "row_b7ad9c29c7a9",
             "round": 7,
+            "collapsed": false,
             "city": "Gyula",
             "lat": 46.6510008,
             "lon": 21.270878,
@@ -435,8 +496,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_c34ee726d132",
+            "id": "row_f824bd142dbf",
             "round": 8,
+            "collapsed": false,
             "city": "Hatvan",
             "lat": 47.6608866,
             "lon": 19.652816,
@@ -449,8 +511,24 @@
             "﻿id": ""
         },
         {
-            "id": "row_a14e67f88658",
+            "id": "row_1a0bb977ab16",
+            "round": 8,
+            "collapsed": false,
+            "city": "Gyöngyös",
+            "lat": 47.7779594,
+            "lon": 19.9256706,
+            "label": "Németh Tamás",
+            "address": "3200 Gyöngyös",
+            "note": "Kapucsengő: 12.",
+            "deadline": "",
+            "weight": 2100,
+            "volume": 8,
+            "﻿id": ""
+        },
+        {
+            "id": "row_203bb3bbae97",
             "round": 9,
+            "collapsed": false,
             "city": "Salgótarján",
             "lat": 48.1084023,
             "lon": 19.8109075,
@@ -463,22 +541,24 @@
             "﻿id": ""
         },
         {
-            "id": "row_55859958bdbb",
+            "id": "row_33ee58274ede",
             "round": 9,
+            "collapsed": false,
             "city": "Ózd",
-            "lat": 48.2239095,
-            "lon": 20.2895983,
-            "label": "Takács Balázs",
-            "address": "2890 Tata, Iskola utca 120.",
-            "note": "Emelőhátfal szükséges.",
+            "lat": 48.231118,
+            "lon": 20.2950174,
+            "label": "Mészáros Balázs",
+            "address": "3600 Ózd",
+            "note": "Kerülni a földutat.",
             "deadline": "",
-            "weight": 200,
-            "volume": 11.5,
+            "weight": 2200,
+            "volume": 14,
             "﻿id": ""
         },
         {
-            "id": "row_5b3a1f5e9f25",
+            "id": "row_06cbae50fa20",
             "round": 10,
+            "collapsed": false,
             "city": "Eger",
             "lat": 47.907144,
             "lon": 20.3811204,
@@ -491,8 +571,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_6b43d3d4d4d6",
+            "id": "row_907e99bb7388",
             "round": 10,
+            "collapsed": false,
             "city": "Karcag",
             "lat": 47.314646,
             "lon": 20.9240941,
@@ -505,8 +586,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_4d162949216f",
+            "id": "row_ff90601982a7",
             "round": 10,
+            "collapsed": false,
             "city": "Hajdúszoboszló",
             "lat": 47.4431291,
             "lon": 21.3902995,
@@ -519,8 +601,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_3c884982ddf1",
+            "id": "row_84198e8d7f9e",
             "round": 10,
+            "collapsed": false,
             "city": "Debrecen",
             "lat": 47.531399,
             "lon": 21.6259782,
@@ -533,8 +616,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_9752067e09dd",
+            "id": "row_04227b05e091",
             "round": 10,
+            "collapsed": false,
             "city": "Debrecen",
             "lat": 47.6019039,
             "lon": 21.5936944,
@@ -547,8 +631,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_0cd4974d7c44",
+            "id": "row_8362e2503560",
             "round": 10,
+            "collapsed": false,
             "city": "Nyíregyháza",
             "lat": 47.9557802,
             "lon": 21.7167982,
@@ -561,8 +646,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_2a2687788a09",
+            "id": "row_87a47607c60d",
             "round": 10,
+            "collapsed": false,
             "city": "Kisvárda",
             "lat": 48.2257593,
             "lon": 22.0784247,
@@ -575,8 +661,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_c544fd787b26",
+            "id": "row_61c03a3ebf0f",
             "round": 10,
+            "collapsed": false,
             "city": "Vásárosnamény",
             "lat": 48.1266554,
             "lon": 22.3044121,
@@ -589,8 +676,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_b02a21544d89",
+            "id": "row_4cda267af2a6",
             "round": 10,
+            "collapsed": false,
             "city": "Mátészalka",
             "lat": 47.9599749,
             "lon": 22.325447,
@@ -603,8 +691,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_0671b42177d7",
+            "id": "row_44683641f9a4",
             "round": 11,
+            "collapsed": false,
             "city": "Dunaújváros",
             "lat": 46.9649048,
             "lon": 18.9405047,
@@ -617,22 +706,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_7d5fc07c61f9",
+            "id": "row_084cd19f238f",
             "round": 11,
-            "city": "Dunaújváros",
-            "lat": 46.9649048,
-            "lon": 18.9405047,
-            "label": "Fehér István",
-            "address": "8300 Tapolca, Bartók Béla út 104\/3.",
-            "note": "Kerülni a földutat.",
-            "deadline": "",
-            "weight": 3900,
-            "volume": 10.5,
-            "﻿id": ""
-        },
-        {
-            "id": "row_39b9e941f321",
-            "round": 11,
+            "collapsed": false,
             "city": "Sárbogárd",
             "lat": 46.9287777,
             "lon": 18.684096,
@@ -645,8 +721,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_bbc9cc5b85ff",
+            "id": "row_affd562dfeab",
             "round": 11,
+            "collapsed": false,
             "city": "Baja",
             "lat": 46.1826049,
             "lon": 18.958257,
@@ -659,8 +736,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_53cc4af6f6aa",
+            "id": "row_c411f877902c",
             "round": 11,
+            "collapsed": false,
             "city": "Komló",
             "lat": 46.1909463,
             "lon": 18.2597554,
@@ -673,8 +751,9 @@
             "﻿id": ""
         },
         {
-            "id": "row_62dfc5f8f762",
+            "id": "row_479d711300fb",
             "round": 11,
+            "collapsed": false,
             "city": "Pécs",
             "lat": 46.0765092,
             "lon": 18.2280317,
@@ -685,33 +764,6 @@
             "weight": 1200,
             "volume": 13.5,
             "﻿id": ""
-        },
-        {
-            "id": "row_aa751469a469",
-            "round": 11,
-            "city": "Kaposvár",
-            "lat": 46.3564692,
-            "lon": 17.7886886,
-            "label": "Németh Tamás",
-            "address": "3200 Gyöngyös, Táncsics Mihály utca 62.",
-            "note": "Kapucsengő: 12.",
-            "deadline": "",
-            "weight": 2100,
-            "volume": 8,
-            "﻿id": ""
-        },
-        {
-            "id": "row_hpn34naamfs",
-            "city": "",
-            "lat": null,
-            "lon": null,
-            "round": 0,
-            "label": "",
-            "address": "",
-            "note": "",
-            "deadline": "",
-            "weight": null,
-            "volume": null
         }
     ],
     "round_meta": {}
