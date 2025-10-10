@@ -15,18 +15,17 @@
             "﻿id": ""
         },
         {
-            "id": "row_3191550d2321",
-            "round": 2,
-            "city": "Szigetszentmiklós",
-            "lat": 47.3580372,
-            "lon": 19.0349059,
-            "label": "Molnár Réka",
-            "address": "2310 Szigetszentmiklós",
-            "note": "Tele autó, kérjük időben jelezni.",
+            "id": "row_hpn34naamfs",
+            "city": "",
+            "lat": null,
+            "lon": null,
+            "round": 0,
+            "label": "",
+            "address": "",
+            "note": "",
             "deadline": "",
-            "weight": 3600,
-            "volume": 13,
-            "﻿id": ""
+            "weight": null,
+            "volume": null
         },
         {
             "id": "row_861f1adc6e5b",
@@ -365,6 +364,20 @@
             "﻿id": ""
         },
         {
+            "id": "row_3191550d2321",
+            "round": 2,
+            "city": "Szigetszentmiklós",
+            "lat": 47.3580372,
+            "lon": 19.0349059,
+            "label": "Molnár Réka",
+            "address": "2310 Szigetszentmiklós",
+            "note": "Tele autó, kérjük időben jelezni.",
+            "deadline": "",
+            "weight": 3600,
+            "volume": 13,
+            "﻿id": ""
+        },
+        {
             "id": "row_815b71daeafc",
             "round": 7,
             "city": "Jászberény",
@@ -673,20 +686,6 @@
             "﻿id": ""
         },
         {
-            "id": "row_62dfc5f8f762",
-            "round": 11,
-            "city": "Pécs",
-            "lat": 46.0765092,
-            "lon": 18.2280317,
-            "label": "Fekete Réka",
-            "address": "Pécs",
-            "note": "Kerülni a földutat.",
-            "deadline": "",
-            "weight": 1200,
-            "volume": 13.5,
-            "﻿id": ""
-        },
-        {
             "id": "row_aa751469a469",
             "round": 11,
             "city": "Kaposvár",
@@ -699,19 +698,6 @@
             "weight": 2100,
             "volume": 8,
             "﻿id": ""
-        },
-        {
-            "id": "row_hpn34naamfs",
-            "city": "",
-            "lat": null,
-            "lon": null,
-            "round": 0,
-            "label": "",
-            "address": "",
-            "note": "",
-            "deadline": "",
-            "weight": null,
-            "volume": null
         }
     ],
     "round_meta": {}
