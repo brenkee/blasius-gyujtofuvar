@@ -14,6 +14,90 @@ $sendJsonError = function($message, $code = 400) use ($jsonHeader){
   exit;
 };
 
+function require_actor_id() {
+  $actor = normalized_actor_id($_SERVER['HTTP_X_CLIENT_ID'] ?? '');
+  if (!$actor) {
+    http_response_code(400);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(['ok'=>false, 'error'=>'missing_client_id'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+  return $actor;
+}
+
+function require_request_id() {
+  $req = normalized_request_id($_SERVER['HTTP_X_REQUEST_ID'] ?? '');
+  if (!$req) {
+    http_response_code(400);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(['ok'=>false, 'error'=>'missing_request_id'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+  return $req;
+}
+
+function optional_batch_id() {
+  return normalized_batch_id($_SERVER['HTTP_X_BATCH_ID'] ?? '');
+}
+
+function append_change_events($rev, $actorId, $requestId, $batchId, array $events, array $meta = []) {
+  foreach ($events as $event) {
+    $log = [
+      'rev' => $rev,
+      'entity' => $event['entity'] ?? 'dataset',
+      'entity_id' => $event['entity_id'] ?? null,
+      'action' => $event['action'] ?? 'updated',
+      'ts' => gmdate('c'),
+      'actor_id' => $actorId,
+      'request_id' => $requestId,
+    ];
+    if ($batchId) {
+      $log['batch_id'] = $batchId;
+    }
+    $metaPayload = $event['meta'] ?? [];
+    if (!empty($meta)) {
+      $metaPayload = array_merge($metaPayload, $meta);
+    }
+    if (!empty($metaPayload)) {
+      $log['meta'] = $metaPayload;
+    }
+    append_change_log_locked($log);
+  }
+}
+
+function commit_dataset_update(array $newItems, array $newRoundMeta, $actorId, $requestId, $batchId, $action, array $actionMeta = []) {
+  global $DATA_FILE;
+  return state_lock(function() use ($DATA_FILE, $newItems, $newRoundMeta, $actorId, $requestId, $batchId, $action, $actionMeta) {
+    [$oldItems, $oldRoundMeta] = data_store_read($DATA_FILE);
+    $writeOk = data_store_write($DATA_FILE, $newItems, $newRoundMeta);
+    if ($writeOk === false) {
+      throw new RuntimeException('write_failed');
+    }
+    $currentRev = read_current_revision();
+    $newRev = $currentRev + 1;
+    write_revision_locked($newRev);
+    $events = array_merge(
+      compute_item_changes($oldItems, $newItems),
+      compute_round_meta_changes($oldRoundMeta, $newRoundMeta)
+    );
+    if (empty($events)) {
+      $events[] = ['entity' => 'dataset', 'entity_id' => null, 'action' => $action, 'meta' => $actionMeta];
+    } else {
+      $events = array_map(function($ev) use ($action) {
+        if (!isset($ev['meta']) || !is_array($ev['meta'])) {
+          $ev['meta'] = [];
+        }
+        if (!isset($ev['meta']['source_action'])) {
+          $ev['meta']['source_action'] = $action;
+        }
+        return $ev;
+      }, $events);
+    }
+    append_change_events($newRev, $actorId, $requestId, $batchId, $events, $actionMeta);
+    return ['rev' => $newRev, 'events' => $events];
+  });
+}
+
 if ($action === 'cfg') {
   $jsonHeader();
   $panelStickyRaw = $CFG['ui']['panel']['sticky_top'] ?? false;
@@ -87,16 +171,91 @@ if ($action === 'cfg') {
   exit;
 }
 
+if ($action === 'session') {
+  $jsonHeader();
+  echo json_encode(['ok' => true, 'client_id' => generate_client_id()], JSON_UNESCAPED_UNICODE);
+  exit;
+}
+
+if ($action === 'revision') {
+  $jsonHeader();
+  echo json_encode(['rev' => read_current_revision()], JSON_UNESCAPED_UNICODE);
+  exit;
+}
+
+if ($action === 'changes') {
+  $since = isset($_GET['since']) ? (int)$_GET['since'] : 0;
+  $excludeActor = normalized_actor_id($_GET['exclude_actor'] ?? '') ?? null;
+  $excludeBatchRaw = $_GET['exclude_batch'] ?? '';
+  $excludeBatchList = [];
+  $batchInputs = is_array($excludeBatchRaw) ? $excludeBatchRaw : explode(',', (string)$excludeBatchRaw);
+  foreach ($batchInputs as $candidate) {
+    $bid = normalized_batch_id($candidate);
+    if ($bid) {
+      $excludeBatchList[] = $bid;
+    }
+  }
+  $excludeBatchList = array_values(array_unique($excludeBatchList));
+
+  $timeout = 25.0;
+  $start = microtime(true);
+  $sleepMicro = 300000; // 0.3s
+
+  while (true) {
+    $entries = read_change_log_entries();
+    $filtered = [];
+    $maxRev = $since;
+    foreach ($entries as $entry) {
+      $rev = isset($entry['rev']) ? (int)$entry['rev'] : 0;
+      if ($rev <= $since) {
+        continue;
+      }
+      if ($rev > $maxRev) {
+        $maxRev = $rev;
+      }
+      if ($excludeActor && isset($entry['actor_id']) && $entry['actor_id'] === $excludeActor) {
+        continue;
+      }
+      if (!empty($excludeBatchList) && isset($entry['batch_id']) && in_array($entry['batch_id'], $excludeBatchList, true)) {
+        continue;
+      }
+      $filtered[] = $entry;
+    }
+
+    if (!empty($filtered)) {
+      $jsonHeader();
+      echo json_encode(['events' => $filtered, 'latest_rev' => $maxRev], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+      exit;
+    }
+
+    if ($maxRev > $since) {
+      $jsonHeader();
+      echo json_encode(['events' => [], 'latest_rev' => $maxRev], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+      exit;
+    }
+
+    if ((microtime(true) - $start) >= $timeout) {
+      http_response_code(204);
+      exit;
+    }
+    usleep($sleepMicro);
+  }
+}
+
 if ($action === 'load') {
   $jsonHeader();
   [$items, $roundMeta] = data_store_read($DATA_FILE);
   if (!$roundMeta) { $roundMeta = (object)[]; }
-  echo json_encode(["items"=>$items, "round_meta"=>$roundMeta, "rounds"=>$CFG["rounds"]], JSON_UNESCAPED_UNICODE);
+  $rev = read_current_revision();
+  echo json_encode(["items"=>$items, "round_meta"=>$roundMeta, "rounds"=>$CFG["rounds"], "revision"=>$rev], JSON_UNESCAPED_UNICODE);
   exit;
 }
 
 if ($action === 'save') {
   $jsonHeader();
+  $actorId = require_actor_id();
+  $requestId = require_request_id();
+  $batchId = optional_batch_id();
   $body = file_get_contents('php://input');
   $arr = json_decode($body, true);
   if (!is_array($arr)) { http_response_code(400); echo json_encode(['ok'=>false]); exit; }
@@ -110,9 +269,15 @@ if ($action === 'save') {
   } else {
     http_response_code(400); echo json_encode(['ok'=>false]); exit;
   }
-  $ok = data_store_write($DATA_FILE, $items, $roundMeta);
-  if ($ok !== false) backup_now($CFG, $DATA_FILE);
-  echo json_encode(['ok' => $ok !== false]);
+  try {
+    $result = commit_dataset_update($items, $roundMeta, $actorId, $requestId, $batchId, 'save', ['scope' => 'full_save']);
+  } catch (Throwable $e) {
+    http_response_code(500);
+    echo json_encode(['ok' => false, 'error' => 'write_failed'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+  backup_now($CFG, $DATA_FILE);
+  echo json_encode(['ok' => true, 'rev' => $result['rev'] ?? null]);
   exit;
 }
 
@@ -262,6 +427,9 @@ if ($action === 'import_csv') {
   if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     $sendJsonError('Hibás HTTP metódus.', 405);
   }
+  $actorId = require_actor_id();
+  $requestId = require_request_id();
+  $batchId = optional_batch_id();
   if (empty($_FILES['file']) || !is_array($_FILES['file'])) {
     $sendJsonError('Nem található feltöltött fájl.');
   }
@@ -494,7 +662,15 @@ if ($action === 'import_csv') {
   if (!is_array($roundMeta)) { $roundMeta = []; }
 
   $finalItems = $importMode === 'append' ? array_merge($existingItems, $items) : $items;
-  data_store_write($DATA_FILE, $finalItems, $roundMeta);
+
+  try {
+    $result = commit_dataset_update($finalItems, $roundMeta, $actorId, $requestId, $batchId ?: ('batch_'.$requestId), 'import', [
+      'mode' => $importMode,
+      'imported_count' => count($items)
+    ]);
+  } catch (Throwable $e) {
+    $sendJsonError('Az importálás nem sikerült.', 500);
+  }
 
   $jsonHeader();
   $importedIds = [];
@@ -503,18 +679,23 @@ if ($action === 'import_csv') {
     $iid = isset($item['id']) ? trim((string)$item['id']) : '';
     if ($iid !== '') { $importedIds[] = $iid; }
   }
+  backup_now($CFG, $DATA_FILE);
   echo json_encode([
     'ok' => true,
     'items' => $finalItems,
     'round_meta' => $roundMeta,
     'imported_ids' => $importedIds,
-    'mode' => $importMode
+    'mode' => $importMode,
+    'rev' => $result['rev'] ?? null
   ], JSON_UNESCAPED_UNICODE);
   exit;
 }
 
 if ($action === 'delete_round') {
   $jsonHeader();
+  $actorId = require_actor_id();
+  $requestId = require_request_id();
+  $batchId = optional_batch_id();
   $body = file_get_contents('php://input');
   $req = json_decode($body, true);
   $rid = isset($req['round']) ? (int)$req['round'] : (int)($_GET['round'] ?? 0);
@@ -543,6 +724,7 @@ if ($action === 'delete_round') {
   foreach ($items as $it) {
     if ((int)($it['round'] ?? 0) === $rid) $removed[] = $it; else $kept[] = $it;
   }
+  $archiveLines = [];
   if (count($removed) > 0) {
     $dt = date('Y-m-d H:i:s');
     $roundLabel = $ROUND_MAP[$rid]['label'] ?? (string)$rid;
@@ -567,7 +749,7 @@ if ($action === 'delete_round') {
     if ($summary) {
       $headerLine .= '  | ' . $summary;
     }
-    $lines = [$headerLine];
+    $archiveLines[] = $headerLine;
     foreach ($removed as $t) {
       $parts = [];
       foreach ([$labelFieldId, $addressFieldId, $noteFieldId] as $k) {
@@ -578,17 +760,29 @@ if ($action === 'delete_round') {
         $id = $metric['id'] ?? null; if (!$id) continue;
         if (isset($t[$id]) && $t[$id] !== '') $parts[] = $formatMetric($metric, $t[$id], 'row');
       }
-      $lines[] = "- " . (count($parts)? implode(' | ', $parts) : '—');
+      $archiveLines[] = "- " . (count($parts)? implode(' | ', $parts) : '—');
     }
-    $lines[] = "";
-    @file_put_contents($ARCHIVE_FILE, implode(PHP_EOL,$lines).PHP_EOL, FILE_APPEND|LOCK_EX);
+    $archiveLines[] = "";
   }
   if (isset($roundMeta[(string)$rid])) {
     unset($roundMeta[(string)$rid]);
   }
-  data_store_write($DATA_FILE, $kept, $roundMeta);
+
+  try {
+    $result = commit_dataset_update($kept, $roundMeta, $actorId, $requestId, $batchId, 'delete_round', [
+      'round' => $rid,
+      'deleted_count' => count($removed)
+    ]);
+  } catch (Throwable $e) {
+    echo json_encode(['ok' => false, 'error' => 'delete_failed'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  if (!empty($archiveLines)) {
+    @file_put_contents($ARCHIVE_FILE, implode(PHP_EOL,$archiveLines).PHP_EOL, FILE_APPEND|LOCK_EX);
+  }
   backup_now($CFG, $DATA_FILE);
-  echo json_encode(['ok'=>true,'deleted'=>count($removed)]);
+  echo json_encode(['ok'=>true,'deleted'=>count($removed),'rev'=>$result['rev'] ?? null]);
   exit;
 }
 

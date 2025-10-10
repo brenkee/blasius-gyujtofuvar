@@ -43,7 +43,10 @@ $CFG_DEFAULT = [
     "data_file" => "fuvar_data.json",
     "export_file" => "fuvar_export.csv",
     "export_download_name" => "fuvar_export.csv",
-    "archive_file" => "fuvar_archive.log"
+    "archive_file" => "fuvar_archive.log",
+    "revision_file" => "fuvar_revision.json",
+    "change_log_file" => "fuvar_changes.log",
+    "lock_file" => "fuvar_state.lock"
   ],
   "map" => [
     "tiles" => [
@@ -347,10 +350,13 @@ foreach ($CFG['rounds'] as $r) {
 }
 sort($ROUND_IDS);
 
-$DATA_FILE    = __DIR__ . '/' . ($CFG['files']['data_file'] ?? 'fuvar_data.json');
-$EXPORT_FILE  = __DIR__ . '/' . ($CFG['files']['export_file'] ?? 'fuvar_export.txt');
-$EXPORT_NAME  = (string)($CFG['files']['export_download_name'] ?? 'fuvar_export.txt');
-$ARCHIVE_FILE = __DIR__ . '/' . ($CFG['files']['archive_file'] ?? 'fuvar_archive.log');
+$DATA_FILE       = __DIR__ . '/' . ($CFG['files']['data_file'] ?? 'fuvar_data.json');
+$EXPORT_FILE     = __DIR__ . '/' . ($CFG['files']['export_file'] ?? 'fuvar_export.txt');
+$EXPORT_NAME     = (string)($CFG['files']['export_download_name'] ?? 'fuvar_export.txt');
+$ARCHIVE_FILE    = __DIR__ . '/' . ($CFG['files']['archive_file'] ?? 'fuvar_archive.log');
+$REVISION_FILE   = __DIR__ . '/' . ($CFG['files']['revision_file'] ?? 'fuvar_revision.json');
+$CHANGE_LOG_FILE = __DIR__ . '/' . ($CFG['files']['change_log_file'] ?? 'fuvar_changes.log');
+$STATE_LOCK_FILE = __DIR__ . '/' . ($CFG['files']['lock_file'] ?? 'fuvar_state.lock');
 
 /**
  * Biztonságos backup: létezés-ellenőrzés és mtime használat védetten.
@@ -490,4 +496,198 @@ function data_store_write($file, $items, $roundMeta) {
     'round_meta' => !empty($normalizedMeta) ? $normalizedMeta : (object)[]
   ];
   return file_put_contents($file, json_encode($payload, JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT));
+}
+
+function state_lock(callable $callback) {
+  global $STATE_LOCK_FILE;
+  $fh = fopen($STATE_LOCK_FILE, 'c+');
+  if (!$fh) {
+    throw new RuntimeException('Nem sikerült megnyitni a zároló fájlt.');
+  }
+  try {
+    if (!flock($fh, LOCK_EX)) {
+      throw new RuntimeException('Nem sikerült zárolni az állapotot.');
+    }
+    $result = $callback($fh);
+    flock($fh, LOCK_UN);
+    fclose($fh);
+    return $result;
+  } catch (Throwable $e) {
+    flock($fh, LOCK_UN);
+    fclose($fh);
+    throw $e;
+  }
+}
+
+function read_current_revision() {
+  global $REVISION_FILE;
+  if (!is_file($REVISION_FILE)) {
+    return 0;
+  }
+  $raw = @file_get_contents($REVISION_FILE);
+  if ($raw === false) {
+    return 0;
+  }
+  $decoded = json_decode($raw, true);
+  if (is_array($decoded) && isset($decoded['rev']) && is_numeric($decoded['rev'])) {
+    return (int)$decoded['rev'];
+  }
+  if (is_numeric($raw)) {
+    return (int)$raw;
+  }
+  return 0;
+}
+
+function write_revision_locked($rev) {
+  global $REVISION_FILE;
+  $payload = json_encode(['rev' => (int)$rev], JSON_UNESCAPED_UNICODE);
+  file_put_contents($REVISION_FILE, $payload, LOCK_EX);
+}
+
+function append_change_log_locked(array $entry) {
+  global $CHANGE_LOG_FILE;
+  $line = json_encode($entry, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+  file_put_contents($CHANGE_LOG_FILE, $line . "\n", FILE_APPEND | LOCK_EX);
+}
+
+function normalized_actor_id($raw) {
+  $trimmed = trim((string)$raw);
+  if ($trimmed === '') {
+    return null;
+  }
+  if (!preg_match('/^[A-Za-z0-9._\-]{3,120}$/', $trimmed)) {
+    return null;
+  }
+  return $trimmed;
+}
+
+function normalized_request_id($raw) {
+  $trimmed = trim((string)$raw);
+  if ($trimmed === '') {
+    return null;
+  }
+  if (!preg_match('/^[A-Za-z0-9._\-]{6,160}$/', $trimmed)) {
+    return null;
+  }
+  return $trimmed;
+}
+
+function normalized_batch_id($raw) {
+  $trimmed = trim((string)$raw);
+  if ($trimmed === '') {
+    return null;
+  }
+  if (!preg_match('/^[A-Za-z0-9._\-]{3,160}$/', $trimmed)) {
+    return null;
+  }
+  return $trimmed;
+}
+
+function generate_client_id() {
+  $bytes = random_bytes(9);
+  $base = rtrim(strtr(base64_encode($bytes), '+/', '-_'), '=');
+  return 'cli_' . $base;
+}
+
+function compute_item_changes(array $oldItems, array $newItems) {
+  $oldById = [];
+  foreach ($oldItems as $item) {
+    if (!is_array($item)) continue;
+    $id = isset($item['id']) ? (string)$item['id'] : null;
+    if (!$id) continue;
+    $oldById[$id] = $item;
+  }
+  $newById = [];
+  foreach ($newItems as $item) {
+    if (!is_array($item)) continue;
+    $id = isset($item['id']) ? (string)$item['id'] : null;
+    if (!$id) continue;
+    $newById[$id] = $item;
+  }
+
+  $events = [];
+
+  foreach ($newById as $id => $item) {
+    if (!isset($oldById[$id])) {
+      $events[] = ['entity' => 'item', 'entity_id' => $id, 'action' => 'created', 'meta' => ['fields' => array_keys($item)]];
+      continue;
+    }
+    $before = $oldById[$id];
+    $after = $item;
+    $changed = [];
+    foreach ($after as $key => $value) {
+      if ($key === null) continue;
+      if (is_array($value)) {
+        $encodedAfter = json_encode($value, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+        $encodedBefore = json_encode($before[$key] ?? null, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+        if ($encodedAfter !== $encodedBefore) {
+          $changed[$key] = ['before' => $before[$key] ?? null, 'after' => $value];
+        }
+        continue;
+      }
+      if (!array_key_exists($key, $before) || $before[$key] !== $value) {
+        $changed[$key] = ['before' => $before[$key] ?? null, 'after' => $value];
+      }
+    }
+    foreach ($before as $key => $value) {
+      if (!array_key_exists($key, $after)) {
+        $changed[$key] = ['before' => $value, 'after' => null];
+      }
+    }
+    if (!empty($changed)) {
+      $events[] = ['entity' => 'item', 'entity_id' => $id, 'action' => 'updated', 'meta' => ['changes' => $changed]];
+    }
+  }
+
+  foreach ($oldById as $id => $item) {
+    if (!isset($newById[$id])) {
+      $events[] = ['entity' => 'item', 'entity_id' => $id, 'action' => 'deleted'];
+    }
+  }
+
+  return $events;
+}
+
+function compute_round_meta_changes(array $oldMeta, array $newMeta) {
+  $events = [];
+  $old = normalize_round_meta($oldMeta);
+  $new = normalize_round_meta($newMeta);
+  $allKeys = array_unique(array_merge(array_keys($old), array_keys($new)));
+  foreach ($allKeys as $rid) {
+    $before = $old[$rid] ?? [];
+    $after = $new[$rid] ?? [];
+    if ($before === $after) continue;
+    $events[] = [
+      'entity' => 'round_meta',
+      'entity_id' => $rid,
+      'action' => empty($after) ? 'cleared' : 'updated',
+      'meta' => ['before' => $before, 'after' => $after]
+    ];
+  }
+  return $events;
+}
+
+function read_change_log_entries() {
+  global $CHANGE_LOG_FILE;
+  if (!is_file($CHANGE_LOG_FILE)) {
+    return [];
+  }
+  $fh = fopen($CHANGE_LOG_FILE, 'r');
+  if (!$fh) {
+    return [];
+  }
+  $entries = [];
+  if (flock($fh, LOCK_SH)) {
+    while (($line = fgets($fh)) !== false) {
+      $line = trim($line);
+      if ($line === '') continue;
+      $decoded = json_decode($line, true);
+      if (is_array($decoded) && isset($decoded['rev'])) {
+        $entries[] = $decoded;
+      }
+    }
+    flock($fh, LOCK_UN);
+  }
+  fclose($fh);
+  return $entries;
 }
