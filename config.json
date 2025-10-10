@@ -107,7 +107,7 @@
             "icon_size": 40,
             "font_size": 14,
             "auto_contrast": true,
-            "focus_ring_radius": 30000,
+            "focus_ring_radius": 20000,
             "focus_ring_color": "auto"
         },
         "panel": {
@@ -226,19 +226,19 @@
                 "title": "Összes kör összezárása"
             },
             "import_all": {
-                "label": "📥",
+                "label": "Import",
                 "title": "Címlista importálása CSV-ből"
             },
             "export_all": {
-                "label": "📤",
+                "label": "Export",
                 "title": "Címlista exportálása CSV-be"
             },
             "print_all": {
-                "label": "🖨️",
+                "label": "Nyomtatás",
                 "title": "Nyomtatás"
             },
             "theme_toggle": {
-                "label": "🌙 / ☀️",
+                "label": "🌙/☀️",
                 "title": "Téma váltása"
             },
             "undo": {
@@ -256,7 +256,7 @@
         },
         "round": {
             "planned_date_label": "Tervezett dátum",
-            "planned_date_hint": "Válaszd ki a kör tervezett dátumát"
+            "planned_date_hint": "Add meg a kör tervezett dátumát"
         },
         "group": {
             "sum_template": "Összesen: {parts}",

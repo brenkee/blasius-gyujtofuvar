@@ -3,12 +3,12 @@
         {
             "id": "row_c3ec61f1a091",
             "round": 0,
-            "city": "",
-            "lat": null,
-            "lon": null,
-            "label": "",
-            "address": "",
-            "note": "",
+            "city": "Szigetszentmiklós",
+            "lat": 47.3580372,
+            "lon": 19.0349059,
+            "label": "teszt",
+            "address": "2310 Szigetszentmiklós",
+            "note": "teszt",
             "deadline": "",
             "weight": null,
             "volume": null,
@@ -699,11 +699,20 @@
             "weight": 2100,
             "volume": 8,
             "﻿id": ""
+        },
+        {
+            "id": "row_hpn34naamfs",
+            "city": "",
+            "lat": null,
+            "lon": null,
+            "round": 0,
+            "label": "",
+            "address": "",
+            "note": "",
+            "deadline": "",
+            "weight": null,
+            "volume": null
         }
     ],
-    "round_meta": {
-        "2": {
-            "planned_date": "HÉTFŐ"
-        }
-    }
+    "round_meta": {}
 }
