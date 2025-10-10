@@ -18,11 +18,11 @@
         {
             "id": "row_5e916a527d1b",
             "round": 2,
-            "collapsed": true,
+            "collapsed": false,
             "city": "Csősz",
             "lat": 47.0394575,
             "lon": 18.4163602,
-            "label": "Márkus Lászlóné321",
+            "label": "TESZT",
             "address": "Csősz Bartók Béla u 2B",
             "note": "21",
             "deadline": "2025-10-16",
