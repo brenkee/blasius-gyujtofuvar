@@ -23,6 +23,7 @@
   let importRollbackSnapshot = null;
   const undoBtn = document.getElementById('undoBtn');
 
+  const newAddressEl = document.getElementById('newAddress');
   const groupsEl = document.getElementById('groups');
   const pinCountEl = document.getElementById('pinCount');
   const themeToggle = document.getElementById('themeToggle');
@@ -1739,6 +1740,9 @@
 
   function highlightRow(id, flash=false){
     groupsEl.querySelectorAll('.row').forEach(r=>r.classList.remove('highlight'));
+    if (newAddressEl) {
+      newAddressEl.querySelectorAll('.row').forEach(r=>r.classList.remove('highlight'));
+    }
     const row = state.rowsById.get(id);
     if (row){
       row.classList.add('highlight');
@@ -1828,14 +1832,17 @@
     }
   }
 
-  function renderRow(it, globalIndex){
+  function renderRow(it, globalIndex, options = {}){
     const addressFieldId = getAddressFieldId();
     const labelFieldId = getLabelFieldId();
     const city = cityFromDisplay(it[addressFieldId], it.city);
     const row = document.createElement('div');
     row.className = 'row';
     row.dataset.rowId = it.id;
+    const opts = options || {};
     const isPlaceholderItem = isItemCompletelyBlank(it);
+    if (isPlaceholderItem) row.classList.add('row--placeholder');
+    if (opts.newAddress) row.classList.add('row--new-address');
     const storedCollapsed = getCollapsePref(it.id);
     const collapsed = isPlaceholderItem ? false : (storedCollapsed == null ? DEFAULT_COLLAPSED : storedCollapsed);
     const roundColor = colorForRound(+it.round||0);
@@ -1923,10 +1930,20 @@
     const deadlineSize = getDeadlineIconSize();
     const toggleExtraAttrs = isPlaceholderItem ? ' disabled aria-hidden="true" style="visibility:hidden;"' : '';
     const bodyStyle = (!isPlaceholderItem && collapsed) ? 'display:none' : '';
+    const showNumber = !(opts.suppressNumber ?? false) && !isPlaceholderItem;
+    const rawIndex = Number.isFinite(globalIndex) ? globalIndex + 1 : NaN;
+    const numberText = showNumber && Number.isFinite(rawIndex) && rawIndex > 0
+      ? String(rawIndex).padStart(2, '0')
+      : '';
+    let numStyle = `background:${roundColor}; color:${numTextColor};`;
+    if (!showNumber) {
+      numStyle = 'background:transparent; color:transparent; visibility:hidden;';
+    }
+    const numAria = showNumber ? '' : ' aria-hidden="true"';
 
     row.innerHTML = `
       <div class="header">
-        <div class="num" data-num style="background:${roundColor}; color:${numTextColor}">${String(globalIndex+1).padStart(2,'0')}</div>
+        <div class="num" data-num${numAria} style="${numStyle}">${numberText}</div>
         <div class="header-main">
           <div class="title-label-row">
             <span class="title-label${labelString ? '' : ' placeholder'}" data-label-display title="${esc(labelString || labelPlaceholder)}">${esc(labelString || labelPlaceholder)}</span>
@@ -2268,8 +2285,29 @@
   }
 
   function renderGroups(){
-    state.rowsById.clear(); groupsEl.innerHTML = '';
-    ensureBlankRowInDefaultRound(); autoSortItems();
+    state.rowsById.clear();
+    groupsEl.innerHTML = '';
+    if (newAddressEl) {
+      newAddressEl.innerHTML = '';
+      newAddressEl.style.display = 'none';
+    }
+    ensureBlankRowInDefaultRound();
+    autoSortItems();
+
+    let placeholderItem = null;
+    for (const item of state.items) {
+      if (!isItemCompletelyBlank(item)) continue;
+      placeholderItem = item;
+      if ((+item.round || 0) === 0) break;
+    }
+    if (newAddressEl && placeholderItem) {
+      const placeholderRow = renderRow(placeholderItem, 0, {suppressNumber: true, newAddress: true});
+      if (placeholderRow) {
+        newAddressEl.appendChild(placeholderRow);
+        newAddressEl.style.display = '';
+      }
+    }
+    const placeholderId = placeholderItem?.id;
 
     const orderNonZero = state.cfg.rounds.map(r=>Number(r.id)).filter(id=>id!==0).sort((a,b)=>a-b);
     ROUND_ORDER = state.cfg.app.round_zero_at_bottom ? [...orderNonZero, ...(ROUND_MAP.has(0)?[0]:[])] : state.cfg.rounds.map(r=>Number(r.id));
@@ -2280,7 +2318,7 @@
 
     let globalIndex = 0;
     order.forEach(rid=>{
-      const inRound = state.items.filter(it => (+it.round||0) === rid);
+      const inRound = state.items.filter(it => (+it.round||0) === rid && it.id !== placeholderId);
       if (rid !== 0 && inRound.length === 0) return;
 
       const totals = totalsForRound(rid);
