@@ -110,9 +110,28 @@ if ($action === 'save') {
   } else {
     http_response_code(400); echo json_encode(['ok'=>false]); exit;
   }
-  $ok = data_store_write($DATA_FILE, $items, $roundMeta);
-  if ($ok !== false) backup_now($CFG, $DATA_FILE);
-  echo json_encode(['ok' => $ok !== false]);
+  try {
+    $result = data_store_write($DATA_FILE, $items, $roundMeta);
+    backup_now($CFG, $DATA_FILE);
+    $payload = ['ok' => true];
+    if (is_array($result)) {
+      if (isset($result['items'])) { $payload['items'] = $result['items']; }
+      if (isset($result['round_meta'])) { $payload['round_meta'] = $result['round_meta']; }
+    }
+    echo json_encode($payload, JSON_UNESCAPED_UNICODE);
+  } catch (RuntimeException $e) {
+    $msg = $e->getMessage();
+    if (strpos($msg, 'version_conflict:') === 0 || strpos($msg, 'round_version_conflict:') === 0) {
+      http_response_code(409);
+      echo json_encode(['ok' => false, 'error' => 'version_conflict'], JSON_UNESCAPED_UNICODE);
+    } else {
+      http_response_code(500);
+      echo json_encode(['ok' => false, 'error' => 'save_failed'], JSON_UNESCAPED_UNICODE);
+    }
+  } catch (Throwable $e) {
+    http_response_code(500);
+    echo json_encode(['ok' => false, 'error' => 'save_failed'], JSON_UNESCAPED_UNICODE);
+  }
   exit;
 }
 
@@ -494,7 +513,19 @@ if ($action === 'import_csv') {
   if (!is_array($roundMeta)) { $roundMeta = []; }
 
   $finalItems = $importMode === 'append' ? array_merge($existingItems, $items) : $items;
-  data_store_write($DATA_FILE, $finalItems, $roundMeta);
+  try {
+    $result = data_store_write($DATA_FILE, $finalItems, $roundMeta);
+    backup_now($CFG, $DATA_FILE);
+  } catch (RuntimeException $e) {
+    $msg = $e->getMessage();
+    if (strpos($msg, 'version_conflict:') === 0 || strpos($msg, 'round_version_conflict:') === 0) {
+      $jsonHeader();
+      http_response_code(409);
+      echo json_encode(['ok' => false, 'error' => 'version_conflict'], JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+    throw $e;
+  }
 
   $jsonHeader();
   $importedIds = [];
@@ -503,13 +534,14 @@ if ($action === 'import_csv') {
     $iid = isset($item['id']) ? trim((string)$item['id']) : '';
     if ($iid !== '') { $importedIds[] = $iid; }
   }
-  echo json_encode([
+  $response = [
     'ok' => true,
-    'items' => $finalItems,
-    'round_meta' => $roundMeta,
+    'items' => isset($result['items']) ? $result['items'] : $finalItems,
+    'round_meta' => isset($result['round_meta']) ? $result['round_meta'] : $roundMeta,
     'imported_ids' => $importedIds,
     'mode' => $importMode
-  ], JSON_UNESCAPED_UNICODE);
+  ];
+  echo json_encode($response, JSON_UNESCAPED_UNICODE);
   exit;
 }
 
@@ -586,8 +618,18 @@ if ($action === 'delete_round') {
   if (isset($roundMeta[(string)$rid])) {
     unset($roundMeta[(string)$rid]);
   }
-  data_store_write($DATA_FILE, $kept, $roundMeta);
-  backup_now($CFG, $DATA_FILE);
+  try {
+    data_store_write($DATA_FILE, $kept, $roundMeta);
+    backup_now($CFG, $DATA_FILE);
+  } catch (RuntimeException $e) {
+    $msg = $e->getMessage();
+    if (strpos($msg, 'version_conflict:') === 0 || strpos($msg, 'round_version_conflict:') === 0) {
+      http_response_code(409);
+      echo json_encode(['ok'=>false,'error'=>'version_conflict']);
+      exit;
+    }
+    throw $e;
+  }
   echo json_encode(['ok'=>true,'deleted'=>count($removed)]);
   exit;
 }

@@ -67,7 +67,16 @@
     for (const [rid, entry] of Object.entries(meta)){
       if (!entry || typeof entry !== 'object') continue;
       const date = typeof entry.planned_date === 'string' ? entry.planned_date.trim() : '';
-      if (date) out[rid] = {planned_date: date.slice(0, 120)};
+      if (!date && entry.version == null && entry.updated_at == null) continue;
+      const sanitized = {};
+      if (date) sanitized.planned_date = date.slice(0, 120);
+      if (entry.version != null) sanitized.version = entry.version;
+      if (entry.updated_at != null) sanitized.updated_at = entry.updated_at;
+      Object.entries(entry).forEach(([k,v])=>{
+        if (k === 'planned_date' || k === 'version' || k === 'updated_at') return;
+        sanitized[k] = v;
+      });
+      if (Object.keys(sanitized).length) out[rid] = sanitized;
     }
     return out;
   }
@@ -667,10 +676,18 @@
     if (meta && typeof meta === 'object' && !Array.isArray(meta)){
       Object.entries(meta).forEach(([rid, entry])=>{
         if (!entry || typeof entry !== 'object') return;
+        const out = {};
         const date = typeof entry.planned_date === 'string' ? entry.planned_date.trim() : '';
         const limited = date ? date.slice(0, 120) : '';
-        if (limited) {
-          state.roundMeta[String(rid)] = {planned_date: limited};
+        if (limited) out.planned_date = limited;
+        if (entry.version != null) out.version = entry.version;
+        if (entry.updated_at != null) out.updated_at = entry.updated_at;
+        Object.entries(entry).forEach(([k,v])=>{
+          if (k === 'planned_date' || k === 'version' || k === 'updated_at') return;
+          out[k] = v;
+        });
+        if (Object.keys(out).length) {
+          state.roundMeta[String(rid)] = out;
         }
       });
     }
@@ -689,6 +706,16 @@
       const t = await r.text();
       let j=null; try{ j = JSON.parse(t); }catch(_){}
       const ok = !!(r.ok && j && j.ok===true);
+      if (ok && j){
+        if (Array.isArray(j.items)) {
+          state.items = j.items.map(item => ({...item}));
+        }
+        if (j.round_meta && typeof j.round_meta === 'object' && !Array.isArray(j.round_meta)) {
+          state.roundMeta = {...j.round_meta};
+        }
+      } else if (!ok && j && j.error === 'version_conflict') {
+        alert('A módosítás közben frissült az adatbázis. Kérlek töltsd újra az oldalt.');
+      }
       showSaveStatus(ok);
       return ok;
     }catch(e){

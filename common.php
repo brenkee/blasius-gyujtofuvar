@@ -40,7 +40,7 @@ $CFG_DEFAULT = [
     "round_planned_date" => true
   ],
   "files" => [
-    "data_file" => "fuvar_data.json",
+    "data_file" => "data/data.json",
     "export_file" => "fuvar_export.csv",
     "export_download_name" => "fuvar_export.csv",
     "archive_file" => "fuvar_archive.log"
@@ -347,21 +347,259 @@ foreach ($CFG['rounds'] as $r) {
 }
 sort($ROUND_IDS);
 
-$DATA_FILE    = __DIR__ . '/' . ($CFG['files']['data_file'] ?? 'fuvar_data.json');
+$DATA_DIR     = __DIR__ . '/data';
+$DB_FILE      = $DATA_DIR . '/app.db';
+$DATA_FILE    = __DIR__ . '/' . ($CFG['files']['data_file'] ?? 'data/data.json');
 $EXPORT_FILE  = __DIR__ . '/' . ($CFG['files']['export_file'] ?? 'fuvar_export.txt');
 $EXPORT_NAME  = (string)($CFG['files']['export_download_name'] ?? 'fuvar_export.txt');
 $ARCHIVE_FILE = __DIR__ . '/' . ($CFG['files']['archive_file'] ?? 'fuvar_archive.log');
+
+if (!is_dir($DATA_DIR)) {
+  @mkdir($DATA_DIR, 0775, true);
+}
+
+function db_path() {
+  global $DB_FILE;
+  return $DB_FILE;
+}
+
+function db() {
+  static $pdo = null;
+  if ($pdo instanceof PDO) {
+    return $pdo;
+  }
+
+  $dbFile = db_path();
+  $dir = dirname($dbFile);
+  if (!is_dir($dir)) {
+    @mkdir($dir, 0775, true);
+  }
+
+  $pdo = new PDO('sqlite:' . $dbFile);
+  $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+  $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+  $pdo->exec('PRAGMA journal_mode = WAL');
+  $pdo->exec('PRAGMA foreign_keys = ON');
+  $pdo->exec('PRAGMA busy_timeout = 5000');
+
+  initialize_database_schema($pdo);
+
+  return $pdo;
+}
+
+function initialize_database_schema(PDO $pdo) {
+  $exists = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='stops' LIMIT 1")->fetchColumn();
+  if ($exists) {
+    return;
+  }
+
+  $schemaFile = __DIR__ . '/schema.sql';
+  if (!is_file($schemaFile)) {
+    throw new RuntimeException('schema.sql hiányzik, az adatbázis nem inicializálható.');
+  }
+
+  $sql = file_get_contents($schemaFile);
+  if ($sql === false) {
+    throw new RuntimeException('schema.sql nem olvasható.');
+  }
+
+  $pdo->exec($sql);
+}
+
+function now_iso() {
+  return gmdate('Y-m-d\TH:i:s\Z');
+}
+
+function stop_base_keys() {
+  return [
+    'id','round','collapsed','city','lat','lon','label','address','note','deadline','weight','volume','version','updated_at','created_at','deleted_at','position'
+  ];
+}
+
+function hydrate_stop_row(array $row) {
+  $item = [
+    'id' => (string)$row['id'],
+    'round' => (int)$row['round_id'],
+    'collapsed' => (bool)$row['collapsed'],
+    'city' => (string)($row['city'] ?? ''),
+    'lat' => $row['lat'] !== null ? (float)$row['lat'] : null,
+    'lon' => $row['lon'] !== null ? (float)$row['lon'] : null,
+    'label' => (string)($row['label'] ?? ''),
+    'address' => (string)($row['address'] ?? ''),
+    'note' => (string)($row['note'] ?? ''),
+    'deadline' => (string)($row['deadline'] ?? ''),
+    'weight' => $row['weight'] !== null ? (float)$row['weight'] : null,
+    'volume' => $row['volume'] !== null ? (float)$row['volume'] : null,
+    'version' => (int)$row['version'],
+    'updated_at' => (string)($row['updated_at'] ?? ''),
+  ];
+
+  $extra = [];
+  if (isset($row['extra_json']) && $row['extra_json'] !== null && $row['extra_json'] !== '') {
+    $decoded = json_decode($row['extra_json'], true);
+    if (is_array($decoded)) {
+      $extra = $decoded;
+    }
+  }
+  foreach ($extra as $key => $value) {
+    if (!array_key_exists($key, $item)) {
+      $item[$key] = $value;
+    }
+  }
+
+  return $item;
+}
+
+function fetch_all_stops($includeDeleted = false) {
+  $pdo = db();
+  $where = $includeDeleted ? '1=1' : 'deleted_at IS NULL';
+  $stmt = $pdo->query("SELECT id, round_id, position, collapsed, city, lat, lon, label, address, note, deadline, weight, volume, extra_json, version, updated_at FROM stops WHERE {$where} ORDER BY position ASC, created_at ASC, id ASC");
+  $items = [];
+  while ($row = $stmt->fetch()) {
+    $items[] = hydrate_stop_row($row);
+  }
+  return $items;
+}
+
+function fetch_round_meta($includeDeleted = false) {
+  $pdo = db();
+  $where = $includeDeleted ? '1=1' : 'deleted_at IS NULL';
+  $stmt = $pdo->query("SELECT id, planned_date, meta_json, version, updated_at FROM rounds WHERE {$where}");
+  $meta = [];
+  while ($row = $stmt->fetch()) {
+    $entry = [];
+    $planned = isset($row['planned_date']) ? trim((string)$row['planned_date']) : '';
+    if ($planned !== '') {
+      $entry['planned_date'] = $planned;
+    }
+    if (isset($row['meta_json']) && $row['meta_json'] !== '') {
+      $decoded = json_decode($row['meta_json'], true);
+      if (is_array($decoded)) {
+        foreach ($decoded as $k => $v) {
+          if (!array_key_exists($k, $entry)) {
+            $entry[$k] = $v;
+          }
+        }
+      }
+    }
+    $entry['version'] = (int)$row['version'];
+    $entry['updated_at'] = (string)($row['updated_at'] ?? '');
+    $meta[(string)$row['id']] = $entry;
+  }
+  return $meta;
+}
+
+function normalize_stop_payload(array $item) {
+  $baseKeys = stop_base_keys();
+  $sanitized = [];
+  $sanitized['id'] = isset($item['id']) ? trim((string)$item['id']) : '';
+  if ($sanitized['id'] === '') {
+    throw new InvalidArgumentException('Hiányzó azonosító egy címnél.');
+  }
+  $sanitized['round'] = (int)($item['round'] ?? 0);
+  $sanitized['position'] = isset($item['position']) ? (int)$item['position'] : 0;
+  $sanitized['collapsed'] = !empty($item['collapsed']) ? 1 : 0;
+  $sanitized['city'] = isset($item['city']) ? trim((string)$item['city']) : '';
+  $sanitized['lat'] = isset($item['lat']) && $item['lat'] !== '' && $item['lat'] !== null && is_numeric($item['lat']) ? (float)$item['lat'] : null;
+  $sanitized['lon'] = isset($item['lon']) && $item['lon'] !== '' && $item['lon'] !== null && is_numeric($item['lon']) ? (float)$item['lon'] : null;
+  $sanitized['label'] = isset($item['label']) ? (string)$item['label'] : '';
+  $sanitized['address'] = isset($item['address']) ? (string)$item['address'] : '';
+  $sanitized['note'] = isset($item['note']) ? (string)$item['note'] : '';
+  $sanitized['deadline'] = isset($item['deadline']) ? trim((string)$item['deadline']) : '';
+  $sanitized['weight'] = isset($item['weight']) && $item['weight'] !== '' && $item['weight'] !== null && is_numeric($item['weight']) ? (float)$item['weight'] : null;
+  $sanitized['volume'] = isset($item['volume']) && $item['volume'] !== '' && $item['volume'] !== null && is_numeric($item['volume']) ? (float)$item['volume'] : null;
+  $sanitized['version'] = isset($item['version']) ? (int)$item['version'] : 0;
+  $sanitized['updated_at'] = isset($item['updated_at']) ? (string)$item['updated_at'] : '';
+
+  $extra = [];
+  foreach ($item as $key => $value) {
+    if (!in_array($key, $baseKeys, true)) {
+      $extra[$key] = $value;
+    }
+  }
+  $sanitized['extra_json'] = $extra ? json_encode($extra, JSON_UNESCAPED_UNICODE) : null;
+
+  return $sanitized;
+}
+
+function normalize_round_meta_entry($rid, $entry) {
+  $id = (int)$rid;
+  $planned = '';
+  $meta = [];
+  if (is_array($entry)) {
+    if (isset($entry['planned_date'])) {
+      $planned = trim((string)$entry['planned_date']);
+      if (strlen($planned) > 120) {
+        $planned = substr($planned, 0, 120);
+      }
+    }
+    $tmp = $entry;
+  } elseif (is_object($entry)) {
+    $tmp = (array)$entry;
+    if (isset($tmp['planned_date'])) {
+      $planned = trim((string)$tmp['planned_date']);
+      if (strlen($planned) > 120) {
+        $planned = substr($planned, 0, 120);
+      }
+    }
+  } else {
+    $tmp = [];
+  }
+  foreach ($tmp as $k => $v) {
+    if ($k === 'planned_date' || $k === 'version' || $k === 'updated_at') continue;
+    $meta[$k] = $v;
+  }
+  return [
+    'id' => $id,
+    'planned_date' => $planned,
+    'meta_json' => $meta ? json_encode($meta, JSON_UNESCAPED_UNICODE) : null,
+    'version' => isset($tmp['version']) ? (int)$tmp['version'] : 0,
+    'updated_at' => isset($tmp['updated_at']) ? (string)$tmp['updated_at'] : ''
+  ];
+}
+
+function dataset_state_version() {
+  $pdo = db();
+  $stmt = $pdo->query("SELECT value FROM metadata WHERE key='dataset_version' LIMIT 1");
+  $val = $stmt->fetchColumn();
+  return $val ? (int)$val : 0;
+}
+
+function bump_dataset_state_version(PDO $pdo) {
+  $nowVersion = dataset_state_version();
+  $newVersion = $nowVersion + 1;
+  $stmt = $pdo->prepare('INSERT INTO metadata(key, value) VALUES("dataset_version", :val)
+    ON CONFLICT(key) DO UPDATE SET value=excluded.value');
+  $stmt->execute([':val' => (string)$newVersion]);
+  return $newVersion;
+}
+
 
 /**
  * Biztonságos backup: létezés-ellenőrzés és mtime használat védetten.
  * Elkerüli a "filemtime(): stat failed" warningokat versenyhelyzet esetén.
  */
+function export_dataset_snapshot($path) {
+  $dir = dirname($path);
+  if (!is_dir($dir)) {
+    @mkdir($dir, 0775, true);
+  }
+  [$items, $roundMeta] = data_store_read($path);
+  $payload = [
+    'items' => $items,
+    'round_meta' => !empty($roundMeta) ? $roundMeta : (object)[]
+  ];
+  file_put_contents($path, json_encode($payload, JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT));
+}
+
 function backup_now($cfg, $dataFile) {
   if (empty($cfg['backup']['enabled'])) return;
 
   $dir = __DIR__ . '/' . ($cfg['backup']['dir'] ?? 'backups');
   if (!is_dir($dir)) @mkdir($dir, 0775, true);
   if (!is_dir($dir)) return;
+
+  export_dataset_snapshot($dataFile);
 
   // Ha nincs mit menteni, lépjünk ki
   if (!is_file($dataFile)) return;
@@ -452,6 +690,16 @@ function normalize_round_meta($roundMeta) {
         $entry['planned_date'] = $val;
       }
     }
+    if (array_key_exists('version', $meta)) {
+      $entry['version'] = (int)$meta['version'];
+    }
+    if (array_key_exists('updated_at', $meta)) {
+      $entry['updated_at'] = (string)$meta['updated_at'];
+    }
+    foreach ($meta as $k => $v) {
+      if ($k === 'planned_date' || $k === 'version' || $k === 'updated_at') continue;
+      $entry[$k] = $v;
+    }
     if (!empty($entry)) {
       $out[$key] = $entry;
     }
@@ -459,35 +707,265 @@ function normalize_round_meta($roundMeta) {
   return $out;
 }
 
-function data_store_read($file) {
-  $items = [];
-  $roundMeta = [];
-  if (!is_file($file)) {
-    return [$items, $roundMeta];
+function save_state_to_database($items, $roundMeta) {
+  $pdo = db();
+  $pdo->beginTransaction();
+  $anyChange = false;
+
+  $existingStops = [];
+  $stmtStops = $pdo->query('SELECT id, round_id, position, collapsed, city, lat, lon, label, address, note, deadline, weight, volume, extra_json, version, updated_at, deleted_at FROM stops');
+  while ($row = $stmtStops->fetch()) {
+    $existingStops[$row['id']] = $row;
   }
-  $raw = file_get_contents($file);
-  $decoded = json_decode($raw ?: '[]', true);
-  if (!is_array($decoded)) {
-    return [$items, $roundMeta];
+
+  $insertStop = $pdo->prepare('INSERT INTO stops (id, round_id, position, collapsed, city, lat, lon, label, address, note, deadline, weight, volume, extra_json, version, created_at, updated_at, deleted_at)
+    VALUES (:id, :round_id, :position, :collapsed, :city, :lat, :lon, :label, :address, :note, :deadline, :weight, :volume, :extra_json, :version, :created_at, :updated_at, NULL)');
+  $updateStop = $pdo->prepare('UPDATE stops SET round_id=:round_id, position=:position, collapsed=:collapsed, city=:city, lat=:lat, lon=:lon, label=:label, address=:address, note=:note, deadline=:deadline, weight=:weight, volume=:volume, extra_json=:extra_json, version=:version, updated_at=:updated_at, deleted_at=NULL WHERE id=:id');
+  $deleteStop = $pdo->prepare('UPDATE stops SET deleted_at=:deleted_at, updated_at=:updated_at, version=version+1 WHERE id=:id AND deleted_at IS NULL');
+
+  $normalizeRow = function(array $row) {
+    return [
+      'round' => (int)$row['round_id'],
+      'position' => (int)$row['position'],
+      'collapsed' => (int)$row['collapsed'] ? 1 : 0,
+      'city' => (string)($row['city'] ?? ''),
+      'lat' => $row['lat'] !== null ? (float)$row['lat'] : null,
+      'lon' => $row['lon'] !== null ? (float)$row['lon'] : null,
+      'label' => (string)($row['label'] ?? ''),
+      'address' => (string)($row['address'] ?? ''),
+      'note' => (string)($row['note'] ?? ''),
+      'deadline' => (string)($row['deadline'] ?? ''),
+      'weight' => $row['weight'] !== null ? (float)$row['weight'] : null,
+      'volume' => $row['volume'] !== null ? (float)$row['volume'] : null,
+      'extra_json' => isset($row['extra_json']) && $row['extra_json'] !== '' ? $row['extra_json'] : null,
+    ];
+  };
+
+  $incomingIds = [];
+  $now = now_iso();
+
+  $itemsArray = is_array($items) ? array_values($items) : [];
+  foreach ($itemsArray as $idx => $rawItem) {
+    if (!is_array($rawItem)) {
+      continue;
+    }
+    $rawItem['position'] = $idx;
+    $normalized = normalize_stop_payload($rawItem);
+    $id = $normalized['id'];
+    $incomingIds[$id] = true;
+
+    $expectedVersion = (int)$normalized['version'];
+    $existingRow = $existingStops[$id] ?? null;
+    $targetComparable = [
+      'round' => $normalized['round'],
+      'position' => $normalized['position'],
+      'collapsed' => $normalized['collapsed'],
+      'city' => $normalized['city'],
+      'lat' => $normalized['lat'],
+      'lon' => $normalized['lon'],
+      'label' => $normalized['label'],
+      'address' => $normalized['address'],
+      'note' => $normalized['note'],
+      'deadline' => $normalized['deadline'],
+      'weight' => $normalized['weight'],
+      'volume' => $normalized['volume'],
+      'extra_json' => $normalized['extra_json'],
+    ];
+
+    if ($existingRow && $existingRow['deleted_at'] === null) {
+      $currentComparable = $normalizeRow($existingRow);
+      $currentVersion = (int)$existingRow['version'];
+      if ($expectedVersion > 0 && $expectedVersion !== $currentVersion) {
+        throw new RuntimeException('version_conflict:'.$id);
+      }
+      $needsUpdate = $currentComparable !== $targetComparable || (int)$existingRow['position'] !== $normalized['position'];
+      if ($needsUpdate) {
+        $anyChange = true;
+        $updateStop->execute([
+          ':round_id' => $normalized['round'],
+          ':position' => $normalized['position'],
+          ':collapsed' => $normalized['collapsed'],
+          ':city' => $normalized['city'],
+          ':lat' => $normalized['lat'],
+          ':lon' => $normalized['lon'],
+          ':label' => $normalized['label'],
+          ':address' => $normalized['address'],
+          ':note' => $normalized['note'],
+          ':deadline' => $normalized['deadline'],
+          ':weight' => $normalized['weight'],
+          ':volume' => $normalized['volume'],
+          ':extra_json' => $normalized['extra_json'],
+          ':version' => $currentVersion + 1,
+          ':updated_at' => $now,
+          ':id' => $id,
+        ]);
+      } elseif ((int)$existingRow['position'] !== $normalized['position']) {
+        $anyChange = true;
+        $updateStop->execute([
+          ':round_id' => $normalized['round'],
+          ':position' => $normalized['position'],
+          ':collapsed' => $normalized['collapsed'],
+          ':city' => $normalized['city'],
+          ':lat' => $normalized['lat'],
+          ':lon' => $normalized['lon'],
+          ':label' => $normalized['label'],
+          ':address' => $normalized['address'],
+          ':note' => $normalized['note'],
+          ':deadline' => $normalized['deadline'],
+          ':weight' => $normalized['weight'],
+          ':volume' => $normalized['volume'],
+          ':extra_json' => $normalized['extra_json'],
+          ':version' => $currentVersion,
+          ':updated_at' => $existingRow['updated_at'] ?? $now,
+          ':id' => $id,
+        ]);
+      }
+    } elseif ($existingRow) {
+      $anyChange = true;
+      $updateStop->execute([
+        ':round_id' => $normalized['round'],
+        ':position' => $normalized['position'],
+        ':collapsed' => $normalized['collapsed'],
+        ':city' => $normalized['city'],
+        ':lat' => $normalized['lat'],
+        ':lon' => $normalized['lon'],
+        ':label' => $normalized['label'],
+        ':address' => $normalized['address'],
+        ':note' => $normalized['note'],
+        ':deadline' => $normalized['deadline'],
+        ':weight' => $normalized['weight'],
+        ':volume' => $normalized['volume'],
+        ':extra_json' => $normalized['extra_json'],
+        ':version' => (int)$existingRow['version'] + 1,
+        ':updated_at' => $now,
+        ':id' => $id,
+      ]);
+    } else {
+      $anyChange = true;
+      $insertStop->execute([
+        ':id' => $id,
+        ':round_id' => $normalized['round'],
+        ':position' => $normalized['position'],
+        ':collapsed' => $normalized['collapsed'],
+        ':city' => $normalized['city'],
+        ':lat' => $normalized['lat'],
+        ':lon' => $normalized['lon'],
+        ':label' => $normalized['label'],
+        ':address' => $normalized['address'],
+        ':note' => $normalized['note'],
+        ':deadline' => $normalized['deadline'],
+        ':weight' => $normalized['weight'],
+        ':volume' => $normalized['volume'],
+        ':extra_json' => $normalized['extra_json'],
+        ':version' => max(1, $expectedVersion),
+        ':created_at' => $now,
+        ':updated_at' => $now,
+      ]);
+    }
   }
-  if (is_list_array($decoded)) {
-    $items = array_values($decoded);
-    return [$items, $roundMeta];
+
+  foreach ($existingStops as $id => $row) {
+    if (!isset($incomingIds[$id]) && $row['deleted_at'] === null) {
+      $anyChange = true;
+      $deleteStop->execute([
+        ':deleted_at' => $now,
+        ':updated_at' => $now,
+        ':id' => $id,
+      ]);
+    }
   }
-  if (isset($decoded['items']) && is_array($decoded['items'])) {
-    $items = array_values($decoded['items']);
+
+  $existingRounds = [];
+  $stmtRounds = $pdo->query('SELECT id, planned_date, meta_json, version, updated_at, deleted_at FROM rounds');
+  while ($row = $stmtRounds->fetch()) {
+    $existingRounds[(int)$row['id']] = $row;
   }
-  if (isset($decoded['round_meta']) && is_array($decoded['round_meta'])) {
-    $roundMeta = normalize_round_meta($decoded['round_meta']);
+
+  $insertRound = $pdo->prepare('INSERT INTO rounds (id, planned_date, meta_json, version, created_at, updated_at, deleted_at)
+    VALUES (:id, :planned_date, :meta_json, :version, :created_at, :updated_at, NULL)');
+  $updateRound = $pdo->prepare('UPDATE rounds SET planned_date=:planned_date, meta_json=:meta_json, version=:version, updated_at=:updated_at, deleted_at=NULL WHERE id=:id');
+  $deleteRound = $pdo->prepare('UPDATE rounds SET deleted_at=:deleted_at, updated_at=:updated_at, version=version+1 WHERE id=:id AND deleted_at IS NULL');
+
+  $incomingRounds = [];
+  $roundMetaArray = is_array($roundMeta) ? $roundMeta : [];
+  foreach ($roundMetaArray as $rid => $entry) {
+    $normalized = normalize_round_meta_entry($rid, $entry);
+    $roundId = (int)$normalized['id'];
+    $incomingRounds[$roundId] = true;
+    $expectedVersion = (int)$normalized['version'];
+    $existing = $existingRounds[$roundId] ?? null;
+    $targetMeta = $normalized['meta_json'] ?? null;
+    $planned = $normalized['planned_date'];
+
+    if ($existing && $existing['deleted_at'] === null) {
+      $currentMeta = $existing['meta_json'] ?? null;
+      $currentPlanned = (string)($existing['planned_date'] ?? '');
+      $currentVersion = (int)$existing['version'];
+      if ($expectedVersion > 0 && $expectedVersion !== $currentVersion) {
+        throw new RuntimeException('round_version_conflict:'.$roundId);
+      }
+      if ($currentMeta !== $targetMeta || $currentPlanned !== $planned) {
+        $anyChange = true;
+        $updateRound->execute([
+          ':id' => $roundId,
+          ':planned_date' => $planned !== '' ? $planned : null,
+          ':meta_json' => $targetMeta,
+          ':version' => $currentVersion + 1,
+          ':updated_at' => $now,
+        ]);
+      }
+    } elseif ($existing) {
+      $anyChange = true;
+      $updateRound->execute([
+        ':id' => $roundId,
+        ':planned_date' => $planned !== '' ? $planned : null,
+        ':meta_json' => $targetMeta,
+        ':version' => (int)$existing['version'] + 1,
+        ':updated_at' => $now,
+      ]);
+    } else {
+      $anyChange = true;
+      $insertRound->execute([
+        ':id' => $roundId,
+        ':planned_date' => $planned !== '' ? $planned : null,
+        ':meta_json' => $targetMeta,
+        ':version' => max(1, $expectedVersion),
+        ':created_at' => $now,
+        ':updated_at' => $now,
+      ]);
+    }
   }
+
+  foreach ($existingRounds as $rid => $row) {
+    if (!isset($incomingRounds[$rid]) && $row['deleted_at'] === null) {
+      $anyChange = true;
+      $deleteRound->execute([
+        ':deleted_at' => $now,
+        ':updated_at' => $now,
+        ':id' => $rid,
+      ]);
+    }
+  }
+
+  if ($anyChange) {
+    bump_dataset_state_version($pdo);
+  }
+
+  $pdo->commit();
+
+  return [
+    'items' => fetch_all_stops(),
+    'round_meta' => fetch_round_meta(),
+  ];
+}
+
+function data_store_read($file, $options = []) {
+  $includeDeleted = is_array($options) && !empty($options['include_deleted']);
+  $items = fetch_all_stops($includeDeleted);
+  $roundMeta = fetch_round_meta($includeDeleted);
   return [$items, $roundMeta];
 }
 
 function data_store_write($file, $items, $roundMeta) {
-  $normalizedMeta = normalize_round_meta($roundMeta);
-  $payload = [
-    'items' => array_values(is_array($items) ? $items : []),
-    'round_meta' => !empty($normalizedMeta) ? $normalizedMeta : (object)[]
-  ];
-  return file_put_contents($file, json_encode($payload, JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT));
+  return save_state_to_database($items, $roundMeta);
 }
