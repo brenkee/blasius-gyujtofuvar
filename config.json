@@ -24,6 +24,7 @@
         "marker_popup_on_click": true,
         "marker_popup_on_focus": true,
         "marker_focus_feedback": true,
+        "marker_overlap_indicator": true,
         "group_actions": {
             "open": true,
             "close": true,

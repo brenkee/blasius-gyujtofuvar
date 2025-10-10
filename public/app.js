@@ -16,7 +16,8 @@
     foreignRevisionSet: new Set(),
     activeEditor: null,
     conflictNotified: new Set(),
-    conflictOverlay: null
+    conflictOverlay: null,
+    markerOverlapCounts: new Map()
   };
 
   const history = [];
@@ -999,7 +1000,40 @@
   // ======= MAP
   const map = L.map('map',{zoomControl:true, preferCanvas:true});
   const markerLayer = L.featureGroup().addTo(map);
+  let markerOverlapRefreshTimer = null;
   function updatePinCount(){ if (pinCountEl) pinCountEl.textContent = markerLayer.getLayers().length.toString(); }
+
+  function refreshMarkerOverlapIndicators(){
+    const coords = new Map();
+    const perId = new Map();
+    state.items.forEach(it => {
+      const lat = Number(it?.lat);
+      const lon = Number(it?.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+      const key = `${lat.toFixed(6)}|${lon.toFixed(6)}`;
+      const arr = coords.get(key);
+      if (arr) arr.push(it.id);
+      else coords.set(key, [it.id]);
+    });
+    coords.forEach(ids => {
+      const count = ids.length;
+      ids.forEach(id => perId.set(id, count));
+    });
+    state.markerOverlapCounts = perId;
+    state.items.forEach((it, idx)=>{
+      const mk = state.markersById.get(it.id);
+      if (!mk) return;
+      mk.setIcon(iconForItem(it, idx));
+    });
+  }
+
+  function requestMarkerOverlapRefresh(){
+    if (markerOverlapRefreshTimer != null) return;
+    markerOverlapRefreshTimer = setTimeout(()=>{
+      markerOverlapRefreshTimer = null;
+      refreshMarkerOverlapIndicators();
+    }, 0);
+  }
 
   function openMarkerPopup(mk, featureKey){
     if (!mk) return;
@@ -1021,20 +1055,41 @@
     const yiq=(r*299 + g*587 + b*114)/1000;
     return yiq >= 140 ? '#111' : '#fff';
   }
-  function numberedIcon(hex, num){
+  function numberedIcon(hex, num, overlapCount=0)
     const n = (''+num).slice(0,3);
     const textCol = cfg('ui.marker.auto_contrast', true) ? idealTextColor(hex) : '#fff';
     const sz = cfg('ui.marker.icon_size', 38) || 38;
     const fsz = cfg('ui.marker.font_size', 14) || 14;
+    let indicator = '';
+    if (overlapCount > 1){
+      const indicatorText = overlapCount > 99 ? '99+' : String(overlapCount);
+      const badgeSize = 16;
+      const badgeX = 32 - badgeSize - 1.5;
+      const badgeY = 2.5;
+      const badgeFont = Math.max(8, Math.round(fsz * 0.7));
+      indicator = `
+        <g transform="translate(${badgeX},${badgeY})">
+          <rect width="${badgeSize}" height="${badgeSize}" rx="8" ry="8" fill="#0f172a" opacity="0.92" stroke="#fff" stroke-opacity="0.65" stroke-width="0.8" />
+          <text x="${badgeSize/2}" y="${badgeSize/2}" text-anchor="middle" dominant-baseline="middle" font-size="${badgeFont}" font-family="Arial,Helvetica,sans-serif" font-weight="700" fill="#fff">${indicatorText}</text>
+        </g>`;
+    }
     const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="${sz}" height="${sz}" viewBox="0 0 32 32">
       <g fill="none">
         <path d="M16 2c6.1 0 11 4.9 11 11 0 7.5-11 17-11 17S5 20.5 5 13c0-6.1 4.9-11 11-11z" fill="${hex}" stroke="#333" stroke-opacity=".25"/>
         <text x="16" y="16" text-anchor="middle" dominant-baseline="middle" font-size="${fsz}" font-family="Arial,Helvetica,sans-serif" font-weight="800" fill="${textCol}">${n}</text>
+        ${indicator}
       </g>
     </svg>`;
     const anchor = Math.round(sz/2);
     return L.icon({iconUrl:'data:image/svg+xml;base64,'+btoa(svg), iconSize:[sz,sz], iconAnchor:[anchor, sz-1], popupAnchor:[0, -Math.max(33, sz-5)]});
+  }
+
+  function iconForItem(it, index){
+    const color = colorForRound(+it.round||0);
+    const overlapCount = state.markerOverlapCounts instanceof Map ? (state.markerOverlapCounts.get(it.id) || 1) : 1;
+    const showCount = feature('marker_overlap_indicator', false) && overlapCount > 1 ? overlapCount : 0;
+    return numberedIcon(color, index+1, showCount);
   }
 
   function cityFromDisplay(address, currentCity){
@@ -1316,7 +1371,9 @@
     }
     markerLayer.clearLayers();
     state.markersById.clear();
+    state.markerOverlapCounts = new Map();
     updatePinCount();
+    requestMarkerOverlapRefresh();
   }
   async function loadAll(){
     const j = await fetchJSON(EP.load, {cache:'no-store'});
@@ -1650,8 +1707,7 @@
 
   function upsertMarker(it, index){
     if (it.lat==null || it.lon==null) return;
-    const color = colorForRound(+it.round||0);
-    const icon = numberedIcon(color, index+1);
+    const icon = iconForItem(it, index);
     let mk = state.markersById.get(it.id);
     if (!mk){
       mk = L.marker([it.lat, it.lon], {icon}).addTo(markerLayer);
@@ -1717,6 +1773,7 @@
       </div>`;
     mk.bindPopup(html, {maxWidth:320});
     updatePinCount();
+    requestMarkerOverlapRefresh();
   }
 
   function renumberAll(){
@@ -1734,8 +1791,9 @@
     });
     state.items.forEach((it,idx)=>{
       const mk = state.markersById.get(it.id);
-      if (mk){ mk.setIcon(numberedIcon(colorForRound(+it.round||0), idx+1)); }
+      if (mk){ mk.setIcon(iconForItem(it, idx)); }
     });
+    requestMarkerOverlapRefresh();
   }
 
   function highlightRow(id, flash=false){
@@ -2126,7 +2184,7 @@
         renderGroupHeaderTotalsForRound(rPrev);
       }
       const mk = state.markersById.get(it.id);
-      if (mk){ markerLayer.removeLayer(mk); state.markersById.delete(it.id); updatePinCount(); }
+      if (mk){ markerLayer.removeLayer(mk); state.markersById.delete(it.id); updatePinCount(); requestMarkerOverlapRefresh(); }
       saveAll();
       renderEverything();
     });
@@ -2392,7 +2450,7 @@
           clearRoundMeta(rid);
           removedIds.forEach(id=>{
             const mk = state.markersById.get(id);
-            if (mk){ markerLayer.removeLayer(mk); state.markersById.delete(id); }
+            if (mk){ markerLayer.removeLayer(mk); state.markersById.delete(id); updatePinCount(); requestMarkerOverlapRefresh(); }
           });
 
           ensureBlankRowInDefaultRound();
@@ -2694,6 +2752,8 @@
         if (marker) {
           markerLayer.removeLayer(marker);
           state.markersById.delete(item.id);
+          updatePinCount();
+          requestMarkerOverlapRefresh();
         }
       }
       state.items.splice(idx, 1);
