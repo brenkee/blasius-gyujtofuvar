@@ -18,6 +18,8 @@ body.import-busy .app{filter:blur(4px);pointer-events:none;user-select:none}
 .panel-top.sticky{position:sticky;top:0;background:var(--panel);z-index:5;padding:12px;box-shadow:0 14px 28px rgba(15,23,42,0.12)}
 h1{font-size:18px;margin:0 0 6px}
 .toolbar{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+.new-address-container{display:grid;gap:12px;margin-bottom:12px}
+.new-address-container:empty{display:none}
 .groups{display:grid;gap:12px}
 .group{border:1px solid var(--border);border-radius:12px;background:var(--panel)}
 .group-header{display:flex;flex-direction:column;gap:8px;padding:10px;border-bottom:1px solid var(--border);background:calc(var(--panel) + 0)}
@@ -29,6 +31,7 @@ h1{font-size:18px;margin:0 0 6px}
 .planned-date-input.saved-flash{background:rgba(34,197,94,0.25);border-color:rgba(16,185,129,0.5)}
 .group-body{display:grid;gap:10px;padding:10px}
 .row{border:1px solid var(--border);border-radius:10px;background:var(--panel)}
+.row.row--placeholder .num{visibility:hidden;background:transparent}
 .row .header{display:flex;align-items:flex-start;gap:8px;padding:10px;border-bottom:1px solid var(--border)}
 .num{min-width:36px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff}
 .header-main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}

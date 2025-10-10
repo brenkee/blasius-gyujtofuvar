@@ -90,6 +90,7 @@
         </span>
       </div>
     </div>
+    <div id="newAddress" class="new-address-container"></div>
     <div id="groups" class="groups"></div>
   </aside>
   <main id="map"></main>
