@@ -316,9 +316,15 @@ $CFG_DEFAULT = [
   "backup" => [
     "enabled" => true,
     "dir" => "backups",
-    "keep_latest" => 50,
-    "keep_days" => 14,
-    "strategy" => "on_every_save"
+    "min_interval_minutes" => 10,
+    "retention_policy" => [
+      ["min_age_hours" => 12, "period_hours" => 1],
+      ["min_age_hours" => 24, "period_hours" => 3],
+      ["min_age_hours" => 72, "period_hours" => 24],
+      ["min_age_hours" => 168, "period_hours" => 72],
+      ["min_age_hours" => 720, "period_hours" => 168]
+    ],
+    "strategy" => "interval_csv"
   ]
 ];
 
@@ -368,6 +374,115 @@ $STATE_LOCK_FILE = __DIR__ . '/' . ($CFG['files']['lock_file'] ?? 'fuvar_state.l
  * Biztonságos backup: létezés-ellenőrzés és mtime használat védetten.
  * Elkerüli a "filemtime(): stat failed" warningokat versenyhelyzet esetén.
  */
+function generate_export_csv($cfg, $dataFile, $roundFilter = null, &$error = null) {
+  $error = null;
+
+  [$items] = data_store_read($dataFile);
+  $items = array_values(array_filter(is_array($items) ? $items : []));
+
+  $autoSort = (bool)($cfg['app']['auto_sort_by_round'] ?? true);
+  $zeroBottom = (bool)($cfg['app']['round_zero_at_bottom'] ?? true);
+  if ($autoSort) {
+    usort($items, function($a, $b) use ($zeroBottom) {
+      $ra = (int)($a['round'] ?? 0);
+      $rb = (int)($b['round'] ?? 0);
+      if ($zeroBottom) {
+        $az = $ra === 0 ? 1 : 0;
+        $bz = $rb === 0 ? 1 : 0;
+        if ($az !== $bz) return $az - $bz;
+      }
+      if ($ra === $rb) return 0;
+      return $ra <=> $rb;
+    });
+  }
+
+  $itemsCfg = $cfg['items'] ?? [];
+  $fieldsCfg = array_values(array_filter($itemsCfg['fields'] ?? [], function($f){ return ($f['enabled'] ?? true) !== false; }));
+  $metricsCfg = array_values(array_filter($itemsCfg['metrics'] ?? [], function($m){ return ($m['enabled'] ?? true) !== false; }));
+  $fieldIds = array_values(array_filter(array_map(function($f){ return $f['id'] ?? null; }, $fieldsCfg)));
+  $metricIds = array_values(array_filter(array_map(function($m){ return $m['id'] ?? null; }, $metricsCfg)));
+
+  $columns = [];
+  $addColumn = function($id) use (&$columns){
+    $key = (string)$id;
+    if ($key === '') return;
+    if (!in_array($key, $columns, true)) {
+      $columns[] = $key;
+    }
+  };
+  $addColumn('id');
+  $addColumn('round');
+  foreach ($fieldIds as $fid) { $addColumn($fid); }
+  foreach ($metricIds as $mid) { $addColumn($mid); }
+  foreach (['city','lat','lon','collapsed'] as $extra) { $addColumn($extra); }
+
+  foreach ($items as $it) {
+    if (!is_array($it)) continue;
+    if ($roundFilter !== null && (int)($it['round'] ?? 0) !== $roundFilter) {
+      continue;
+    }
+    foreach ($it as $key => $value) {
+      if ($key === null) continue;
+      $keyStr = (string)$key;
+      if ($keyStr === '' || strpos($keyStr, '_') === 0) continue;
+      $addColumn($keyStr);
+    }
+  }
+  if (empty($columns)) {
+    $columns = ['id','round'];
+  }
+
+  $delimiter = ';';
+  $fh = fopen('php://temp', 'r+');
+  if (!$fh) {
+    $error = 'Export hiba';
+    return null;
+  }
+
+  fputcsv($fh, $columns, $delimiter);
+  foreach ($items as $it) {
+    if (!is_array($it)) continue;
+    if ($roundFilter !== null && (int)($it['round'] ?? 0) !== $roundFilter) {
+      continue;
+    }
+    $row = [];
+    foreach ($columns as $col) {
+      if ($col === null || $col === '') { $row[] = ''; continue; }
+      if (!array_key_exists($col, $it) || $it[$col] === null) {
+        $row[] = '';
+        continue;
+      }
+      $value = $it[$col];
+      if ($col === 'round') {
+        $row[] = (string)((int)$value);
+      } elseif ($col === 'collapsed') {
+        $row[] = (!empty($value) && $value !== '0' && $value !== 0 && $value !== 'false') ? '1' : '0';
+      } elseif ($col === 'lat' || $col === 'lon' || in_array($col, $metricIds, true)) {
+        if ($value === '') {
+          $row[] = '';
+        } elseif (is_numeric($value)) {
+          $row[] = rtrim(rtrim(number_format((float)$value, 8, '.', ''), '0'), '.');
+        } else {
+          $row[] = (string)$value;
+        }
+      } else {
+        $row[] = is_scalar($value) ? (string)$value : json_encode($value, JSON_UNESCAPED_UNICODE);
+      }
+    }
+    fputcsv($fh, $row, $delimiter);
+  }
+
+  rewind($fh);
+  $csvBody = stream_get_contents($fh);
+  fclose($fh);
+  if ($csvBody === false) {
+    $error = 'Export hiba';
+    return null;
+  }
+
+  return "\xEF\xBB\xBF" . $csvBody;
+}
+
 function backup_now($cfg, $dataFile) {
   if (empty($cfg['backup']['enabled'])) return;
 
@@ -375,48 +490,143 @@ function backup_now($cfg, $dataFile) {
   if (!is_dir($dir)) @mkdir($dir, 0775, true);
   if (!is_dir($dir)) return;
 
-  // Ha nincs mit menteni, lépjünk ki
   if (!is_file($dataFile)) return;
 
-  $ts = date('Ymd_His');
-  $target = $dir . '/fuvar_data_' . $ts . '.json';
-  // Másolás védetten
-  @copy($dataFile, $target);
+  $intervalMinutes = (int)($cfg['backup']['min_interval_minutes'] ?? 10);
+  if ($intervalMinutes < 0) { $intervalMinutes = 0; }
+  $stateFile = $dir . '/backup_state.json';
+  $lastBackupTs = 0;
+  if (is_file($stateFile)) {
+    $rawState = @file_get_contents($stateFile);
+    if ($rawState !== false) {
+      $decoded = json_decode($rawState, true);
+      if (is_array($decoded) && isset($decoded['last_backup_ts'])) {
+        $lastBackupTs = (int)$decoded['last_backup_ts'];
+      }
+    }
+  }
 
-  $keepN = (int)($cfg['backup']['keep_latest'] ?? 50);
-  $keepDays = (int)($cfg['backup']['keep_days'] ?? 14);
+  $now = time();
+  if ($intervalMinutes > 0 && $lastBackupTs > 0 && ($now - $lastBackupTs) < ($intervalMinutes * 60)) {
+    return;
+  }
 
-  $files = glob($dir . '/fuvar_data_*.json');
-  if (!$files) return;
+  $error = null;
+  $csv = generate_export_csv($cfg, $dataFile, null, $error);
+  if ($csv === null) {
+    return;
+  }
 
-  // Biztonságos mtime lekérdezés
-  $mtime = function($path){
+  $ts = date('Ymd_His', $now);
+  $target = $dir . '/fuvar_data_' . $ts . '.csv';
+  if (@file_put_contents($target, $csv) === false) {
+    return;
+  }
+
+  $statePayload = json_encode(['last_backup_ts' => $now], JSON_UNESCAPED_UNICODE);
+  if ($statePayload !== false) {
+    @file_put_contents($stateFile, $statePayload, LOCK_EX);
+  }
+
+  $collectFiles = function($pattern) {
+    $list = glob($pattern);
+    if (!is_array($list)) { return []; }
+    return $list;
+  };
+  $files = array_merge(
+    $collectFiles($dir . '/fuvar_data_*.csv'),
+    $collectFiles($dir . '/fuvar_data_*.json')
+  );
+  if (!$files) {
+    return;
+  }
+
+  $mtime = function($path) {
     if (!is_file($path)) return 0;
     $t = @filemtime($path);
     return $t ? (int)$t : 0;
   };
 
-  // Rendezés mtime szerint (legújabb elöl)
-  usort($files, function($a,$b) use($mtime){
+  usort($files, function($a, $b) use ($mtime) {
     return $mtime($b) <=> $mtime($a);
   });
 
-  // Limit felettiek törlése
-  if ($keepN > 0 && count($files) > $keepN) {
-    foreach (array_slice($files, $keepN) as $f) {
-      if (is_file($f)) @unlink($f);
+  $defaultPolicy = [
+    ['min_age_hours' => 720, 'period_hours' => 168],
+    ['min_age_hours' => 168, 'period_hours' => 72],
+    ['min_age_hours' => 72, 'period_hours' => 24],
+    ['min_age_hours' => 24, 'period_hours' => 3],
+    ['min_age_hours' => 12, 'period_hours' => 1],
+  ];
+
+  $policy = [];
+  $rawPolicy = $cfg['backup']['retention_policy'] ?? $defaultPolicy;
+  if (!is_array($rawPolicy) || empty($rawPolicy)) {
+    $rawPolicy = $defaultPolicy;
+  }
+  foreach ($rawPolicy as $rule) {
+    if (!is_array($rule)) continue;
+    $minAgeH = isset($rule['min_age_hours']) ? (float)$rule['min_age_hours'] : null;
+    $periodH = isset($rule['period_hours']) ? (float)$rule['period_hours'] : null;
+    if ($minAgeH === null || $periodH === null) continue;
+    $minAge = (int)round($minAgeH * 3600);
+    $period = (int)round($periodH * 3600);
+    if ($minAge <= 0 || $period <= 0) continue;
+    $policy[] = ['min_age' => $minAge, 'period' => $period];
+  }
+  if (empty($policy)) {
+    $policy = array_map(function($r){
+      return [
+        'min_age' => (int)round($r['min_age_hours'] * 3600),
+        'period' => (int)round($r['period_hours'] * 3600)
+      ];
+    }, $defaultPolicy);
+  }
+
+  usort($policy, function($a, $b) {
+    return $b['min_age'] <=> $a['min_age'];
+  });
+
+  $buckets = [];
+  foreach ($policy as $idx => $rule) {
+    $key = $idx . ':' . $rule['min_age'] . ':' . $rule['period'];
+    $buckets[$key] = [];
+  }
+
+  $toDelete = [];
+  foreach ($files as $path) {
+    if (!is_file($path)) continue;
+    if ($path === $target) continue;
+    $mt = $mtime($path);
+    if ($mt === 0) continue;
+    $age = $now - $mt;
+    $handled = false;
+    foreach ($policy as $idx => $rule) {
+      if ($age < $rule['min_age']) {
+        continue;
+      }
+      $handled = true;
+      $bucketSize = max(1, $rule['period']);
+      $bucketId = (int)floor($mt / $bucketSize);
+      $bucketKey = $idx . ':' . $rule['min_age'] . ':' . $rule['period'];
+      if (!isset($buckets[$bucketKey])) {
+        $buckets[$bucketKey] = [];
+      }
+      if (isset($buckets[$bucketKey][$bucketId])) {
+        $toDelete[] = $path;
+      } else {
+        $buckets[$bucketKey][$bucketId] = true;
+      }
+      break;
+    }
+    if (!$handled) {
+      continue;
     }
   }
 
-  // Időalapú törlés
-  $now = time();
-  foreach ($files as $f) {
-    if (!is_file($f)) continue;
-    $mt = $mtime($f);
-    if ($mt === 0) continue; // ha nem elérhető az mtime, inkább hagyjuk
-    $ageDays = ($now - $mt) / 86400;
-    if ($ageDays > $keepDays) {
-      @unlink($f);
+  foreach ($toDelete as $path) {
+    if (is_file($path)) {
+      @unlink($path);
     }
   }
 }
