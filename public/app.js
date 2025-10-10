@@ -1344,7 +1344,8 @@
         const updated = {...item};
         updated.lat = geo.lat;
         updated.lon = geo.lon;
-        updated.city = geo.city || cityFromDisplay(address, item.city);
+        const fallbackCity = cityFromDisplay(address, item.city);
+        updated.city = geo.city || fallbackCity;
         state.items[i] = updated;
         changed = true;
       } catch (err) {
@@ -1353,7 +1354,16 @@
         const idPart = item.id != null ? `#${item.id} ` : '';
         const label = (item[labelFieldId] ?? '').toString().trim();
         const labelPart = label ? `${label} – ` : '';
-        failures.push(`${idPart}${labelPart}${address}`.trim());
+        const fallbackCity = cityFromDisplay(address, item.city);
+        failures.push({
+          index: i,
+          id: idStr,
+          label,
+          address,
+          city: typeof item.city === 'string' ? item.city.trim() : '',
+          fallbackCity,
+          summary: `${idPart}${labelPart}${address}`.trim() || fallbackCity || `${idPart}${label}`.trim()
+        });
       }
     }
     let saveOk = true;
@@ -2476,6 +2486,183 @@
     });
   }
 
+  function showImportProgressOverlay(initialMessage){
+    const body = document.body;
+    if (!body) {
+      return {
+        update(){},
+        remove(){},
+      };
+    }
+    const overlay = document.createElement('div');
+    overlay.className = 'import-progress-overlay';
+    const box = document.createElement('div');
+    box.className = 'import-progress-overlay__box';
+    const spinner = document.createElement('div');
+    spinner.className = 'import-progress-overlay__spinner';
+    const textEl = document.createElement('div');
+    textEl.className = 'import-progress-overlay__text';
+    textEl.textContent = initialMessage || '';
+    box.appendChild(spinner);
+    box.appendChild(textEl);
+    overlay.appendChild(box);
+
+    const updateBodyState = (delta)=>{
+      const current = Number(body.dataset.importOverlayCount || 0);
+      const next = Math.max(0, current + delta);
+      if (next > 0) {
+        body.dataset.importOverlayCount = String(next);
+        body.classList.add('import-busy');
+      } else {
+        body.classList.remove('import-busy');
+        body.dataset.importOverlayCount = '';
+        delete body.dataset.importOverlayCount;
+      }
+    };
+
+    let active = true;
+    updateBodyState(1);
+    body.appendChild(overlay);
+
+    return {
+      update(message){
+        if (!active) return;
+        if (typeof message === 'string') {
+          textEl.textContent = message;
+        }
+      },
+      remove(){
+        if (!active) return;
+        active = false;
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        updateBodyState(-1);
+      }
+    };
+  }
+
+  function formatMultilineText(container, message){
+    const lines = (message || '').toString().split(/\n+/);
+    lines.forEach((line, idx) => {
+      const p = document.createElement('p');
+      p.textContent = line;
+      if (idx === 0) {
+        p.style.marginTop = '0';
+      } else {
+        p.style.marginTop = '10px';
+      }
+      container.appendChild(p);
+    });
+  }
+
+  function showGeocodeFailureDialog(message, failures){
+    if (!Array.isArray(failures) || failures.length === 0) {
+      alert(message);
+      return Promise.resolve('dismiss');
+    }
+    return new Promise(resolve => {
+      const overlay = document.createElement('div');
+      overlay.className = 'import-dialog-overlay';
+      const box = document.createElement('div');
+      box.className = 'import-dialog';
+      const textWrap = document.createElement('div');
+      textWrap.className = 'import-dialog__text';
+      formatMultilineText(textWrap, message);
+
+      const listTitle = document.createElement('h3');
+      listTitle.textContent = text('messages.import_geocode_partial_list_title', 'Nem sikerült geokódolni:');
+      listTitle.style.marginBottom = '8px';
+      const list = document.createElement('ul');
+      list.className = 'import-dialog__list';
+      failures.forEach(entry => {
+        const li = document.createElement('li');
+        li.textContent = entry.summary || entry.address || entry.label || entry.id || '';
+        list.appendChild(li);
+      });
+
+      const buttonRow = document.createElement('div');
+      buttonRow.className = 'import-dialog__actions';
+      const useCityBtn = document.createElement('button');
+      useCityBtn.type = 'button';
+      useCityBtn.className = 'primary';
+      useCityBtn.textContent = text('messages.import_geocode_use_city', 'Település alapján helyezze el');
+      const closeBtn = document.createElement('button');
+      closeBtn.type = 'button';
+      closeBtn.textContent = text('messages.import_geocode_skip_city', 'Bezárás');
+
+      let finished = false;
+      const escListener = (ev)=>{
+        if (ev.key === 'Escape') {
+          ev.preventDefault();
+          cleanup('dismiss');
+        }
+      };
+
+      const cleanup = (result)=>{
+        if (finished) return;
+        finished = true;
+        document.removeEventListener('keydown', escListener);
+        overlay.remove();
+        resolve(result);
+      };
+
+      useCityBtn.addEventListener('click', ()=> cleanup('city'));
+      closeBtn.addEventListener('click', ()=> cleanup('dismiss'));
+      overlay.addEventListener('click', (event)=>{ if (event.target === overlay) cleanup('dismiss'); });
+      document.addEventListener('keydown', escListener);
+
+      buttonRow.appendChild(closeBtn);
+      buttonRow.appendChild(useCityBtn);
+
+      box.appendChild(textWrap);
+      box.appendChild(listTitle);
+      box.appendChild(list);
+      box.appendChild(buttonRow);
+      overlay.appendChild(box);
+      document.body.appendChild(overlay);
+      useCityBtn.focus();
+    });
+  }
+
+  async function geocodeFailuresByCity(failures){
+    const validEntries = Array.isArray(failures) ? failures.filter(entry => Number.isInteger(entry.index)) : [];
+    if (!validEntries.length) {
+      return {changed:false, saveOk:true, attempted:0, failed:0, success:0};
+    }
+    let changed = false;
+    let attempted = 0;
+    let failed = 0;
+    let success = 0;
+    for (const entry of validEntries) {
+      const idx = entry.index;
+      const item = state.items[idx];
+      if (!item || typeof item !== 'object') continue;
+      const cityCandidate = (entry.city && entry.city.trim()) || (entry.fallbackCity && entry.fallbackCity.trim());
+      if (!cityCandidate) {
+        failed += 1;
+        continue;
+      }
+      attempted += 1;
+      try {
+        const geo = await geocodeRobust(cityCandidate);
+        const updated = {...item};
+        updated.lat = geo.lat;
+        updated.lon = geo.lon;
+        updated.city = geo.city || cityCandidate;
+        state.items[idx] = updated;
+        changed = true;
+        success += 1;
+      } catch (err) {
+        console.error('city-level geocode failed for import', err);
+        failed += 1;
+      }
+    }
+    let saveOk = true;
+    if (changed) {
+      saveOk = await saveAll();
+    }
+    return {changed, saveOk, attempted, failed, success};
+  }
+
   const importBtn = document.getElementById('importBtn');
   const importInput = document.getElementById('importFileInput');
   if (importBtn && importInput) {
@@ -2502,6 +2689,13 @@
         return;
       }
       importBtn.disabled = true;
+      let loaderCtrl = null;
+      const ensureLoaderRemoved = ()=>{
+        if (loaderCtrl) {
+          loaderCtrl.remove();
+          loaderCtrl = null;
+        }
+      };
       try {
         const form = new FormData();
         form.append('file', file);
@@ -2514,6 +2708,7 @@
           const requestId = makeRequestId();
           headers.set('X-Request-ID', requestId);
           headers.set('X-Batch-ID', batchId);
+          loaderCtrl = showImportProgressOverlay(text('messages.import_in_progress', 'Import folyamatban…'));
           resp = await fetch(EP.importCsv, {method:'POST', headers, body: form});
         } finally {
           if (state.changeWatcher) state.changeWatcher.unregisterBatch(batchId);
@@ -2544,20 +2739,33 @@
         } else if (!geo.saveOk) {
           showSaveStatus(false);
         }
+        ensureLoaderRemoved();
         let successMsg = text('messages.import_success', 'Import kész.');
         if (geo.failed > 0 && geo.attempted > 0) {
           const tpl = text('messages.import_geocode_partial', 'Figyelem: {count} címet nem sikerült automatikusan térképre tenni.');
           successMsg += `\n\n${format(tpl, {count: geo.failed})}`;
-          if (Array.isArray(geo.failures) && geo.failures.length) {
-            const detailTpl = text('messages.import_geocode_partial_detail', 'Nem sikerült geokódolni:\n{list}');
-            const list = geo.failures.map((entry, idx)=> `${idx + 1}. ${entry}`).join('\n');
-            successMsg += `\n${format(detailTpl, {list})}`;
+          const decision = await showGeocodeFailureDialog(successMsg, geo.failures);
+          if (decision === 'city') {
+            loaderCtrl = showImportProgressOverlay(text('messages.import_city_fallback_progress', 'Települések geokódolása…'));
+            const fallback = await geocodeFailuresByCity(geo.failures);
+            ensureLoaderRemoved();
+            renderEverything();
+            if (fallback.changed && !fallback.saveOk) {
+              showSaveStatus(false);
+            }
+            const resultTpl = text('messages.import_city_fallback_result', 'Település-alapú geokódolás – siker: {success}, sikertelen: {failed}.');
+            alert(format(resultTpl, {
+              success: fallback.success ?? 0,
+              failed: fallback.failed ?? 0
+            }));
           }
+        } else {
+          alert(successMsg);
         }
-        alert(successMsg);
       } catch (e) {
         console.error(e);
         showSaveStatus(false);
+        ensureLoaderRemoved();
         let msg = text('messages.import_error', 'Az importálás nem sikerült.');
         const extra = e && (e.detail || e.message);
         if (extra && typeof extra === 'string' && extra.trim() && !['import_failed','bad_json'].includes(extra)) {
@@ -2565,6 +2773,7 @@
         }
         alert(msg);
       } finally {
+        ensureLoaderRemoved();
         importInput.value = '';
         importBtn.disabled = false;
       }

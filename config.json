@@ -289,13 +289,19 @@
             "undo_unavailable": "Nincs visszavonható művelet.",
             "import_success": "Import kész.",
             "import_error": "Az importálás nem sikerült.",
+            "import_in_progress": "Import folyamatban…",
             "import_mode_prompt": "Felülírjuk a jelenlegi adatokat az importált CSV-vel, vagy hozzáadjuk az új sorokat?",
             "import_mode_replace": "Felülírás",
             "import_mode_append": "Hozzáadás",
             "import_mode_confirm_replace": "Biztosan felülírjuk a jelenlegi adatokat a CSV tartalmával?",
             "import_mode_confirm_append": "Biztosan hozzáadjuk az új sorokat a meglévő listához?",
             "import_geocode_partial": "Figyelem: {count} címet nem sikerült automatikusan térképre tenni.",
-            "import_geocode_partial_detail": "Nem sikerült geokódolni:\n{list}"
+            "import_geocode_partial_detail": "Nem sikerült geokódolni:\n{list}",
+            "import_geocode_partial_list_title": "Nem sikerült geokódolni:",
+            "import_geocode_use_city": "Település alapján helyezze el",
+            "import_geocode_skip_city": "Bezárás",
+            "import_city_fallback_progress": "Települések geokódolása…",
+            "import_city_fallback_result": "Település-alapú geokódolás – sikeres: {success}, sikertelen: {failed}."
         }
     },
     "items": {

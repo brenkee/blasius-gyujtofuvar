@@ -479,9 +479,10 @@ if ($action === 'import_csv') {
     $header[0] = preg_replace('/^\xEF\xBB\xBF/u', '', (string)$header[0]);
   }
   $headers = [];
+  $rawHeaders = [];
   foreach ($header as $idx => $col) {
     $name = trim((string)$col);
-    $headers[$idx] = $name !== '' ? $name : null;
+    $rawHeaders[$idx] = $name !== '' ? $name : null;
   }
 
   [$existingItems, $existingRoundMeta] = data_store_read($DATA_FILE);
@@ -500,6 +501,35 @@ if ($action === 'import_csv') {
   foreach ($metricDefs as $def) {
     $mid = $def['id'] ?? null;
     if ($mid) { $metricIds[$mid] = true; }
+  }
+
+  $canonicalLookup = [];
+  $registerCanonical = function($key) use (&$canonicalLookup) {
+    if ($key === null) return;
+    $canonicalLookup[strtolower($key)] = $key;
+  };
+  foreach (['id', 'round', 'city', 'lat', 'lon', 'collapsed'] as $baseKey) {
+    $registerCanonical($baseKey);
+  }
+  foreach (array_keys($fieldMap) as $fid) {
+    $registerCanonical($fid);
+  }
+  foreach (array_keys($metricIds) as $mid) {
+    $registerCanonical($mid);
+  }
+
+  $headers = [];
+  foreach ($rawHeaders as $idx => $name) {
+    if ($name === null) {
+      $headers[$idx] = null;
+      continue;
+    }
+    $lower = strtolower($name);
+    if (isset($canonicalLookup[$lower])) {
+      $headers[$idx] = $canonicalLookup[$lower];
+    } else {
+      $headers[$idx] = $name;
+    }
   }
 
   $usedIds = [];
