@@ -107,9 +107,47 @@
         "marker": {
             "icon_size": 40,
             "font_size": 14,
+            "font_family": "Arial,Helvetica,sans-serif",
+            "font_weight": 800,
             "auto_contrast": true,
+            "default_text_color": "#ffffff",
+            "view_box_size": 32,
+            "icon_path": "M16 2c6.1 0 11 4.9 11 11 0 7.5-11 17-11 17S5 20.5 5 13c0-6.1 4.9-11 11-11z",
+            "stroke_color": "#333333",
+            "stroke_opacity": 0.25,
+            "stroke_width": 1,
+            "icon_anchor_x": null,
+            "icon_anchor_y": null,
+            "popup_anchor_x": 0,
+            "popup_anchor_y": null,
+            "overlap_badge": {
+                "size": 16,
+                "margin_right": 1.5,
+                "offset_y": 2.5,
+                "font_scale": 0.7,
+                "corner_radius": 8,
+                "fill": "#0f172a",
+                "fill_opacity": 0.92,
+                "stroke": "#ffffff",
+                "stroke_opacity": 0.65,
+                "stroke_width": 0.8,
+                "text_color": "#ffffff",
+                "font_family": "Arial,Helvetica,sans-serif",
+                "font_weight": 700
+            },
             "focus_ring_radius": 20000,
-            "focus_ring_color": "auto"
+            "focus_ring_color": "auto",
+            "focus_ring": {
+                "weight": 2,
+                "stroke_opacity": 0.8,
+                "fill_opacity": 0.25,
+                "initial_opacity": 0.6,
+                "initial_fill_opacity": 0.25,
+                "fade_step": 0.12,
+                "fill_fade_step": 0.06,
+                "fade_interval_ms": 60,
+                "lifetime_ms": 800
+            }
         },
         "panel": {
             "sticky_top": {
