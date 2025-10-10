@@ -111,6 +111,55 @@ if ($action === 'cfg') {
   } else {
     $panelSticky = ['enabled' => (bool)$panelStickyRaw];
   }
+  $markerCfgRaw = isset($CFG['ui']['marker']) && is_array($CFG['ui']['marker']) ? $CFG['ui']['marker'] : [];
+  $markerOverlapRaw = isset($markerCfgRaw['overlap_badge']) && is_array($markerCfgRaw['overlap_badge']) ? $markerCfgRaw['overlap_badge'] : [];
+  $markerFocusRingRaw = isset($markerCfgRaw['focus_ring']) && is_array($markerCfgRaw['focus_ring']) ? $markerCfgRaw['focus_ring'] : [];
+  $markerCfg = [
+    'icon_size' => isset($markerCfgRaw['icon_size']) ? (int)$markerCfgRaw['icon_size'] : 38,
+    'font_size' => isset($markerCfgRaw['font_size']) ? (int)$markerCfgRaw['font_size'] : 14,
+    'font_family' => isset($markerCfgRaw['font_family']) ? (string)$markerCfgRaw['font_family'] : null,
+    'font_weight' => isset($markerCfgRaw['font_weight']) ? (string)$markerCfgRaw['font_weight'] : null,
+    'auto_contrast' => array_key_exists('auto_contrast', $markerCfgRaw) ? (bool)$markerCfgRaw['auto_contrast'] : true,
+    'default_text_color' => isset($markerCfgRaw['default_text_color']) ? (string)$markerCfgRaw['default_text_color'] : null,
+    'view_box_size' => isset($markerCfgRaw['view_box_size']) ? (int)$markerCfgRaw['view_box_size'] : null,
+    'icon_path' => isset($markerCfgRaw['icon_path']) ? (string)$markerCfgRaw['icon_path'] : null,
+    'stroke_color' => isset($markerCfgRaw['stroke_color']) ? (string)$markerCfgRaw['stroke_color'] : null,
+    'stroke_opacity' => isset($markerCfgRaw['stroke_opacity']) ? (float)$markerCfgRaw['stroke_opacity'] : null,
+    'stroke_width' => isset($markerCfgRaw['stroke_width']) ? (float)$markerCfgRaw['stroke_width'] : null,
+    'icon_anchor_x' => array_key_exists('icon_anchor_x', $markerCfgRaw) ? $markerCfgRaw['icon_anchor_x'] : null,
+    'icon_anchor_y' => array_key_exists('icon_anchor_y', $markerCfgRaw) ? $markerCfgRaw['icon_anchor_y'] : null,
+    'popup_anchor_x' => array_key_exists('popup_anchor_x', $markerCfgRaw) ? $markerCfgRaw['popup_anchor_x'] : 0,
+    'popup_anchor_y' => array_key_exists('popup_anchor_y', $markerCfgRaw) ? $markerCfgRaw['popup_anchor_y'] : null,
+    'focus_ring_radius' => isset($markerCfgRaw['focus_ring_radius']) ? (float)$markerCfgRaw['focus_ring_radius'] : 80.0,
+    'focus_ring_color' => isset($markerCfgRaw['focus_ring_color']) ? (string)$markerCfgRaw['focus_ring_color'] : 'auto',
+    'overlap_badge' => [
+      'size' => isset($markerOverlapRaw['size']) ? (float)$markerOverlapRaw['size'] : null,
+      'margin_right' => isset($markerOverlapRaw['margin_right']) ? (float)$markerOverlapRaw['margin_right'] : null,
+      'offset_y' => isset($markerOverlapRaw['offset_y']) ? (float)$markerOverlapRaw['offset_y'] : null,
+      'font_scale' => isset($markerOverlapRaw['font_scale']) ? (float)$markerOverlapRaw['font_scale'] : null,
+      'corner_radius' => isset($markerOverlapRaw['corner_radius']) ? (float)$markerOverlapRaw['corner_radius'] : null,
+      'fill' => isset($markerOverlapRaw['fill']) ? (string)$markerOverlapRaw['fill'] : null,
+      'fill_opacity' => isset($markerOverlapRaw['fill_opacity']) ? (float)$markerOverlapRaw['fill_opacity'] : null,
+      'stroke' => isset($markerOverlapRaw['stroke']) ? (string)$markerOverlapRaw['stroke'] : null,
+      'stroke_opacity' => isset($markerOverlapRaw['stroke_opacity']) ? (float)$markerOverlapRaw['stroke_opacity'] : null,
+      'stroke_width' => isset($markerOverlapRaw['stroke_width']) ? (float)$markerOverlapRaw['stroke_width'] : null,
+      'text_color' => isset($markerOverlapRaw['text_color']) ? (string)$markerOverlapRaw['text_color'] : null,
+      'font_family' => isset($markerOverlapRaw['font_family']) ? (string)$markerOverlapRaw['font_family'] : null,
+      'font_weight' => isset($markerOverlapRaw['font_weight']) ? (string)$markerOverlapRaw['font_weight'] : null,
+    ],
+    'focus_ring' => [
+      'radius' => isset($markerFocusRingRaw['radius']) ? (float)$markerFocusRingRaw['radius'] : null,
+      'weight' => isset($markerFocusRingRaw['weight']) ? (float)$markerFocusRingRaw['weight'] : null,
+      'stroke_opacity' => isset($markerFocusRingRaw['stroke_opacity']) ? (float)$markerFocusRingRaw['stroke_opacity'] : null,
+      'fill_opacity' => isset($markerFocusRingRaw['fill_opacity']) ? (float)$markerFocusRingRaw['fill_opacity'] : null,
+      'initial_opacity' => isset($markerFocusRingRaw['initial_opacity']) ? (float)$markerFocusRingRaw['initial_opacity'] : null,
+      'initial_fill_opacity' => isset($markerFocusRingRaw['initial_fill_opacity']) ? (float)$markerFocusRingRaw['initial_fill_opacity'] : null,
+      'fade_step' => isset($markerFocusRingRaw['fade_step']) ? (float)$markerFocusRingRaw['fade_step'] : null,
+      'fill_fade_step' => isset($markerFocusRingRaw['fill_fade_step']) ? (float)$markerFocusRingRaw['fill_fade_step'] : null,
+      'fade_interval_ms' => isset($markerFocusRingRaw['fade_interval_ms']) ? (int)$markerFocusRingRaw['fade_interval_ms'] : null,
+      'lifetime_ms' => isset($markerFocusRingRaw['lifetime_ms']) ? (int)$markerFocusRingRaw['lifetime_ms'] : null,
+    ],
+  ];
   $saveStatusCfg = $CFG['ui']['save_status'] ?? [];
   if (!is_array($saveStatusCfg)) {
     $saveStatusCfg = [];
@@ -132,13 +181,7 @@ if ($action === 'cfg') {
       "panel_pref_vw" => (int)$CFG['ui']['panel_pref_vw'],
       "panel_max_px" => (int)$CFG['ui']['panel_max_px'],
       "colors" => $CFG['ui']['colors'] ?? [],
-      "marker" => [
-        "icon_size" => (int)$CFG['ui']['marker']['icon_size'],
-        "font_size" => (int)$CFG['ui']['marker']['font_size'],
-        "auto_contrast" => (bool)$CFG['ui']['marker']['auto_contrast'],
-        "focus_ring_radius" => isset($CFG['ui']['marker']['focus_ring_radius']) ? (float)$CFG['ui']['marker']['focus_ring_radius'] : 80.0,
-        "focus_ring_color" => $CFG['ui']['marker']['focus_ring_color'] ?? 'auto'
-      ],
+      "marker" => $markerCfg,
       "panel" => [
         "sticky_top" => $panelSticky
       ],

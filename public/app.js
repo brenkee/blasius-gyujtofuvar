@@ -16,7 +16,8 @@
     foreignRevisionSet: new Set(),
     activeEditor: null,
     conflictNotified: new Set(),
-    conflictOverlay: null
+    conflictOverlay: null,
+    markerOverlapCounts: new Map()
   };
 
   const history = [];
@@ -999,7 +1000,40 @@
   // ======= MAP
   const map = L.map('map',{zoomControl:true, preferCanvas:true});
   const markerLayer = L.featureGroup().addTo(map);
+  let markerOverlapRefreshTimer = null;
   function updatePinCount(){ if (pinCountEl) pinCountEl.textContent = markerLayer.getLayers().length.toString(); }
+
+  function refreshMarkerOverlapIndicators(){
+    const coords = new Map();
+    const perId = new Map();
+    state.items.forEach(it => {
+      const lat = Number(it?.lat);
+      const lon = Number(it?.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+      const key = `${lat.toFixed(6)}|${lon.toFixed(6)}`;
+      const arr = coords.get(key);
+      if (arr) arr.push(it.id);
+      else coords.set(key, [it.id]);
+    });
+    coords.forEach(ids => {
+      const count = ids.length;
+      ids.forEach(id => perId.set(id, count));
+    });
+    state.markerOverlapCounts = perId;
+    state.items.forEach((it, idx)=>{
+      const mk = state.markersById.get(it.id);
+      if (!mk) return;
+      mk.setIcon(iconForItem(it, idx));
+    });
+  }
+
+  function requestMarkerOverlapRefresh(){
+    if (markerOverlapRefreshTimer != null) return;
+    markerOverlapRefreshTimer = setTimeout(()=>{
+      markerOverlapRefreshTimer = null;
+      refreshMarkerOverlapIndicators();
+    }, 0);
+  }
 
   function openMarkerPopup(mk, featureKey){
     if (!mk) return;
@@ -1021,20 +1055,123 @@
     const yiq=(r*299 + g*587 + b*114)/1000;
     return yiq >= 140 ? '#111' : '#fff';
   }
-  function numberedIcon(hex, num){
+  function cfgNumber(path, fallback){
+    const raw = cfg(path, undefined);
+    if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+    if (typeof raw === 'string' && raw.trim() !== '') {
+      const num = Number(raw);
+      if (Number.isFinite(num)) return num;
+    }
+    return fallback;
+  }
+  function numberedIcon(hex, num, overlapCount=0){
     const n = (''+num).slice(0,3);
-    const textCol = cfg('ui.marker.auto_contrast', true) ? idealTextColor(hex) : '#fff';
-    const sz = cfg('ui.marker.icon_size', 38) || 38;
-    const fsz = cfg('ui.marker.font_size', 14) || 14;
+    const defaultText = cfg('ui.marker.default_text_color', '#fff') || '#fff';
+    const textCol = cfg('ui.marker.auto_contrast', true) ? idealTextColor(hex) : defaultText;
+    const sz = cfgNumber('ui.marker.icon_size', 38) || 38;
+    const fsz = cfgNumber('ui.marker.font_size', 14) || 14;
+    const fontFamily = cfg('ui.marker.font_family', 'Arial,Helvetica,sans-serif') || 'Arial,Helvetica,sans-serif';
+    const fontWeight = cfg('ui.marker.font_weight', 800) || 800;
+    const viewBoxSizeCandidate = cfgNumber('ui.marker.view_box_size', 32);
+    const viewBoxSize = Number.isFinite(viewBoxSizeCandidate) && viewBoxSizeCandidate > 0 ? viewBoxSizeCandidate : 32;
+    const strokeColor = cfg('ui.marker.stroke_color', '#333') || '#333';
+    const strokeOpacity = cfgNumber('ui.marker.stroke_opacity', 0.25);
+    const strokeWidth = cfgNumber('ui.marker.stroke_width', 1);
+    const pathDef = (cfg('ui.marker.icon_path', '') || '').toString().trim() || 'M16 2c6.1 0 11 4.9 11 11 0 7.5-11 17-11 17S5 20.5 5 13c0-6.1 4.9-11 11-11z';
+    let indicator = '';
+    if (overlapCount > 1){
+      const indicatorText = overlapCount > 99 ? '99+' : String(overlapCount);
+      const badgeSize = Math.max(1, cfgNumber('ui.marker.overlap_badge.size', 16));
+      const badgeMargin = Math.max(0, cfgNumber('ui.marker.overlap_badge.margin_right', 1.5));
+      const badgeY = cfgNumber('ui.marker.overlap_badge.offset_y', 2.5);
+      const badgeFontScale = cfgNumber('ui.marker.overlap_badge.font_scale', 0.7);
+      const badgeFontSize = Math.max(6, Math.round(fsz * Math.max(0, badgeFontScale)));
+      const badgeFill = cfg('ui.marker.overlap_badge.fill', '#0f172a') || '#0f172a';
+      const badgeFillOpacity = cfgNumber('ui.marker.overlap_badge.fill_opacity', 0.92);
+      const badgeStroke = cfg('ui.marker.overlap_badge.stroke', '#fff') || '#fff';
+      const badgeStrokeOpacity = cfgNumber('ui.marker.overlap_badge.stroke_opacity', 0.65);
+      const badgeStrokeWidth = cfgNumber('ui.marker.overlap_badge.stroke_width', 0.8);
+      const badgeTextColor = cfg('ui.marker.overlap_badge.text_color', '#fff') || '#fff';
+      const badgeFontFamily = cfg('ui.marker.overlap_badge.font_family', fontFamily) || fontFamily;
+      const badgeFontWeight = cfg('ui.marker.overlap_badge.font_weight', 700) || 700;
+      const badgeCornerRadius = Math.max(0, cfgNumber('ui.marker.overlap_badge.corner_radius', 8));
+      const badgeX = viewBoxSize - badgeSize - badgeMargin;
+      indicator = `
+        <g transform="translate(${badgeX},${badgeY})">
+          <rect width="${badgeSize}" height="${badgeSize}" rx="${badgeCornerRadius}" ry="${badgeCornerRadius}" fill="${badgeFill}" opacity="${badgeFillOpacity}" stroke="${badgeStroke}" stroke-opacity="${badgeStrokeOpacity}" stroke-width="${badgeStrokeWidth}" />
+          <text x="${badgeSize/2}" y="${badgeSize/2}" text-anchor="middle" dominant-baseline="middle" font-size="${badgeFontSize}" font-family="${badgeFontFamily}" font-weight="${badgeFontWeight}" fill="${badgeTextColor}">${indicatorText}</text>
+        </g>`;
+    }
+    const textX = viewBoxSize / 2;
+    const textY = viewBoxSize / 2;
     const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="${sz}" height="${sz}" viewBox="0 0 32 32">
+    <svg xmlns="http://www.w3.org/2000/svg" width="${sz}" height="${sz}" viewBox="0 0 ${viewBoxSize} ${viewBoxSize}">
       <g fill="none">
-        <path d="M16 2c6.1 0 11 4.9 11 11 0 7.5-11 17-11 17S5 20.5 5 13c0-6.1 4.9-11 11-11z" fill="${hex}" stroke="#333" stroke-opacity=".25"/>
-        <text x="16" y="16" text-anchor="middle" dominant-baseline="middle" font-size="${fsz}" font-family="Arial,Helvetica,sans-serif" font-weight="800" fill="${textCol}">${n}</text>
+        <path d="${pathDef}" fill="${hex}" stroke="${strokeColor}" stroke-opacity="${strokeOpacity}" stroke-width="${strokeWidth}"/>
+        <text x="${textX}" y="${textY}" text-anchor="middle" dominant-baseline="middle" font-size="${fsz}" font-family="${fontFamily}" font-weight="${fontWeight}" fill="${textCol}">${n}</text>
+        ${indicator}
       </g>
     </svg>`;
-    const anchor = Math.round(sz/2);
-    return L.icon({iconUrl:'data:image/svg+xml;base64,'+btoa(svg), iconSize:[sz,sz], iconAnchor:[anchor, sz-1], popupAnchor:[0, -Math.max(33, sz-5)]});
+    const defaultAnchorX = Math.round(sz/2);
+    let anchorX = defaultAnchorX;
+    const iconAnchorXRaw = cfg('ui.marker.icon_anchor_x', null);
+    if (typeof iconAnchorXRaw === 'number' && Number.isFinite(iconAnchorXRaw)) {
+      anchorX = iconAnchorXRaw;
+    } else if (typeof iconAnchorXRaw === 'string' && iconAnchorXRaw.trim() !== '') {
+      if (iconAnchorXRaw.trim().toLowerCase() === 'center') {
+        anchorX = defaultAnchorX;
+      } else {
+        const parsed = Number(iconAnchorXRaw);
+        if (Number.isFinite(parsed)) anchorX = parsed;
+      }
+    }
+    const defaultAnchorY = sz - 1;
+    let anchorY = defaultAnchorY;
+    const iconAnchorYRaw = cfg('ui.marker.icon_anchor_y', null);
+    if (typeof iconAnchorYRaw === 'number' && Number.isFinite(iconAnchorYRaw)) {
+      anchorY = iconAnchorYRaw;
+    } else if (typeof iconAnchorYRaw === 'string' && iconAnchorYRaw.trim() !== '') {
+      if (iconAnchorYRaw.trim().toLowerCase() === 'bottom') {
+        anchorY = defaultAnchorY;
+      } else {
+        const parsed = Number(iconAnchorYRaw);
+        if (Number.isFinite(parsed)) anchorY = parsed;
+      }
+    }
+    let popupAnchorX = 0;
+    const popupAnchorXRaw = cfg('ui.marker.popup_anchor_x', 0);
+    if (typeof popupAnchorXRaw === 'number' && Number.isFinite(popupAnchorXRaw)) {
+      popupAnchorX = popupAnchorXRaw;
+    } else if (typeof popupAnchorXRaw === 'string' && popupAnchorXRaw.trim() !== '') {
+      const parsed = Number(popupAnchorXRaw);
+      if (Number.isFinite(parsed)) popupAnchorX = parsed;
+    }
+    const popupDefaultY = -Math.max(33, sz-5);
+    let popupAnchorY = popupDefaultY;
+    const popupAnchorYRaw = cfg('ui.marker.popup_anchor_y', null);
+    if (typeof popupAnchorYRaw === 'number' && Number.isFinite(popupAnchorYRaw)) {
+      popupAnchorY = popupAnchorYRaw;
+    } else if (typeof popupAnchorYRaw === 'string' && popupAnchorYRaw.trim() !== '') {
+      if (popupAnchorYRaw.trim().toLowerCase() === 'auto') {
+        popupAnchorY = popupDefaultY;
+      } else {
+        const parsed = Number(popupAnchorYRaw);
+        if (Number.isFinite(parsed)) popupAnchorY = parsed;
+      }
+    }
+    return L.icon({
+      iconUrl:'data:image/svg+xml;base64,'+btoa(svg),
+      iconSize:[sz,sz],
+      iconAnchor:[anchorX, anchorY],
+      popupAnchor:[popupAnchorX, popupAnchorY]
+    });
+  }
+
+  function iconForItem(it, index){
+    const color = colorForRound(+it.round||0);
+    const overlapCount = state.markerOverlapCounts instanceof Map ? (state.markerOverlapCounts.get(it.id) || 1) : 1;
+    const showCount = feature('marker_overlap_indicator', false) && overlapCount > 1 ? overlapCount : 0;
+    return numberedIcon(color, index+1, showCount);
   }
 
   function cityFromDisplay(address, currentCity){
@@ -1316,7 +1453,9 @@
     }
     markerLayer.clearLayers();
     state.markersById.clear();
+    state.markerOverlapCounts = new Map();
     updatePinCount();
+    requestMarkerOverlapRefresh();
   }
   async function loadAll(){
     const j = await fetchJSON(EP.load, {cache:'no-store'});
@@ -1650,8 +1789,7 @@
 
   function upsertMarker(it, index){
     if (it.lat==null || it.lon==null) return;
-    const color = colorForRound(+it.round||0);
-    const icon = numberedIcon(color, index+1);
+    const icon = iconForItem(it, index);
     let mk = state.markersById.get(it.id);
     if (!mk){
       mk = L.marker([it.lat, it.lon], {icon}).addTo(markerLayer);
@@ -1717,6 +1855,7 @@
       </div>`;
     mk.bindPopup(html, {maxWidth:320});
     updatePinCount();
+    requestMarkerOverlapRefresh();
   }
 
   function renumberAll(){
@@ -1734,8 +1873,9 @@
     });
     state.items.forEach((it,idx)=>{
       const mk = state.markersById.get(it.id);
-      if (mk){ mk.setIcon(numberedIcon(colorForRound(+it.round||0), idx+1)); }
+      if (mk){ mk.setIcon(iconForItem(it, idx)); }
     });
+    requestMarkerOverlapRefresh();
   }
 
   function highlightRow(id, flash=false){
@@ -1755,19 +1895,41 @@
     if (!feature('marker_focus_feedback', true)) return;
     const it = state.items.find(x=>x.id===id);
     if (!it || it.lat==null || it.lon==null) return;
-    const radiusCfg = Number(cfg('ui.marker.focus_ring_radius', 80));
-    const radius = Number.isFinite(radiusCfg) && radiusCfg > 0 ? radiusCfg : 80;
+    const radiusLegacy = cfgNumber('ui.marker.focus_ring_radius', 80);
+    const radiusCfg = cfgNumber('ui.marker.focus_ring.radius', radiusLegacy);
+    const radius = Number.isFinite(radiusCfg) && radiusCfg > 0 ? radiusCfg : radiusLegacy;
     const colorSetting = cfg('ui.marker.focus_ring_color', 'auto');
     const baseColor = (typeof colorSetting === 'string' && colorSetting.toLowerCase() !== 'auto') ? colorSetting : colorForRound(+it.round||0);
-    const c = L.circle([it.lat, it.lon], {radius, color: baseColor, weight: 2, fillColor: baseColor, fillOpacity: 0.25, opacity: 0.8});
+    const weight = Math.max(0, cfgNumber('ui.marker.focus_ring.weight', 2));
+    const strokeOpacity = Math.max(0, cfgNumber('ui.marker.focus_ring.stroke_opacity', 0.8));
+    const fillOpacity = Math.max(0, cfgNumber('ui.marker.focus_ring.fill_opacity', 0.25));
+    const initialOpacity = Math.max(0, cfgNumber('ui.marker.focus_ring.initial_opacity', strokeOpacity || 0.8));
+    const initialFillOpacity = Math.max(0, cfgNumber('ui.marker.focus_ring.initial_fill_opacity', fillOpacity || 0.25));
+    const fadeStep = Math.max(0, cfgNumber('ui.marker.focus_ring.fade_step', 0.12));
+    const fillFadeStep = Math.max(0, cfgNumber('ui.marker.focus_ring.fill_fade_step', 0.06));
+    const fadeInterval = Math.max(16, cfgNumber('ui.marker.focus_ring.fade_interval_ms', 60));
+    const lifetime = Math.max(fadeInterval, cfgNumber('ui.marker.focus_ring.lifetime_ms', 800));
+    const c = L.circle([it.lat, it.lon], {radius, color: baseColor, weight, fillColor: baseColor, fillOpacity: initialFillOpacity, opacity: initialOpacity});
     c.addTo(map);
-    let op = 0.6, fo = 0.25;
+    let op = initialOpacity;
+    let fo = initialFillOpacity;
     const iv = setInterval(()=>{
-      op -= 0.12; fo -= 0.06;
-      c.setStyle({opacity: Math.max(0,op), fillOpacity: Math.max(0,fo)});
-      if (op <= 0){ clearInterval(iv); markerLayer.removeLayer(c); map.removeLayer(c); }
-    }, 60);
-    setTimeout(()=>{ try{ markerLayer.removeLayer(c); map.removeLayer(c);}catch(_){ } }, 800);
+      op = Math.max(0, op - fadeStep);
+      fo = Math.max(0, fo - fillFadeStep);
+      c.setStyle({opacity: op, fillOpacity: fo});
+      if (op <= 0 && fo <= 0){
+        clearInterval(iv);
+        markerLayer.removeLayer(c);
+        map.removeLayer(c);
+      }
+    }, fadeInterval);
+    setTimeout(()=>{
+      try{
+        clearInterval(iv);
+        markerLayer.removeLayer(c);
+        map.removeLayer(c);
+      }catch(_){ }
+    }, lifetime);
   }
 
   async function doOk(id, overrideRound=null){
@@ -2126,7 +2288,7 @@
         renderGroupHeaderTotalsForRound(rPrev);
       }
       const mk = state.markersById.get(it.id);
-      if (mk){ markerLayer.removeLayer(mk); state.markersById.delete(it.id); updatePinCount(); }
+      if (mk){ markerLayer.removeLayer(mk); state.markersById.delete(it.id); updatePinCount(); requestMarkerOverlapRefresh(); }
       saveAll();
       renderEverything();
     });
@@ -2392,7 +2554,7 @@
           clearRoundMeta(rid);
           removedIds.forEach(id=>{
             const mk = state.markersById.get(id);
-            if (mk){ markerLayer.removeLayer(mk); state.markersById.delete(id); }
+            if (mk){ markerLayer.removeLayer(mk); state.markersById.delete(id); updatePinCount(); requestMarkerOverlapRefresh(); }
           });
 
           ensureBlankRowInDefaultRound();
@@ -2694,6 +2856,8 @@
         if (marker) {
           markerLayer.removeLayer(marker);
           state.markersById.delete(item.id);
+          updatePinCount();
+          requestMarkerOverlapRefresh();
         }
       }
       state.items.splice(idx, 1);
