@@ -35,7 +35,7 @@
 
   const collapsePrefs = new Map();
   const COLLAPSE_STORAGE_KEY = 'app_panel_collapsed_rows_v1';
-  const DEFAULT_COLLAPSED = true;
+  let defaultCollapsed = true;
   let collapsePrefsStorageError = false;
 
   function makeRequestId(){
@@ -1425,7 +1425,20 @@
     j.__http_ok = r.ok; j.__status = r.status;
     return j;
   }
-  async function loadCfg(){ state.cfg = await fetchJSON(EP.cfg); }
+  async function loadCfg(){
+    const cfgData = await fetchJSON(EP.cfg);
+    state.cfg = cfgData || {};
+    if (state.cfg && state.cfg.app) {
+      const appCfg = state.cfg.app;
+      if (Object.prototype.hasOwnProperty.call(appCfg, 'default_collapsed')) {
+        defaultCollapsed = !!appCfg.default_collapsed;
+      } else {
+        defaultCollapsed = true;
+      }
+    } else {
+      defaultCollapsed = true;
+    }
+  }
   function applyLoadedData(payload){
     const j = payload || {};
     state.items = Array.isArray(j.items)
@@ -2006,7 +2019,8 @@
     if (isPlaceholderItem) row.classList.add('row--placeholder');
     if (opts.newAddress) row.classList.add('row--new-address');
     const storedCollapsed = getCollapsePref(it.id);
-    const collapsed = isPlaceholderItem ? false : (storedCollapsed == null ? DEFAULT_COLLAPSED : storedCollapsed);
+    const collapsedDefault = typeof defaultCollapsed === 'boolean' ? defaultCollapsed : true;
+    const collapsed = isPlaceholderItem ? false : (storedCollapsed == null ? collapsedDefault : storedCollapsed);
     const roundColor = colorForRound(+it.round||0);
     const numTextColor = idealTextColor(roundColor);
 

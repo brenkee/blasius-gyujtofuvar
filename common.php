@@ -375,6 +375,7 @@ $STATE_LOCK_FILE = __DIR__ . '/' . ($CFG['files']['lock_file'] ?? 'fuvar_state.l
  * Elkerüli a "filemtime(): stat failed" warningokat versenyhelyzet esetén.
  */
 function generate_export_csv($cfg, $dataFile, $roundFilter = null, &$error = null) {
+  global $ROUND_MAP;
   $error = null;
 
   [$items] = data_store_read($dataFile);
@@ -397,6 +398,45 @@ function generate_export_csv($cfg, $dataFile, $roundFilter = null, &$error = nul
   }
 
   $itemsCfg = $cfg['items'] ?? [];
+  $labelFieldId = is_string($itemsCfg['label_field_id'] ?? null)
+    ? (string)$itemsCfg['label_field_id']
+    : 'label';
+  $addressFieldId = is_string($itemsCfg['address_field_id'] ?? null)
+    ? (string)$itemsCfg['address_field_id']
+    : 'address';
+  $noteFieldId = is_string($itemsCfg['note_field_id'] ?? null)
+    ? (string)$itemsCfg['note_field_id']
+    : 'note';
+
+  $exportCfgRaw = $cfg['export'] ?? [];
+  $exportCfg = is_array($exportCfgRaw) ? $exportCfgRaw : [];
+  $includeLabel = array_key_exists('include_label', $exportCfg) ? (bool)$exportCfg['include_label'] : true;
+  $includeAddress = array_key_exists('include_address', $exportCfg) ? (bool)$exportCfg['include_address'] : true;
+  $includeNote = array_key_exists('include_note', $exportCfg) ? (bool)$exportCfg['include_note'] : true;
+  $groupHeaderTemplate = isset($exportCfg['group_header_template'])
+    ? trim((string)$exportCfg['group_header_template'])
+    : '';
+  if ($groupHeaderTemplate === '') {
+    $groupHeaderTemplate = null;
+  }
+  $groupHeaderColumn = $groupHeaderTemplate ? 'group_header' : null;
+  $formatGroupHeader = null;
+  if ($groupHeaderTemplate) {
+    $formatGroupHeader = function($roundId) use ($groupHeaderTemplate, $ROUND_MAP) {
+      $roundKey = is_numeric($roundId) ? (int)$roundId : $roundId;
+      $roundMeta = isset($ROUND_MAP[$roundKey]) && is_array($ROUND_MAP[$roundKey]) ? $ROUND_MAP[$roundKey] : null;
+      $idVal = $roundMeta['id'] ?? $roundId;
+      $labelVal = $roundMeta['label'] ?? $roundId;
+      $colorVal = $roundMeta['color'] ?? '';
+      $replacements = [
+        '{id}' => (string)$idVal,
+        '{label}' => (string)$labelVal,
+        '{color}' => (string)$colorVal,
+      ];
+      return strtr($groupHeaderTemplate, $replacements);
+    };
+  }
+
   $fieldsCfg = array_values(array_filter($itemsCfg['fields'] ?? [], function($f){ return ($f['enabled'] ?? true) !== false; }));
   $metricsCfg = array_values(array_filter($itemsCfg['metrics'] ?? [], function($m){ return ($m['enabled'] ?? true) !== false; }));
   $fieldIds = array_values(array_filter(array_map(function($f){ return $f['id'] ?? null; }, $fieldsCfg)));
@@ -416,6 +456,23 @@ function generate_export_csv($cfg, $dataFile, $roundFilter = null, &$error = nul
   foreach ($metricIds as $mid) { $addColumn($mid); }
   foreach (['city','lat','lon','collapsed'] as $extra) { $addColumn($extra); }
 
+  $removeColumn = function($id) use (&$columns) {
+    $columns = array_values(array_filter($columns, function($col) use ($id) {
+      return $col !== $id;
+    }));
+  };
+  if (!$includeLabel && $labelFieldId !== '') $removeColumn($labelFieldId);
+  if (!$includeAddress && $addressFieldId !== '') $removeColumn($addressFieldId);
+  if (!$includeNote && $noteFieldId !== '') $removeColumn($noteFieldId);
+  if ($groupHeaderColumn !== null) {
+    $insertPos = array_search('round', $columns, true);
+    if ($insertPos === false) {
+      array_unshift($columns, $groupHeaderColumn);
+    } else {
+      array_splice($columns, $insertPos + 1, 0, $groupHeaderColumn);
+    }
+  }
+
   foreach ($items as $it) {
     if (!is_array($it)) continue;
     if ($roundFilter !== null && (int)($it['round'] ?? 0) !== $roundFilter) {
@@ -425,6 +482,9 @@ function generate_export_csv($cfg, $dataFile, $roundFilter = null, &$error = nul
       if ($key === null) continue;
       $keyStr = (string)$key;
       if ($keyStr === '' || strpos($keyStr, '_') === 0) continue;
+      if (!$includeLabel && $keyStr === $labelFieldId) continue;
+      if (!$includeAddress && $keyStr === $addressFieldId) continue;
+      if (!$includeNote && $keyStr === $noteFieldId) continue;
       $addColumn($keyStr);
     }
   }
@@ -440,13 +500,30 @@ function generate_export_csv($cfg, $dataFile, $roundFilter = null, &$error = nul
   }
 
   fputcsv($fh, $columns, $delimiter);
+  $lastGroupRound = null;
   foreach ($items as $it) {
     if (!is_array($it)) continue;
     if ($roundFilter !== null && (int)($it['round'] ?? 0) !== $roundFilter) {
       continue;
     }
+    $currentRound = (int)($it['round'] ?? 0);
+    $isNewGroup = false;
+    if ($groupHeaderColumn !== null) {
+      if ($lastGroupRound === null || $currentRound !== $lastGroupRound) {
+        $isNewGroup = true;
+        $lastGroupRound = $currentRound;
+      }
+    }
     $row = [];
     foreach ($columns as $col) {
+      if ($groupHeaderColumn !== null && $col === $groupHeaderColumn) {
+        if ($isNewGroup && $formatGroupHeader) {
+          $row[] = $formatGroupHeader($currentRound);
+        } else {
+          $row[] = '';
+        }
+        continue;
+      }
       if ($col === null || $col === '') { $row[] = ''; continue; }
       if (!array_key_exists($col, $it) || $it[$col] === null) {
         $row[] = '';
