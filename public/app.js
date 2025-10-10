@@ -16,6 +16,7 @@
   };
 
   const history = [];
+  let saveInFlight = null;
   const undoBtn = document.getElementById('undoBtn');
 
   const groupsEl = document.getElementById('groups');
@@ -769,46 +770,65 @@
     applyLoadedData(j);
     startVersionWatcher();
   }
+  async function waitForPendingSave(){
+    const pending = saveInFlight;
+    if (pending) {
+      try { await pending; }
+      catch (_) { /* ignore pending save failures here */ }
+    }
+  }
+
   async function saveAll(){
-    try{
-      if (state.needsReload && state.remoteDataVersion && state.remoteDataVersion !== state.dataVersion) {
-        markNeedsReload(state.remoteDataVersion);
-        if (!state.reloadAlertShown) {
-          alert(text('messages.version_conflict', 'Időközben más felhasználó módosította az adatokat. A legfrissebb verzióhoz frissítsd az oldalt.'));
-          state.reloadAlertShown = true;
+    if (saveInFlight) {
+      await waitForPendingSave();
+    }
+    const currentPromise = (async ()=>{
+      try{
+        if (state.needsReload && state.remoteDataVersion && state.remoteDataVersion !== state.dataVersion) {
+          markNeedsReload(state.remoteDataVersion);
+          if (!state.reloadAlertShown) {
+            alert(text('messages.version_conflict', 'Időközben más felhasználó módosította az adatokat. A legfrissebb verzióhoz frissítsd az oldalt.'));
+            state.reloadAlertShown = true;
+          }
+          showSaveStatus(false);
+          return false;
         }
+        const payload = JSON.stringify({
+          items: state.items,
+          round_meta: normalizedRoundMeta(),
+          version: typeof state.dataVersion === 'string' ? state.dataVersion : ''
+        });
+        const r = await fetch(EP.save, {method:'POST', headers:{'Content-Type':'application/json'}, body: payload});
+        const t = await r.text();
+        let j=null; try{ j = JSON.parse(t); }catch(_){}
+        const ok = !!(r.ok && j && j.ok===true);
+        if (ok && j && typeof j.version === 'string') {
+          state.dataVersion = j.version;
+          state.remoteDataVersion = j.version;
+          state.needsReload = false;
+          state.reloadAlertShown = false;
+          hideSyncWarning();
+        } else if (!ok && j && j.error === 'version_conflict') {
+          markNeedsReload(typeof j.version === 'string' ? j.version : null);
+          if (!state.reloadAlertShown) {
+            alert(text('messages.version_conflict', 'Időközben más felhasználó módosította az adatokat. A legfrissebb verzióhoz frissítsd az oldalt.'));
+            state.reloadAlertShown = true;
+          }
+        }
+        showSaveStatus(ok);
+        return ok;
+      }catch(e){
+        console.error(e);
         showSaveStatus(false);
         return false;
       }
-      const payload = JSON.stringify({
-        items: state.items,
-        round_meta: normalizedRoundMeta(),
-        version: typeof state.dataVersion === 'string' ? state.dataVersion : ''
-      });
-      const r = await fetch(EP.save, {method:'POST', headers:{'Content-Type':'application/json'}, body: payload});
-      const t = await r.text();
-      let j=null; try{ j = JSON.parse(t); }catch(_){}
-      const ok = !!(r.ok && j && j.ok===true);
-      if (ok && j && typeof j.version === 'string') {
-        state.dataVersion = j.version;
-        state.remoteDataVersion = j.version;
-        state.needsReload = false;
-        state.reloadAlertShown = false;
-        hideSyncWarning();
-      } else if (!ok && j && j.error === 'version_conflict') {
-        markNeedsReload(typeof j.version === 'string' ? j.version : null);
-        if (!state.reloadAlertShown) {
-          alert(text('messages.version_conflict', 'Időközben más felhasználó módosította az adatokat. A legfrissebb verzióhoz frissítsd az oldalt.'));
-          state.reloadAlertShown = true;
-        }
+    })();
+    saveInFlight = currentPromise.finally(()=>{
+      if (saveInFlight === currentPromise) {
+        saveInFlight = null;
       }
-      showSaveStatus(ok);
-      return ok;
-    }catch(e){
-      console.error(e);
-      showSaveStatus(false);
-      return false;
-    }
+    });
+    return currentPromise;
   }
   async function geocodeRobust(q){
     const qNorm = q.replace(/^\s*([^,]+)\s*,\s*(.+?)\s*,\s*(\d{4})\s*$/u, '$3 $1, $2');
@@ -1723,6 +1743,7 @@
         if (!confirm(format(msgTpl, {name}))) return;
         try{
           pushSnapshot();
+          await waitForPendingSave();
           const removedIds = state.items.filter(it => (+it.round||0)===rid).map(it=>it.id);
           const payload = {
             round: rid,
@@ -1962,6 +1983,7 @@
         importInput.value = '';
         return;
       }
+      await waitForPendingSave();
       importBtn.disabled = true;
       try {
         const form = new FormData();
