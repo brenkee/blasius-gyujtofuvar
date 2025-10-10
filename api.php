@@ -14,6 +14,19 @@ $sendJsonError = function($message, $code = 400) use ($jsonHeader){
   exit;
 };
 
+$authUser = auth_current_user();
+if (!$authUser) {
+  $sendJsonError('auth_required', 401);
+}
+$sessionInfo = auth_session_info();
+$abilities = $sessionInfo['abilities'] ?? [];
+
+$ensureCanEdit = function() use ($abilities, $sendJsonError) {
+  if (empty($abilities['edit_data'])) {
+    $sendJsonError('forbidden', 403);
+  }
+};
+
 function require_actor_id() {
   $actor = normalized_actor_id($_SERVER['HTTP_X_CLIENT_ID'] ?? '');
   if (!$actor) {
@@ -216,7 +229,12 @@ if ($action === 'cfg') {
 
 if ($action === 'session') {
   $jsonHeader();
-  echo json_encode(['ok' => true, 'client_id' => generate_client_id()], JSON_UNESCAPED_UNICODE);
+  echo json_encode([
+    'ok' => true,
+    'client_id' => generate_client_id(),
+    'user' => $sessionInfo['user'] ?? null,
+    'abilities' => $abilities
+  ], JSON_UNESCAPED_UNICODE);
   exit;
 }
 
@@ -295,6 +313,7 @@ if ($action === 'load') {
 }
 
 if ($action === 'save') {
+  $ensureCanEdit();
   $jsonHeader();
   $actorId = require_actor_id();
   $requestId = require_request_id();
@@ -374,6 +393,7 @@ if ($action === 'export') {
 }
 
 if ($action === 'import_csv') {
+  $ensureCanEdit();
   if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     $sendJsonError('Hibás HTTP metódus.', 405);
   }
@@ -672,6 +692,7 @@ if ($action === 'import_csv') {
 }
 
 if ($action === 'delete_round') {
+  $ensureCanEdit();
   $jsonHeader();
   $actorId = require_actor_id();
   $requestId = require_request_id();
@@ -767,6 +788,7 @@ if ($action === 'delete_round') {
 }
 
 if ($action === 'download_archive') {
+  $ensureCanEdit();
   stream_file_download($ARCHIVE_FILE, 'fuvar_archive.txt', 'text/plain; charset=utf-8');
 }
 

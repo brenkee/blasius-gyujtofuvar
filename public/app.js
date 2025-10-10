@@ -1,6 +1,7 @@
 /* global L */
 (function(){
   const EP = window.APP_BOOTSTRAP?.endpoints || {};
+  const sessionInfo = window.APP_BOOTSTRAP?.session || {user:null, abilities:{}};
   const state = {
     cfg: null,
     items: [],                 // {id,label,address,city,note,lat,lon,round,weight,volume,_pendingRound}
@@ -17,8 +18,13 @@
     activeEditor: null,
     conflictNotified: new Set(),
     conflictOverlay: null,
-    markerOverlapCounts: new Map()
+    markerOverlapCounts: new Map(),
+    session: sessionInfo
   };
+  const canEdit = !!(sessionInfo?.abilities?.edit_data);
+  if (!canEdit) {
+    document.body.classList.add('app-readonly');
+  }
 
   const history = [];
   let importRollbackSnapshot = null;
@@ -1469,6 +1475,10 @@
     state.conflictNotified.clear();
   }
   async function saveAll(){
+    if (!canEdit) {
+      console.warn('Mentés letiltva: csak megtekintési jogosultság.');
+      return false;
+    }
     try{
       const sanitizedItems = state.items.map(item => {
         if (!item || typeof item !== 'object') return item;
@@ -3036,6 +3046,9 @@
 
   const importBtn = document.getElementById('importBtn');
   const importInput = document.getElementById('importFileInput');
+  if (!canEdit && importBtn) {
+    importBtn.disabled = true;
+  }
   if (importBtn && importInput) {
     importBtn.addEventListener('click', ()=>{ if (!importBtn.disabled) importInput.click(); });
     importInput.addEventListener('change', async ()=>{
@@ -3185,7 +3198,13 @@
   const printBtn = document.getElementById('printBtn');
   if (printBtn) printBtn.addEventListener('click', ()=>{ window.open(EP.printAll, '_blank'); });
   const archiveBtn = document.getElementById('downloadArchiveBtn');
-  if (archiveBtn) archiveBtn.addEventListener('click', ()=>{ window.open(EP.downloadArchive, '_blank'); });
+  if (archiveBtn) {
+    if (!canEdit) {
+      archiveBtn.disabled = true;
+    } else {
+      archiveBtn.addEventListener('click', ()=>{ window.open(EP.downloadArchive, '_blank'); });
+    }
+  }
   const expandAllBtn = document.getElementById('expandAll');
   if (expandAllBtn) expandAllBtn.addEventListener('click', ()=>{
     groupsEl.querySelectorAll('.row').forEach(rowEl => {

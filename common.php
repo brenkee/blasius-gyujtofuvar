@@ -13,6 +13,27 @@ $CFG_DEFAULT = [
     "undo_enabled" => true,
     "max_steps" => 3
   ],
+  "auth" => [
+    "users_file" => "users.json",
+    "session_name" => "fuvar_session",
+    "session_lifetime_days" => 30,
+    "login" => [
+      "title" => "Belépés a rendszerbe",
+      "subtitle" => "Add meg a felhasználóneved és jelszavad a folytatáshoz.",
+      "logo" => null,
+      "background_color" => "#0f172a",
+      "background_image" => null,
+      "panel_color" => "#ffffff",
+      "panel_shadow" => "0 24px 48px rgba(15,23,42,0.35)",
+      "panel_radius" => "18px",
+      "text_color" => "#0f172a",
+      "muted_text_color" => "rgba(15,23,42,0.65)",
+      "input_background_color" => "rgba(255,255,255,0.9)",
+      "button_color" => "#2563eb",
+      "button_text_color" => "#ffffff",
+      "footer_html" => null
+    ]
+  ],
   "features" => [
     "toolbar" => [
       "expand_all" => true,
@@ -361,6 +382,9 @@ foreach ($CFG['rounds'] as $r) {
   $ROUND_IDS[] = $rid;
 }
 sort($ROUND_IDS);
+
+require_once __DIR__ . '/auth.php';
+auth_bootstrap($CFG);
 
 $DATA_FILE       = __DIR__ . '/' . ($CFG['files']['data_file'] ?? 'fuvar_data.json');
 $EXPORT_FILE     = __DIR__ . '/' . ($CFG['files']['export_file'] ?? 'fuvar_export.txt');

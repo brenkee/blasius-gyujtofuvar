@@ -9,6 +9,23 @@
         "undo_enabled": true,
         "max_steps": 10
     },
+    "auth": {
+        "session_lifetime_days": 30,
+        "login": {
+            "title": "BLASIUS – Belépés",
+            "subtitle": "Add meg a felhasználóneved és jelszavad a rendszer használatához.",
+            "logo": "favicon.png",
+            "background_color": "#0f172a",
+            "panel_color": "#ffffff",
+            "panel_shadow": "0 20px 48px rgba(15,23,42,0.45)",
+            "panel_radius": "20px",
+            "text_color": "#0f172a",
+            "muted_text_color": "rgba(148,163,184,0.85)",
+            "input_background_color": "rgba(255,255,255,0.92)",
+            "button_color": "#2563eb",
+            "button_text_color": "#ffffff"
+        }
+    },
     "features": {
         "toolbar": {
             "expand_all": true,

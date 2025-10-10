@@ -1,4 +1,15 @@
-<?php require __DIR__ . '/common.php'; ?>
+<?php
+require __DIR__ . '/common.php';
+auth_require_login();
+$sessionInfo = auth_session_info();
+$currentUser = $sessionInfo['user'] ?? null;
+$abilities = $sessionInfo['abilities'] ?? [];
+$roleLabels = [
+  AUTH_ROLE_FULL_ADMIN => 'Teljes admin',
+  AUTH_ROLE_EDITOR => 'Szerkesztő',
+  AUTH_ROLE_VIEWER => 'Megtekintő'
+];
+?>
 <!doctype html>
 <html lang="hu">
 <head>
@@ -11,7 +22,7 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <link rel="stylesheet" href="public/styles.css">
 <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin></script>
-<script>
+  <script>
   window.APP_BOOTSTRAP = {
     endpoints: {
       cfg: 'api.php?action=cfg',
@@ -27,7 +38,8 @@
       downloadArchive: 'api.php?action=download_archive',
       printAll: 'print.php',
       printRound: (rid)=>'print.php?round='+encodeURIComponent(rid)
-    }
+    },
+    session: <?= json_encode($sessionInfo, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>
   };
 </script>
 <script defer src="public/app.js"></script>
@@ -88,6 +100,18 @@
         <span title="<?= htmlspecialchars($badgeTitle) ?>">
           <?= htmlspecialchars($badgeText) ?> <span id="pinCount" class="badge">0</span>
         </span>
+      </div>
+      <div class="user-bar">
+        <div class="user-bar__info">
+          <div class="user-bar__name"><?= htmlspecialchars($currentUser['username'] ?? 'Ismeretlen felhasználó') ?></div>
+          <div class="user-bar__role"><?= htmlspecialchars($roleLabels[$currentUser['role'] ?? AUTH_ROLE_VIEWER] ?? ($currentUser['role'] ?? '')) ?></div>
+        </div>
+        <div class="user-bar__actions">
+          <?php if (!empty($abilities['manage_users'])): ?>
+            <a class="user-bar__link" href="admin.php">Admin</a>
+          <?php endif; ?>
+          <a class="user-bar__link user-bar__link--logout" href="logout.php">Kijelentkezés</a>
+        </div>
       </div>
     </div>
     <div id="newAddress" class="new-address-container"></div>

@@ -1,5 +1,6 @@
 <?php
 require __DIR__ . '/common.php';
+auth_require_login();
 
 $roundFilter = isset($_GET['round']) ? (int)$_GET['round'] : null;
 
