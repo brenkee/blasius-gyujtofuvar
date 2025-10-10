@@ -41,6 +41,18 @@
         "export_download_name": "fuvar_export.csv",
         "archive_file": "fuvar_archive.log"
     },
+    "backup": {
+        "enabled": true,
+        "dir": "backups",
+        "min_interval_minutes": 10,
+        "retention_policy": [
+            {"min_age_hours": 12, "period_hours": 1},
+            {"min_age_hours": 24, "period_hours": 3},
+            {"min_age_hours": 72, "period_hours": 24},
+            {"min_age_hours": 168, "period_hours": 72},
+            {"min_age_hours": 720, "period_hours": 168}
+        ]
+    },
     "map": {
         "tiles": {
             "url": "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",

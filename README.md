@@ -65,5 +65,5 @@ A kliensek a `since` paraméterrel kérhetik le a számukra releváns (más akto
 
 ## Mentés és visszaállítás
 
-Minden sikeres írás a beállítások szerint automatikus biztonsági mentést készít a `backups/` könyvtárba. A mentési stratégia és a megőrzési politika a `config.json` `backup` szekciójában konfigurálható.
+Minden sikeres írás a beállítások szerint automatikus biztonsági mentést készít a `backups/` könyvtárba. A mentés a CSV exporttal azonos formátumban történik, legfeljebb meghatározott (alapértelmezetten 10 perces) időközönként. A régebbi mentések automatikus ritkítása biztosítja, hogy 12 óránál idősebb mentésből óránként legfeljebb egy, 24 óránál régebbiekből háromóránként legfeljebb egy, 3 napnál régebbiekből naponta legfeljebb egy, egy hétnél régebbiekből háromnaponta legfeljebb egy, egy hónapnál régebbiekből hetente legfeljebb egy maradjon meg. Minden paraméter – így az intervallum és a ritkítási szabályok is – a `config.json` `backup` szekciójában konfigurálható.
 

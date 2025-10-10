@@ -315,108 +315,15 @@ if ($action === 'geocode') {
 if ($action === 'export') {
   $roundFilter = isset($_GET['round']) ? (int)$_GET['round'] : null;
 
-  [$items] = data_store_read($DATA_FILE);
-  $items = array_values(array_filter(is_array($items) ? $items : []));
-
-  $autoSort = (bool)($CFG['app']['auto_sort_by_round'] ?? true);
-  $zeroBottom = (bool)($CFG['app']['round_zero_at_bottom'] ?? true);
-  if ($autoSort) {
-    usort($items, function($a, $b) use ($zeroBottom) {
-      $ra = (int)($a['round'] ?? 0);
-      $rb = (int)($b['round'] ?? 0);
-      if ($zeroBottom) {
-        $az = $ra === 0 ? 1 : 0;
-        $bz = $rb === 0 ? 1 : 0;
-        if ($az !== $bz) return $az - $bz;
-      }
-      if ($ra === $rb) return 0;
-      return $ra <=> $rb;
-    });
-  }
-
-  $itemsCfg = $CFG['items'] ?? [];
-  $fieldsCfg = array_values(array_filter($itemsCfg['fields'] ?? [], function($f){ return ($f['enabled'] ?? true) !== false; }));
-  $metricsCfg = array_values(array_filter($itemsCfg['metrics'] ?? [], function($m){ return ($m['enabled'] ?? true) !== false; }));
-  $fieldIds = array_values(array_filter(array_map(function($f){ return $f['id'] ?? null; }, $fieldsCfg)));
-  $metricIds = array_values(array_filter(array_map(function($m){ return $m['id'] ?? null; }, $metricsCfg)));
-
-  $columns = [];
-  $addColumn = function($id) use (&$columns){
-    $key = (string)$id;
-    if ($key === '') return;
-    if (!in_array($key, $columns, true)) {
-      $columns[] = $key;
-    }
-  };
-  $addColumn('id');
-  $addColumn('round');
-  foreach ($fieldIds as $fid) { $addColumn($fid); }
-  foreach ($metricIds as $mid) { $addColumn($mid); }
-  foreach (['city','lat','lon','collapsed'] as $extra) { $addColumn($extra); }
-
-  foreach ($items as $it) {
-    if (!is_array($it)) continue;
-    if ($roundFilter !== null && (int)($it['round'] ?? 0) !== $roundFilter) {
-      continue;
-    }
-    foreach ($it as $key => $value) {
-      if ($key === null) continue;
-      $keyStr = (string)$key;
-      if ($keyStr === '' || strpos($keyStr, '_') === 0) continue;
-      $addColumn($keyStr);
-    }
-  }
-  if (empty($columns)) {
-    $columns = ['id','round'];
-  }
-
-  $delimiter = ';';
-  $fh = fopen('php://temp', 'r+');
-  if (!$fh) {
+  $error = null;
+  $csv = generate_export_csv($CFG, $DATA_FILE, $roundFilter, $error);
+  if ($csv === null) {
     header('Content-Type: text/plain; charset=utf-8');
     http_response_code(500);
-    echo 'Export hiba';
+    echo $error ?: 'Export hiba';
     exit;
   }
 
-  fputcsv($fh, $columns, $delimiter);
-  foreach ($items as $it) {
-    if (!is_array($it)) continue;
-    if ($roundFilter !== null && (int)($it['round'] ?? 0) !== $roundFilter) {
-      continue;
-    }
-    $row = [];
-    foreach ($columns as $col) {
-      if ($col === null || $col === '') { $row[] = ''; continue; }
-      if (!array_key_exists($col, $it) || $it[$col] === null) {
-        $row[] = '';
-        continue;
-      }
-      $value = $it[$col];
-      if ($col === 'round') {
-        $row[] = (string)((int)$value);
-      } elseif ($col === 'collapsed') {
-        $row[] = (!empty($value) && $value !== '0' && $value !== 0 && $value !== 'false') ? '1' : '0';
-      } elseif ($col === 'lat' || $col === 'lon' || in_array($col, $metricIds, true)) {
-        if ($value === '') {
-          $row[] = '';
-        } elseif (is_numeric($value)) {
-          $row[] = rtrim(rtrim(number_format((float)$value, 8, '.', ''), '0'), '.');
-        } else {
-          $row[] = (string)$value;
-        }
-      } else {
-        $row[] = is_scalar($value) ? (string)$value : json_encode($value, JSON_UNESCAPED_UNICODE);
-      }
-    }
-    fputcsv($fh, $row, $delimiter);
-  }
-
-  rewind($fh);
-  $csvBody = stream_get_contents($fh);
-  fclose($fh);
-  if ($csvBody === false) { $csvBody = ''; }
-  $csv = "\xEF\xBB\xBF" . $csvBody;
   @file_put_contents($EXPORT_FILE, $csv);
   header('Content-Type: text/csv; charset=utf-8');
   header('Content-Disposition: attachment; filename="'. $EXPORT_NAME .'"');
