@@ -81,6 +81,15 @@
         "panel_min_px": 330,
         "panel_pref_vw": 36,
         "panel_max_px": 520,
+        "toolbar": {
+            "menu_icon": {
+                "width": "22px",
+                "height": "16px",
+                "bar_height": "2px",
+                "color": "#111827",
+                "bar_radius": "2px"
+            }
+        },
         "colors": {
             "light": {
                 "bg": "#fafafa",
@@ -286,6 +295,10 @@
             "theme_toggle": {
                 "label": "🌙/☀️",
                 "title": "Téma váltása"
+            },
+            "more_actions": {
+                "label": "Menü",
+                "title": "További műveletek"
             },
             "undo": {
                 "label": "↩",

@@ -66,6 +66,15 @@ $CFG_DEFAULT = [
     "panel_min_px" => 330,
     "panel_pref_vw" => 36,
     "panel_max_px" => 520,
+    "toolbar" => [
+      "menu_icon" => [
+        "width" => "20px",
+        "height" => "14px",
+        "bar_height" => "2px",
+        "color" => "currentColor",
+        "bar_radius" => "2px"
+      ]
+    ],
     "colors" => [
       "light" => [
         "bg" => "#fafafa",
@@ -150,7 +159,8 @@ $CFG_DEFAULT = [
       "print_all" => ["label" => "Nyomtatás", "title" => "Nyomtatás"],
       "download_archive" => ["label" => "Archívum letöltése", "title" => "Archívum letöltése (TXT)"],
       "theme_toggle" => ["label" => "🌙 / ☀️", "title" => "Téma váltása"],
-      "undo" => ["label" => "Visszavonás", "title" => "Visszavonás"]
+      "undo" => ["label" => "Visszavonás", "title" => "Visszavonás"],
+      "more_actions" => ["label" => "Menü", "title" => "További műveletek"]
     ],
     "badges" => [
       "pin_counter_label" => "Pin-ek:",

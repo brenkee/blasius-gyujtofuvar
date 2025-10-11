@@ -3483,6 +3483,60 @@
     return {changed, saveOk, attempted, failed, success};
   }
 
+  const toolbarMenuToggle = document.getElementById('toolbarMenuToggle');
+  const toolbarMenu = document.getElementById('toolbarMenu');
+  if (toolbarMenuToggle && toolbarMenu) {
+    const closeToolbarMenu = ()=>{
+      toolbarMenu.hidden = true;
+      toolbarMenuToggle.setAttribute('aria-expanded', 'false');
+    };
+    const openToolbarMenu = ()=>{
+      toolbarMenu.hidden = false;
+      toolbarMenuToggle.setAttribute('aria-expanded', 'true');
+    };
+    toolbarMenuToggle.addEventListener('click', event => {
+      event.stopPropagation();
+      const isExpanded = toolbarMenuToggle.getAttribute('aria-expanded') === 'true';
+      if (isExpanded) {
+        closeToolbarMenu();
+        toolbarMenuToggle.focus();
+      } else {
+        openToolbarMenu();
+        const firstFocusable = toolbarMenu.querySelector('button:not([disabled])');
+        if (firstFocusable instanceof HTMLElement) firstFocusable.focus();
+      }
+    });
+    toolbarMenu.addEventListener('click', event => {
+      const target = event.target instanceof Element ? event.target.closest('button') : null;
+      if (target) {
+        closeToolbarMenu();
+        toolbarMenuToggle.focus();
+      }
+      event.stopPropagation();
+    });
+    document.addEventListener('click', event => {
+      if (toolbarMenu.hidden) return;
+      if (event.target instanceof Node && (toolbarMenu.contains(event.target) || toolbarMenuToggle.contains(event.target))) {
+        return;
+      }
+      closeToolbarMenu();
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && toolbarMenuToggle.getAttribute('aria-expanded') === 'true') {
+        closeToolbarMenu();
+        toolbarMenuToggle.focus();
+      }
+    });
+    toolbarMenuToggle.addEventListener('keydown', event => {
+      if (event.key === 'ArrowDown' && toolbarMenu.hidden) {
+        event.preventDefault();
+        openToolbarMenu();
+        const firstFocusable = toolbarMenu.querySelector('button:not([disabled])');
+        if (firstFocusable instanceof HTMLElement) firstFocusable.focus();
+      }
+    });
+  }
+
   const importBtn = document.getElementById('importBtn');
   const importInput = document.getElementById('importFileInput');
   if (importBtn && importInput) {
