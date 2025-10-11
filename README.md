@@ -67,3 +67,12 @@ A kliensek a `since` paraméterrel kérhetik le a számukra releváns (más akto
 
 Minden sikeres írás a beállítások szerint automatikus biztonsági mentést készít a `backups/` könyvtárba. A mentés a CSV exporttal azonos formátumban történik, legfeljebb meghatározott (alapértelmezetten 10 perces) időközönként. A régebbi mentések automatikus ritkítása biztosítja, hogy 12 óránál idősebb mentésből óránként legfeljebb egy, 24 óránál régebbiekből háromóránként legfeljebb egy, 3 napnál régebbiekből naponta legfeljebb egy, egy hétnél régebbiekből háromnaponta legfeljebb egy, egy hónapnál régebbiekből hetente legfeljebb egy maradjon meg. Minden paraméter – így az intervallum és a ritkítási szabályok is – a `config.json` `backup` szekciójában konfigurálható.
 
+## Kör metaadatok és rendezés
+
+A körök fejléceiben megadható tervezett dátum és idő, illetve a rendezés módja. A rendezéshez két opció érhető el:
+
+- **Alapértelmezett** – a címek automatikusan a maglódi origótól mért távolság alapján kerülnek sorba.
+- **Egyéni** – a címek a felhasználó által megadott drag & drop sorrendet tartják meg. A kör fejlécében és minden cím mellett ikon jelzi, hogy kézzel rendezhető lista áll rendelkezésre.
+
+Az egyéni sorrend bármikor visszaállítható: ha átmenetileg visszaváltunk az alapértelmezett módra, majd ismét az egyénit választjuk, a korábban mentett sorrend változatlanul megmarad. A CSV export és a biztonsági mentések tartalmazzák a kör metaadatait (tervezett időpont, rendezési mód, egyedi sorrend), így az információk külső feldolgozás vagy visszaállítás során is elérhetők.
+

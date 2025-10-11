@@ -4,7 +4,7 @@
   const state = {
     cfg: null,
     items: [],                 // {id,label,address,city,note,lat,lon,round,weight,volume,_pendingRound}
-    roundMeta: {},             // { [roundId]: {planned_date:string} }
+    roundMeta: {},             // { [roundId]: {planned_date:string, planned_time:string, sort_mode:string, custom_order:string[]} }
     markersById: new Map(),
     rowsById: new Map(),
     ORIGIN: {lat:47.4500, lon:19.3500}, // Maglód tartalék
@@ -554,30 +554,202 @@
     return Number.isFinite(num) ? String(num) : String(rid);
   };
 
+  function ensureRoundMetaContainer(){
+    if (!state.roundMeta || typeof state.roundMeta !== 'object') {
+      state.roundMeta = {};
+    }
+  }
+
+  function getRoundMetaEntry(rid){
+    const entry = state.roundMeta?.[roundMetaKey(rid)];
+    return (entry && typeof entry === 'object') ? entry : null;
+  }
+
+  function ensureRoundMetaEntry(rid){
+    ensureRoundMetaContainer();
+    const key = roundMetaKey(rid);
+    if (!state.roundMeta[key] || typeof state.roundMeta[key] !== 'object') {
+      state.roundMeta[key] = {};
+    }
+    return state.roundMeta[key];
+  }
+
+  function cleanupRoundMetaEntry(rid){
+    const key = roundMetaKey(rid);
+    if (!state.roundMeta || typeof state.roundMeta !== 'object') return;
+    const entry = state.roundMeta[key];
+    if (!entry || typeof entry !== 'object') return;
+    if (Object.keys(entry).length === 0) {
+      delete state.roundMeta[key];
+    }
+  }
+
+  function sanitizeRoundMetaEntry(entryRaw){
+    if (!entryRaw || typeof entryRaw !== 'object') return null;
+    const sanitized = {};
+    const dateRaw = typeof entryRaw.planned_date === 'string' ? entryRaw.planned_date.trim() : '';
+    if (dateRaw) {
+      sanitized.planned_date = dateRaw.slice(0, 120);
+    }
+    const timeRaw = typeof entryRaw.planned_time === 'string' ? entryRaw.planned_time.trim() : '';
+    if (timeRaw) {
+      sanitized.planned_time = timeRaw.slice(0, 40);
+    }
+    let customOrderSource = entryRaw.custom_order;
+    if (!Array.isArray(customOrderSource) && typeof customOrderSource === 'string' && customOrderSource.trim() !== '') {
+      try {
+        const parsed = JSON.parse(customOrderSource);
+        if (Array.isArray(parsed)) customOrderSource = parsed;
+      } catch (_) {
+        customOrderSource = [];
+      }
+    }
+    const order = [];
+    if (Array.isArray(customOrderSource)) {
+      const seen = new Set();
+      customOrderSource.forEach(val => {
+        if (val == null) return;
+        const str = String(val).trim();
+        if (!str || seen.has(str)) return;
+        seen.add(str);
+        order.push(str);
+      });
+      if (order.length) {
+        sanitized.custom_order = order;
+      }
+    }
+    let modeRaw = typeof entryRaw.sort_mode === 'string' ? entryRaw.sort_mode.trim().toLowerCase() : '';
+    if (modeRaw !== 'custom' && modeRaw !== 'default') {
+      modeRaw = order.length ? 'custom' : '';
+    }
+    sanitized.sort_mode = modeRaw || 'default';
+    return Object.keys(sanitized).length ? sanitized : null;
+  }
+
+  function applyRoundMeta(metaObj){
+    state.roundMeta = {};
+    if (!metaObj || typeof metaObj !== 'object' || Array.isArray(metaObj)) return;
+    Object.entries(metaObj).forEach(([rid, entry]) => {
+      const normalized = sanitizeRoundMetaEntry(entry);
+      if (!normalized) return;
+      state.roundMeta[String(rid)] = normalized;
+    });
+  }
+
   function getPlannedDateForRound(rid){
-    const meta = state.roundMeta || {};
-    const entry = meta[roundMetaKey(rid)];
-    if (entry && typeof entry === 'object' && typeof entry.planned_date === 'string') {
+    const entry = getRoundMetaEntry(rid);
+    if (entry && typeof entry.planned_date === 'string') {
       return entry.planned_date;
     }
     return '';
   }
 
   function setPlannedDateForRound(rid, value){
-    const key = roundMetaKey(rid);
-    if (!state.roundMeta || typeof state.roundMeta !== 'object') {
-      state.roundMeta = {};
-    }
+    const entry = ensureRoundMetaEntry(rid);
     const val = (value || '').trim();
     const limited = val.length > 120 ? val.slice(0, 120) : val;
     if (limited) {
-      state.roundMeta[key] = {...(state.roundMeta[key] || {}), planned_date: limited};
-    } else if (state.roundMeta[key]) {
-      delete state.roundMeta[key].planned_date;
-      if (Object.keys(state.roundMeta[key]).length === 0) {
-        delete state.roundMeta[key];
-      }
+      entry.planned_date = limited;
+    } else {
+      delete entry.planned_date;
+      cleanupRoundMetaEntry(rid);
     }
+  }
+
+  function getPlannedTimeForRound(rid){
+    const entry = getRoundMetaEntry(rid);
+    if (entry && typeof entry.planned_time === 'string') {
+      return entry.planned_time;
+    }
+    return '';
+  }
+
+  function setPlannedTimeForRound(rid, value){
+    const entry = ensureRoundMetaEntry(rid);
+    const val = (value || '').trim();
+    const limited = val.length > 40 ? val.slice(0, 40) : val;
+    if (limited) {
+      entry.planned_time = limited;
+    } else {
+      delete entry.planned_time;
+      cleanupRoundMetaEntry(rid);
+    }
+  }
+
+  function getRoundSortMode(rid){
+    const entry = getRoundMetaEntry(rid);
+    if (!entry || typeof entry.sort_mode !== 'string') return 'default';
+    return entry.sort_mode === 'custom' ? 'custom' : 'default';
+  }
+
+  function setRoundSortMode(rid, mode){
+    const entry = ensureRoundMetaEntry(rid);
+    entry.sort_mode = mode === 'custom' ? 'custom' : 'default';
+  }
+
+  function sanitizeCustomOrderList(order){
+    const out = [];
+    if (!Array.isArray(order)) return out;
+    const seen = new Set();
+    order.forEach(val => {
+      if (val == null) return;
+      const str = String(val).trim();
+      if (!str || seen.has(str)) return;
+      seen.add(str);
+      out.push(str);
+    });
+    return out;
+  }
+
+  function getRoundCustomOrder(rid){
+    const entry = getRoundMetaEntry(rid);
+    if (!entry || !Array.isArray(entry.custom_order)) return [];
+    return sanitizeCustomOrderList(entry.custom_order);
+  }
+
+  function setRoundCustomOrder(rid, order){
+    const entry = ensureRoundMetaEntry(rid);
+    const sanitized = sanitizeCustomOrderList(order);
+    if (sanitized.length) {
+      entry.custom_order = sanitized;
+    } else {
+      delete entry.custom_order;
+      cleanupRoundMetaEntry(rid);
+    }
+  }
+
+  function syncCustomOrderWithItems(rid, itemIds){
+    const ids = Array.isArray(itemIds) ? itemIds.map(id => String(id)).filter(id => id !== '') : [];
+    const existing = getRoundCustomOrder(rid);
+    const filtered = existing.filter(id => ids.includes(id));
+    const missing = ids.filter(id => !filtered.includes(id));
+    const combined = [...filtered, ...missing];
+    if (combined.length) {
+      setRoundCustomOrder(rid, combined);
+    } else {
+      setRoundCustomOrder(rid, []);
+    }
+    return combined;
+  }
+
+  function removeItemFromCustomOrder(rid, itemId){
+    if (!itemId) return;
+    const entry = getRoundMetaEntry(rid);
+    if (!entry || !Array.isArray(entry.custom_order)) return;
+    const next = entry.custom_order.filter(id => String(id) !== String(itemId));
+    if (next.length !== entry.custom_order.length) {
+      setRoundCustomOrder(rid, next);
+    }
+  }
+
+  function maybeAddItemToCustomOrder(rid, itemId){
+    if (!itemId) return;
+    const entry = getRoundMetaEntry(rid);
+    const existing = getRoundCustomOrder(rid);
+    const mode = getRoundSortMode(rid);
+    if (mode !== 'custom' && existing.length === 0) return;
+    if (existing.includes(String(itemId))) return;
+    setRoundCustomOrder(rid, [...existing, String(itemId)]);
   }
 
   function clearRoundMeta(rid){
@@ -592,9 +764,9 @@
     const out = {};
     if (!meta || typeof meta !== 'object') return out;
     for (const [rid, entry] of Object.entries(meta)){
-      if (!entry || typeof entry !== 'object') continue;
-      const date = typeof entry.planned_date === 'string' ? entry.planned_date.trim() : '';
-      if (date) out[rid] = {planned_date: date.slice(0, 120)};
+      const normalized = sanitizeRoundMetaEntry(entry);
+      if (!normalized) continue;
+      out[rid] = normalized;
     }
     return out;
   }
@@ -954,23 +1126,13 @@
     const prev = history.pop();
     if (Array.isArray(prev)) {
       state.items = prev;
+      applyRoundMeta(null);
     } else if (prev && typeof prev === 'object') {
       state.items = Array.isArray(prev.items) ? prev.items : [];
-      state.roundMeta = {};
-      const prevMeta = prev.roundMeta;
-      if (prevMeta && typeof prevMeta === 'object' && !Array.isArray(prevMeta)) {
-        Object.entries(prevMeta).forEach(([rid, entry])=>{
-          if (!entry || typeof entry !== 'object') return;
-          const date = typeof entry.planned_date === 'string' ? entry.planned_date.trim() : '';
-          const limited = date ? date.slice(0, 120) : '';
-          if (limited) {
-            state.roundMeta[String(rid)] = {planned_date: limited};
-          }
-        });
-      }
+      applyRoundMeta(prev.roundMeta);
     } else {
       state.items = [];
-      state.roundMeta = {};
+      applyRoundMeta(null);
     }
     await saveAll();
     renderEverything();
@@ -1439,18 +1601,7 @@
         })
       : [];
     pruneCollapsePrefs(state.items.map(it => it?.id).filter(id => id != null));
-    state.roundMeta = {};
-    const meta = j.round_meta;
-    if (meta && typeof meta === 'object' && !Array.isArray(meta)){
-      Object.entries(meta).forEach(([rid, entry])=>{
-        if (!entry || typeof entry !== 'object') return;
-        const date = typeof entry.planned_date === 'string' ? entry.planned_date.trim() : '';
-        const limited = date ? date.slice(0, 120) : '';
-        if (limited) {
-          state.roundMeta[String(rid)] = {planned_date: limited};
-        }
-      });
-    }
+    applyRoundMeta(j.round_meta);
     markerLayer.clearLayers();
     state.markersById.clear();
     state.markerOverlapCounts = new Map();
@@ -1586,6 +1737,24 @@
     const ordered = [];
     roundIds.forEach(rid => {
       const entries = groups.get(rid) || [];
+      const mode = getRoundSortMode(rid);
+      if (mode === 'custom') {
+        const active = entries.filter(entry => !isItemCompletelyBlank(entry.it));
+        const placeholders = entries.filter(entry => isItemCompletelyBlank(entry.it));
+        const ids = active.map(entry => entry.it?.id).filter(id => id != null);
+        const order = syncCustomOrderWithItems(rid, ids);
+        const orderIndex = new Map(order.map((id, index) => [id, index]));
+        active.sort((a, b) => {
+          const aKey = orderIndex.has(a.it.id) ? orderIndex.get(a.it.id) : (order.length + a.idx);
+          const bKey = orderIndex.has(b.it.id) ? orderIndex.get(b.it.id) : (order.length + b.idx);
+          if (aKey !== bKey) return aKey - bKey;
+          return a.idx - b.idx;
+        });
+        const placeholderSorted = placeholders.sort((a,b)=>a.idx-b.idx);
+        active.concat(placeholderSorted).forEach(entry => ordered.push(entry.it));
+        return;
+      }
+
       const withCoords = entries.filter(hasCoords);
       const withoutCoords = entries.filter(entry => !hasCoords(entry));
 
@@ -1710,7 +1879,22 @@
     const plannedDateHint = cfg('text.round.planned_date_hint', '');
     const plannedDateValue = getPlannedDateForRound(rid);
     const plannedDateInputId = `round_${cssId(String(rid))}_planned_date`;
+    const plannedTimeEnabled = feature('round_planned_time', false);
+    const plannedTimeLabel = text('round.planned_time_label', 'Tervezett idő');
+    const plannedTimeHint = cfg('text.round.planned_time_hint', '');
+    const plannedTimeValue = getPlannedTimeForRound(rid);
+    const plannedTimeInputId = `round_${cssId(String(rid))}_planned_time`;
     const showPlannedDate = plannedDateEnabled && !isRoundZero(rid);
+    const showPlannedTime = plannedTimeEnabled && !isRoundZero(rid);
+    const sortLabel = text('round.sort_mode_label', 'Rendezés');
+    const sortDefaultLabel = text('round.sort_mode_default', 'Alapértelmezett (távolság)');
+    const sortCustomLabel = text('round.sort_mode_custom', 'Egyéni (drag & drop)');
+    const sortHint = text('round.sort_mode_custom_hint', 'Fogd és vidd a címeket a rendezéshez');
+    const sortSelectId = `round_${cssId(String(rid))}_sort_mode`;
+    const sortMode = getRoundSortMode(rid);
+    const dragIndicator = sortMode === 'custom'
+      ? `<span class="group-drag-indicator" title="${esc(sortHint)}" aria-hidden="true">⠿</span>`
+      : '';
     const actionButtons = [];
     if (feature('group_actions.open', true)) actionButtons.push(`<button class="iconbtn grp-open" data-round="${rid}">${esc(actionsText.open ?? 'Kinyit')}</button>`);
     if (feature('group_actions.close', true)) actionButtons.push(`<button class="iconbtn grp-close" data-round="${rid}">${esc(actionsText.close ?? 'Összezár')}</button>`);
@@ -1718,17 +1902,32 @@
     if (feature('group_actions.navigate', true)) actionButtons.push(`<button class="iconbtn grp-nav" data-round="${rid}">${esc(actionsText.navigate ?? 'Navigáció')}</button>`);
     if (feature('group_actions.delete', true)) actionButtons.push(`<button class="iconbtn grp-del" data-round="${rid}" style="border-color:#fecaca;background:rgba(248,113,113,0.12);">${esc(actionsText.delete ?? 'Kör törlése')}</button>`);
     g.innerHTML = `
-      <div class="group-header" data-group-header="${rid}">
+      <div class="group-header" data-group-header="${rid}" data-sort-mode="${esc(sortMode)}">
         <div class="group-title">
           <span style="display:inline-block;width:12px;height:12px;border-radius:999px;background:${color};border:1px solid #d1d5db;margin-right:8px;vertical-align:middle"></span>
           ${esc(roundLabel(rid))}
+          ${dragIndicator}
           ${sumTxt ? `<span class="__sum" style="margin-left:8px;color:#6b7280;font-weight:600;font-size:12px;">${esc(sumTxt)}</span>` : ''}
         </div>
-        ${showPlannedDate ? `
-        <div class="group-planned-date">
-          <label class="planned-date-label" for="${plannedDateInputId}">${esc(plannedDateLabel)}</label>
-          <input type="text" id="${plannedDateInputId}" class="planned-date-input" data-round="${rid}" value="${esc(plannedDateValue)}"${plannedDateHint ? ` title="${esc(plannedDateHint)}"` : ''}>
-        </div>` : ''}
+        <div class="group-controls">
+          ${showPlannedDate ? `
+            <div class="group-planned-date">
+              <label class="planned-date-label" for="${plannedDateInputId}">${esc(plannedDateLabel)}</label>
+              <input type="text" id="${plannedDateInputId}" class="planned-date-input" data-round="${rid}" value="${esc(plannedDateValue)}"${plannedDateHint ? ` title="${esc(plannedDateHint)}"` : ''}>
+            </div>` : ''}
+          ${showPlannedTime ? `
+            <div class="group-planned-time">
+              <label class="planned-time-label" for="${plannedTimeInputId}">${esc(plannedTimeLabel)}</label>
+              <input type="time" id="${plannedTimeInputId}" class="planned-time-input" data-round="${rid}" value="${esc(plannedTimeValue)}"${plannedTimeHint ? ` title="${esc(plannedTimeHint)}"` : ''}>
+            </div>` : ''}
+          <div class="group-sort">
+            <label class="sort-mode-label" for="${sortSelectId}">${esc(sortLabel)}</label>
+            <select id="${sortSelectId}" class="round-sort-mode" data-round="${rid}"${sortMode==='custom' && sortHint ? ` title="${esc(sortHint)}"` : ''}>
+              <option value="default"${sortMode==='default' ? ' selected' : ''}>${esc(sortDefaultLabel)}</option>
+              <option value="custom"${sortMode==='custom' ? ' selected' : ''}>${esc(sortCustomLabel)}</option>
+            </select>
+          </div>
+        </div>
         <div class="group-tools">
           ${actionButtons.join('')}
         </div>
@@ -1936,6 +2135,7 @@
     const idx = state.items.findIndex(x=>x.id===id);
     if (idx<0) return;
     const it = state.items[idx];
+    const prevRound = +it.round || 0;
     const row = state.rowsById.get(id);
     const okBtn = row?.querySelector('.ok');
     const fields = getFieldDefs();
@@ -1983,6 +2183,8 @@
       updated.round = +newRound || 0;
       state.items[idx] = updated;
       delete state.items[idx]._pendingRound;
+      removeItemFromCustomOrder(prevRound, updated.id);
+      maybeAddItemToCustomOrder(+updated.round || 0, updated.id);
       upsertMarker(state.items[idx], idx);
       ensureBlankRowInDefaultRound();
       setCollapsePref(state.items[idx].id, false);
@@ -1994,6 +2196,109 @@
     }
   }
 
+  let activeDragContext = null;
+  let dragReadyRowId = null;
+
+  function clearDragHighlights(){
+    document.querySelectorAll('.row.drag-over-before, .row.drag-over-after, .row.dragging').forEach(el => {
+      el.classList.remove('drag-over-before', 'drag-over-after', 'dragging');
+    });
+  }
+
+  function handleRowDragStart(e){
+    const row = e.currentTarget;
+    if (!(row instanceof HTMLElement)) return;
+    const roundId = Number(row.dataset.roundId || '0');
+    if (getRoundSortMode(roundId) !== 'custom') { e.preventDefault(); return; }
+    if (row.dataset.placeholder === 'true') { e.preventDefault(); return; }
+    if (dragReadyRowId !== row.dataset.rowId) { e.preventDefault(); return; }
+    dragReadyRowId = null;
+    const sourceId = row.dataset.rowId || '';
+    if (!sourceId) { e.preventDefault(); return; }
+    activeDragContext = {
+      sourceId,
+      roundId,
+      dropBefore: null,
+      targetId: null
+    };
+    row.classList.add('dragging');
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+      try { e.dataTransfer.setData('text/plain', sourceId); } catch (_) {}
+    }
+  }
+
+  function handleRowDragEnd(){
+    clearDragHighlights();
+    activeDragContext = null;
+    dragReadyRowId = null;
+  }
+
+  function handleRowDragOver(e){
+    if (!activeDragContext) return;
+    const row = e.currentTarget;
+    if (!(row instanceof HTMLElement)) return;
+    const roundId = Number(row.dataset.roundId || '0');
+    if (roundId !== activeDragContext.roundId) return;
+    const targetId = row.dataset.rowId || '';
+    if (!targetId || targetId === activeDragContext.sourceId) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    const rect = row.getBoundingClientRect();
+    const before = (e.clientY - rect.top) < rect.height / 2;
+    activeDragContext.dropBefore = before;
+    activeDragContext.targetId = targetId;
+    row.classList.toggle('drag-over-before', before);
+    row.classList.toggle('drag-over-after', !before);
+  }
+
+  function handleRowDragLeave(e){
+    const row = e.currentTarget;
+    if (!(row instanceof HTMLElement)) return;
+    row.classList.remove('drag-over-before', 'drag-over-after');
+  }
+
+  async function handleRowDrop(e){
+    if (!activeDragContext) return;
+    const row = e.currentTarget;
+    if (!(row instanceof HTMLElement)) return;
+    const roundId = Number(row.dataset.roundId || '0');
+    if (roundId !== activeDragContext.roundId) {
+      clearDragHighlights();
+      activeDragContext = null;
+      return;
+    }
+    e.preventDefault();
+    const targetId = row.dataset.rowId || '';
+    const sourceId = activeDragContext.sourceId;
+    if (!sourceId || !targetId || sourceId === targetId) {
+      clearDragHighlights();
+      activeDragContext = null;
+      return;
+    }
+    const body = row.closest('.group-body');
+    if (!body) {
+      clearDragHighlights();
+      activeDragContext = null;
+      return;
+    }
+    const rows = Array.from(body.querySelectorAll('.row')).filter(r => r.dataset.placeholder !== 'true');
+    let order = rows.map(r => r.dataset.rowId).filter(id => id);
+    order = order.filter(id => id !== sourceId);
+    let insertIdx = order.indexOf(targetId);
+    if (insertIdx < 0) insertIdx = order.length;
+    if (!activeDragContext.dropBefore) insertIdx += 1;
+    order.splice(insertIdx, 0, sourceId);
+    clearDragHighlights();
+    activeDragContext = null;
+    dragReadyRowId = null;
+    pushSnapshot();
+    setRoundSortMode(roundId, 'custom');
+    setRoundCustomOrder(roundId, order);
+    renderEverything();
+    await saveAll();
+  }
+
   function renderRow(it, globalIndex, options = {}){
     const addressFieldId = getAddressFieldId();
     const labelFieldId = getLabelFieldId();
@@ -2003,6 +2308,14 @@
     row.dataset.rowId = it.id;
     const opts = options || {};
     const isPlaceholderItem = isItemCompletelyBlank(it);
+    const allowDragFeature = opts.dragEnabled === true;
+    const dragEnabled = allowDragFeature && !isPlaceholderItem;
+    const dragHandleTitle = text('round.custom_sort_handle_hint', 'Fogd meg és húzd a cím átrendezéséhez');
+    const dragCellHtml = allowDragFeature
+      ? (dragEnabled
+          ? `<button class="iconbtn drag-handle" type="button" title="${esc(dragHandleTitle)}" aria-label="${esc(dragHandleTitle)}"><span aria-hidden="true">⠿</span></button>`
+          : `<span class="drag-handle drag-handle--inactive" aria-hidden="true">⠿</span>`)
+      : `<span class="drag-handle drag-handle--hidden" aria-hidden="true">⠿</span>`;
     if (isPlaceholderItem) row.classList.add('row--placeholder');
     if (opts.newAddress) row.classList.add('row--new-address');
     const storedCollapsed = getCollapsePref(it.id);
@@ -2103,8 +2416,12 @@
     }
     const numAria = showNumber ? '' : ' aria-hidden="true"';
 
+    row.dataset.roundId = String(+it.round || 0);
+    row.dataset.placeholder = isPlaceholderItem ? 'true' : 'false';
+
     row.innerHTML = `
       <div class="header">
+        <div class="drag-cell">${dragCellHtml}</div>
         <div class="num" data-num${numAria} style="${numStyle}">${numberText}</div>
         <div class="header-main">
           <div class="title-label-row">
@@ -2141,6 +2458,31 @@
         </div>
       </div>
     `;
+
+    const dragHandle = row.querySelector('.drag-handle');
+    if (dragHandle instanceof HTMLElement) {
+      dragHandle.setAttribute('draggable', 'false');
+    }
+    if (dragEnabled && dragHandle instanceof HTMLElement && dragHandle.tagName === 'BUTTON') {
+      const resetReady = ()=>{ dragReadyRowId = null; };
+      dragHandle.addEventListener('pointerdown', ()=>{ dragReadyRowId = row.dataset.rowId || null; });
+      dragHandle.addEventListener('pointerup', resetReady);
+      dragHandle.addEventListener('pointercancel', resetReady);
+      dragHandle.addEventListener('click', e => e.preventDefault());
+    }
+    if (allowDragFeature) {
+      row.addEventListener('dragover', handleRowDragOver);
+      row.addEventListener('dragleave', handleRowDragLeave);
+      row.addEventListener('drop', handleRowDrop);
+    }
+    if (dragEnabled) {
+      row.draggable = true;
+      row.classList.add('row--draggable');
+      row.addEventListener('dragstart', handleRowDragStart);
+      row.addEventListener('dragend', handleRowDragEnd);
+    } else {
+      row.draggable = false;
+    }
 
     updateRowHeaderMeta(row, it);
     updateRowPlaceholderState(row, it, isPlaceholderItem);
@@ -2269,6 +2611,8 @@
       const prevRound = +state.items[idx].round||0;
       pushSnapshot();
       state.items[idx].round = selRound;
+      removeItemFromCustomOrder(prevRound, it.id);
+      maybeAddItemToCustomOrder(selRound, it.id);
       await saveAll();
       renderEverything();
       renderGroupHeaderTotalsForRound(prevRound);
@@ -2284,6 +2628,7 @@
         pushSnapshot();
         const rPrev = +state.items[idx].round||0;
         state.items.splice(idx,1);
+        removeItemFromCustomOrder(rPrev, it.id);
         clearCollapsePref(it.id);
         renderGroupHeaderTotalsForRound(rPrev);
       }
@@ -2486,7 +2831,12 @@
       const totals = totalsForRound(rid);
       const groupEl = makeGroupHeader(rid, totals);
       const body = groupEl.querySelector(`[data-group-body="${rid}"]`);
-      inRound.forEach(it => { body.appendChild(renderRow(it, globalIndex)); globalIndex++; });
+      const sortMode = getRoundSortMode(rid);
+      const allowDrag = sortMode === 'custom';
+      inRound.forEach(it => {
+        body.appendChild(renderRow(it, globalIndex, {dragEnabled: allowDrag, sortMode}));
+        globalIndex++;
+      });
 
       const btnOpen = groupEl.querySelector('.grp-open');
       if (btnOpen) btnOpen.addEventListener('click', ()=>{
@@ -2581,6 +2931,42 @@
             plannedDateInput.value = getPlannedDateForRound(rid);
             flashSaved(plannedDateInput);
           }
+        });
+      }
+
+      const plannedTimeInput = groupEl.querySelector('.planned-time-input');
+      if (plannedTimeInput) {
+        plannedTimeInput.addEventListener('change', async ()=>{
+          const newVal = plannedTimeInput.value.trim();
+          const prevVal = getPlannedTimeForRound(rid);
+          if (newVal === prevVal) return;
+          pushSnapshot();
+          setPlannedTimeForRound(rid, newVal);
+          const ok = await saveAll();
+          if (ok) {
+            plannedTimeInput.value = getPlannedTimeForRound(rid);
+            flashSaved(plannedTimeInput);
+          }
+        });
+      }
+
+      const sortSelect = groupEl.querySelector('.round-sort-mode');
+      if (sortSelect) {
+        sortSelect.addEventListener('change', async ()=>{
+          const newMode = sortSelect.value === 'custom' ? 'custom' : 'default';
+          const prevMode = getRoundSortMode(rid);
+          if (newMode === prevMode) return;
+          pushSnapshot();
+          setRoundSortMode(rid, newMode);
+          if (newMode === 'custom') {
+            const ids = state.items
+              .filter(item => (+item.round||0) === rid && !isItemCompletelyBlank(item))
+              .map(item => item.id)
+              .filter(id => id != null);
+            syncCustomOrderWithItems(rid, ids);
+          }
+          renderEverything();
+          await saveAll();
         });
       }
 
