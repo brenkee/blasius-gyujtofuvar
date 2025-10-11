@@ -896,8 +896,55 @@ function write_revision_locked($rev) {
 
 function append_change_log_locked(array $entry) {
   global $CHANGE_LOG_FILE;
-  $line = json_encode($entry, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
-  file_put_contents($CHANGE_LOG_FILE, $line . "\n", FILE_APPEND | LOCK_EX);
+
+  if (!isset($entry['ts'])) {
+    $entry['ts'] = gmdate('c');
+  }
+
+  $maxAgeSeconds = 86400; // 1 day
+  $cutoff = time() - $maxAgeSeconds;
+  $newLine = json_encode($entry, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+
+  $fh = @fopen($CHANGE_LOG_FILE, 'c+');
+  if (!$fh) {
+    file_put_contents($CHANGE_LOG_FILE, $newLine . "\n", FILE_APPEND | LOCK_EX);
+    return;
+  }
+
+  $retained = [];
+  if (flock($fh, LOCK_EX)) {
+    rewind($fh);
+    while (($line = fgets($fh)) !== false) {
+      $line = trim($line);
+      if ($line === '') continue;
+
+      $keep = true;
+      $decoded = json_decode($line, true);
+      if (is_array($decoded) && isset($decoded['ts'])) {
+        $ts = strtotime((string)$decoded['ts']);
+        if ($ts !== false && $ts < $cutoff) {
+          $keep = false;
+        }
+      }
+
+      if ($keep) {
+        $retained[] = $line;
+      }
+    }
+
+    $retained[] = $newLine;
+
+    ftruncate($fh, 0);
+    rewind($fh);
+    fwrite($fh, implode("\n", $retained) . "\n");
+    fflush($fh);
+    flock($fh, LOCK_UN);
+  } else {
+    // Fallback if we could not acquire the lock.
+    file_put_contents($CHANGE_LOG_FILE, $newLine . "\n", FILE_APPEND | LOCK_EX);
+  }
+
+  fclose($fh);
 }
 
 function normalized_actor_id($raw) {
