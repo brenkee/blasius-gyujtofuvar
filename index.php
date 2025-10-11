@@ -42,6 +42,37 @@
         $toolbarText = $CFG['text']['toolbar'] ?? [];
         $badgeText = $CFG['text']['badges']['pin_counter_label'] ?? 'Pin-ek:';
         $badgeTitle = $CFG['text']['badges']['pin_counter_title'] ?? '';
+        $toolbarMenuIconCfg = $CFG['ui']['toolbar']['menu_icon'] ?? [];
+        $cssValue = static function ($value, string $unit = 'px'): ?string {
+          if ($value === null || $value === '') {
+            return null;
+          }
+          return is_numeric($value) ? $value . $unit : $value;
+        };
+        $menuIconStyles = [];
+        if (($width = $cssValue($toolbarMenuIconCfg['width'] ?? null)) !== null) {
+          $menuIconStyles[] = '--menu-icon-width:' . $width;
+        }
+        if (($height = $cssValue($toolbarMenuIconCfg['height'] ?? null)) !== null) {
+          $menuIconStyles[] = '--menu-icon-height:' . $height;
+        }
+        if (($barHeight = $cssValue($toolbarMenuIconCfg['bar_height'] ?? null)) !== null) {
+          $menuIconStyles[] = '--menu-icon-bar-height:' . $barHeight;
+        }
+        if (!empty($toolbarMenuIconCfg['color'])) {
+          $menuIconStyles[] = '--menu-icon-color:' . $toolbarMenuIconCfg['color'];
+        }
+        if (($barRadius = $cssValue($toolbarMenuIconCfg['bar_radius'] ?? null)) !== null) {
+          $menuIconStyles[] = '--menu-icon-bar-radius:' . $barRadius;
+        }
+        $menuIconStyleAttr = $menuIconStyles ? htmlspecialchars(implode(';', $menuIconStyles), ENT_QUOTES) : '';
+        $toolbarMenuLabel = $toolbarText['more_actions']['label'] ?? 'Menü';
+        $toolbarMenuTitle = $toolbarText['more_actions']['title'] ?? $toolbarMenuLabel;
+        $toolbarMenuHasItems = !empty($toolbarFeatures['import_all'])
+          || !empty($toolbarFeatures['export_all'])
+          || !empty($toolbarFeatures['print_all'])
+          || !empty($toolbarFeatures['download_archive'])
+          || !empty($toolbarFeatures['theme_toggle']);
       ?>
       <div class="toolbar">
         <?php if (!empty($toolbarFeatures['expand_all'])): ?>
@@ -54,31 +85,55 @@
             <?= htmlspecialchars($toolbarText['collapse_all']['label'] ?? 'Összes összezár') ?>
           </button>
         <?php endif; ?>
-        <?php if (!empty($toolbarFeatures['import_all'])): ?>
-          <button id="importBtn" title="<?= htmlspecialchars($toolbarText['import_all']['title'] ?? '') ?>">
-            <?= htmlspecialchars($toolbarText['import_all']['label'] ?? 'Import (CSV)') ?>
-          </button>
-          <input type="file" id="importFileInput" accept=".csv,text/csv" style="display:none" />
-        <?php endif; ?>
-        <?php if (!empty($toolbarFeatures['export_all'])): ?>
-          <button id="exportBtn" title="<?= htmlspecialchars($toolbarText['export_all']['title'] ?? '') ?>">
-            <?= htmlspecialchars($toolbarText['export_all']['label'] ?? 'Export') ?>
-          </button>
-        <?php endif; ?>
-        <?php if (!empty($toolbarFeatures['print_all'])): ?>
-          <button id="printBtn" title="<?= htmlspecialchars($toolbarText['print_all']['title'] ?? '') ?>">
-            <?= htmlspecialchars($toolbarText['print_all']['label'] ?? 'Nyomtatás') ?>
-          </button>
-        <?php endif; ?>
-        <?php if (!empty($toolbarFeatures['download_archive'])): ?>
-          <button id="downloadArchiveBtn" title="<?= htmlspecialchars($toolbarText['download_archive']['title'] ?? '') ?>">
-            <?= htmlspecialchars($toolbarText['download_archive']['label'] ?? 'Archívum letöltése') ?>
-          </button>
-        <?php endif; ?>
-        <?php if (!empty($toolbarFeatures['theme_toggle'])): ?>
-          <button id="themeToggle" title="<?= htmlspecialchars($toolbarText['theme_toggle']['title'] ?? '') ?>">
-            <?= htmlspecialchars($toolbarText['theme_toggle']['label'] ?? '🌙 / ☀️') ?>
-          </button>
+        <?php if ($toolbarMenuHasItems): ?>
+          <div class="toolbar-menu-container">
+            <button
+              id="toolbarMenuToggle"
+              type="button"
+              class="toolbar-menu-toggle"
+              aria-haspopup="true"
+              aria-expanded="false"
+              aria-controls="toolbarMenu"
+              title="<?= htmlspecialchars($toolbarMenuTitle) ?>"
+              aria-label="<?= htmlspecialchars($toolbarMenuLabel) ?>"
+              <?= $menuIconStyleAttr !== '' ? 'style="' . $menuIconStyleAttr . '"' : '' ?>
+            >
+              <span class="hamburger-icon" aria-hidden="true">
+                <span></span>
+                <span></span>
+                <span></span>
+              </span>
+              <span class="visually-hidden"><?= htmlspecialchars($toolbarMenuLabel) ?></span>
+            </button>
+            <div id="toolbarMenu" class="toolbar-menu" hidden>
+              <?php if (!empty($toolbarFeatures['import_all'])): ?>
+                <button id="importBtn" type="button" title="<?= htmlspecialchars($toolbarText['import_all']['title'] ?? '') ?>">
+                  <?= htmlspecialchars($toolbarText['import_all']['label'] ?? 'Import (CSV)') ?>
+                </button>
+                <input type="file" id="importFileInput" accept=".csv,text/csv" style="display:none" />
+              <?php endif; ?>
+              <?php if (!empty($toolbarFeatures['export_all'])): ?>
+                <button id="exportBtn" type="button" title="<?= htmlspecialchars($toolbarText['export_all']['title'] ?? '') ?>">
+                  <?= htmlspecialchars($toolbarText['export_all']['label'] ?? 'Export') ?>
+                </button>
+              <?php endif; ?>
+              <?php if (!empty($toolbarFeatures['print_all'])): ?>
+                <button id="printBtn" type="button" title="<?= htmlspecialchars($toolbarText['print_all']['title'] ?? '') ?>">
+                  <?= htmlspecialchars($toolbarText['print_all']['label'] ?? 'Nyomtatás') ?>
+                </button>
+              <?php endif; ?>
+              <?php if (!empty($toolbarFeatures['download_archive'])): ?>
+                <button id="downloadArchiveBtn" type="button" title="<?= htmlspecialchars($toolbarText['download_archive']['title'] ?? '') ?>">
+                  <?= htmlspecialchars($toolbarText['download_archive']['label'] ?? 'Archívum letöltése') ?>
+                </button>
+              <?php endif; ?>
+              <?php if (!empty($toolbarFeatures['theme_toggle'])): ?>
+                <button id="themeToggle" type="button" title="<?= htmlspecialchars($toolbarText['theme_toggle']['title'] ?? '') ?>">
+                  <?= htmlspecialchars($toolbarText['theme_toggle']['label'] ?? '🌙 / ☀️') ?>
+                </button>
+              <?php endif; ?>
+            </div>
+          </div>
         <?php endif; ?>
         <?php if (!empty($toolbarFeatures['undo']) && !empty($CFG['history']['undo_enabled'])): ?>
           <button id="undoBtn" title="<?= htmlspecialchars($toolbarText['undo']['title'] ?? '') ?>" disabled>
