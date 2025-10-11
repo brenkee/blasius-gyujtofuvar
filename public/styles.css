@@ -24,6 +24,7 @@ h1{font-size:18px;margin:0 0 6px}
 .group{border:1px solid var(--border);border-radius:12px;background:var(--panel)}
 .group-header{display:flex;flex-direction:column;gap:8px;padding:10px;border-bottom:1px solid var(--border);background:calc(var(--panel) + 0)}
 .group-title{font-weight:800;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.group-title .__sum{display: flex;flex: auto;justify-content: flex-end;}
 .group-drag-indicator{display:none;font-size:14px;color:var(--muted);align-items:center;justify-content:center}
 .group-controls{display:flex;flex-wrap:nowrap;gap:12px;align-items:center}
 .group-tools{display:flex;gap:6px;flex-wrap:wrap}
@@ -42,7 +43,8 @@ h1{font-size:18px;margin:0 0 6px}
 .row{border:1px solid var(--border);border-radius:10px;background:var(--panel)}
 .row.row--placeholder .num{visibility:hidden;background:transparent}
 .row .header{display:flex;align-items:flex-start;gap:8px;padding:10px;border-bottom:1px solid var(--border)}
-.row .drag-cell{width:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.row .drag-cell{width:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0;order: 2;}
+.row .meta{order: 1;}
 .drag-handle{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:6px;border:1px solid transparent;background:transparent;color:var(--muted);font-size:14px;cursor:grab;padding:0}
 .drag-handle span{pointer-events:none}
 .drag-handle--inactive{opacity:.35;cursor:not-allowed;border-color:transparent}
@@ -61,7 +63,7 @@ h1{font-size:18px;margin:0 0 6px}
 .title-city{color:var(--muted);font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .deadline-indicator{width:0;height:0;background-color:var(--deadline-color,currentColor);-webkit-mask:url('../hatarido.svg') center/contain no-repeat;mask:url('../hatarido.svg') center/contain no-repeat;display:inline-flex;flex-shrink:0;opacity:0;transition:opacity .2s ease}
 .deadline-indicator[data-visible="true"]{width:var(--deadline-icon-size,16px);height:var(--deadline-icon-size,16px);opacity:1}
-.tools{display:flex;gap:6px;align-items:center}
+.tools{display:flex;gap:6px;align-items:center;   order: 3;}
 .iconbtn{border:1px solid var(--border);background:var(--panel);color:var(--text);border-radius:8px;padding:4px 8px;cursor:pointer;line-height:1}
 .iconbtn:hover{background:rgba(148,163,184,0.12)}
 .body{padding:8px;display:grid;gap:6px}

@@ -49,22 +49,6 @@
             "sort_mode": ""
         },
         {
-            "id": "row_c0841bf03e76",
-            "round": 3,
-            "city": "Siófok",
-            "lat": 46.8981297,
-            "lon": 18.0477158,
-            "label": "Bognár Júlia",
-            "address": "8600 Siófok, Gárdonyi Géza utca 170.",
-            "note": "Kapucsengő: 12.",
-            "deadline": "",
-            "weight": 1400,
-            "volume": 5.5,
-            "custom_order": "",
-            "planned_date": "",
-            "sort_mode": ""
-        },
-        {
             "id": "row_41fda3917714",
             "round": 3,
             "city": "Kaposvár",
@@ -97,17 +81,17 @@
             "sort_mode": ""
         },
         {
-            "id": "row_65a1195a8faf",
-            "round": 4,
-            "city": "Székesfehérvár",
-            "lat": 47.1944099,
-            "lon": 18.4342423,
-            "label": "Szabó Réka",
-            "address": "8000 Székesfehérvár",
-            "note": "Készpénzes fizetés.",
+            "id": "row_c0841bf03e76",
+            "round": 3,
+            "city": "Siófok",
+            "lat": 46.8981297,
+            "lon": 18.0477158,
+            "label": "Bognár Júlia",
+            "address": "8600 Siófok, Gárdonyi Géza utca 170.",
+            "note": "Kapucsengő: 12.",
             "deadline": "",
-            "weight": 2000,
-            "volume": 10.5,
+            "weight": 1400,
+            "volume": 5.5,
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -129,22 +113,6 @@
             "sort_mode": ""
         },
         {
-            "id": "row_7996d02f8ba4",
-            "round": 4,
-            "city": "Tapolca",
-            "lat": 46.8908069,
-            "lon": 17.4381375,
-            "label": "Fehér István",
-            "address": "8300 Tapolca",
-            "note": "Kerülni a földutat.",
-            "deadline": "",
-            "weight": 3900,
-            "volume": 10.5,
-            "custom_order": "",
-            "planned_date": "",
-            "sort_mode": ""
-        },
-        {
             "id": "row_8f49aabdf602",
             "round": 4,
             "city": "Zalaegerszeg",
@@ -161,17 +129,33 @@
             "sort_mode": ""
         },
         {
-            "id": "row_bebc8cf46620",
-            "round": 5,
-            "city": "Tokod",
-            "lat": 47.7237728,
-            "lon": 18.6637106,
-            "label": "Szalai Péter",
-            "address": "2500 Esztergom, Bem József utca 7\/2.",
-            "note": "Cégér: Zöld Ajtó Kft.",
+            "id": "row_7996d02f8ba4",
+            "round": 4,
+            "city": "Tapolca",
+            "lat": 46.8908069,
+            "lon": 17.4381375,
+            "label": "Fehér István",
+            "address": "8300 Tapolca",
+            "note": "Kerülni a földutat.",
             "deadline": "",
-            "weight": 1700,
-            "volume": 5,
+            "weight": 3900,
+            "volume": 10.5,
+            "custom_order": "",
+            "planned_date": "",
+            "sort_mode": ""
+        },
+        {
+            "id": "row_65a1195a8faf",
+            "round": 4,
+            "city": "Székesfehérvár",
+            "lat": 47.1944099,
+            "lon": 18.4342423,
+            "label": "Szabó Réka",
+            "address": "8000 Székesfehérvár",
+            "note": "Készpénzes fizetés.",
+            "deadline": "",
+            "weight": 2000,
+            "volume": 10.5,
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -193,17 +177,17 @@
             "sort_mode": ""
         },
         {
-            "id": "row_29959ab0ae0f",
+            "id": "row_bebc8cf46620",
             "round": 5,
-            "city": "Tata",
-            "lat": 47.629452,
-            "lon": 18.303389,
-            "label": "Takács Balázs",
-            "address": "2890 Tata",
-            "note": "Emelőhátfal szükséges.",
+            "city": "Tokod",
+            "lat": 47.7237728,
+            "lon": 18.6637106,
+            "label": "Szalai Péter",
+            "address": "2500 Esztergom, Bem József utca 7\/2.",
+            "note": "Cégér: Zöld Ajtó Kft.",
             "deadline": "",
-            "weight": 200,
-            "volume": 11.5,
+            "weight": 1700,
+            "volume": 5,
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -268,6 +252,22 @@
             "deadline": "",
             "weight": 3600,
             "volume": 5,
+            "custom_order": "",
+            "planned_date": "",
+            "sort_mode": ""
+        },
+        {
+            "id": "row_29959ab0ae0f",
+            "round": 5,
+            "city": "Tata",
+            "lat": 47.629452,
+            "lon": 18.303389,
+            "label": "Takács Balázs",
+            "address": "2890 Tata",
+            "note": "Emelőhátfal szükséges.",
+            "deadline": "",
+            "weight": 200,
+            "volume": 11.5,
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -791,7 +791,7 @@
                 "row_bb9060682530",
                 "row_bc7af8ce7665"
             ],
-            "planned_date": "HÉTFŐ",
+            "planned_date": "Hétfő",
             "sort_mode": "custom"
         },
         "2": {
@@ -805,16 +805,41 @@
         },
         "3": {
             "custom_order": [
-                "row_0a12e6373557",
-                "row_65a1195a8faf",
-                "row_7996d02f8ba4",
-                "row_bb9060682530",
-                "row_8f49aabdf602"
+                "row_41fda3917714",
+                "row_b41b0cf7492d",
+                "row_c0841bf03e76"
             ],
-            "sort_mode": "default"
+            "sort_mode": "custom"
+        },
+        "4": {
+            "custom_order": [
+                "row_0a12e6373557",
+                "row_8f49aabdf602",
+                "row_7996d02f8ba4",
+                "row_65a1195a8faf"
+            ],
+            "sort_mode": "custom"
         },
         "5": {
+            "custom_order": [
+                "row_9bdd22ece779",
+                "row_bebc8cf46620",
+                "row_2f33b86f5535",
+                "row_a2bb2feaf5d0",
+                "row_4f31f93a93b7",
+                "row_99a6d5734905",
+                "row_29959ab0ae0f",
+                "row_618693f05b82",
+                "row_9ccf0634c1f0"
+            ],
             "planned_date": "Kedd",
+            "sort_mode": "custom"
+        },
+        "9": {
+            "custom_order": [
+                "row_f824bd142dbf",
+                "row_1a0bb977ab16"
+            ],
             "sort_mode": "default"
         }
     }

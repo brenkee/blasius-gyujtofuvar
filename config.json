@@ -194,24 +194,6 @@
         "max_waypoints": 10,
         "geocode_origin_on_start": true
     },
-/*
-türkiz #01E0EB
-    közép kék #0063E5
-sötét kék #0B009E
-    citrom #F5E600
-    narancs #FF9500
-    piros #FF2801
-    barna #8C5332
-    neon zöld #00FF40
-    camo #536F3B
-    lila #891BF6
-    orgona #F68CFF
-    silver #B8B8B8
-    navy #201F5C
-magenta #FF1C7B
-    közép zöld #03A336
-*/
-
     "rounds": [
         {
             "id": 0,
