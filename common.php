@@ -414,10 +414,42 @@ function generate_export_csv($cfg, $dataFile, $roundFilter = null, &$error = nul
   $fieldIds = array_values(array_filter(array_map(function($f){ return $f['id'] ?? null; }, $fieldsCfg)));
   $metricIds = array_values(array_filter(array_map(function($m){ return $m['id'] ?? null; }, $metricsCfg)));
 
+  $normalizeColumnId = function($value) {
+    if ($value === null) return null;
+    $key = (string)$value;
+    if ($key === '') return null;
+    $key = str_replace("\xEF\xBB\xBF", '', $key);
+    $key = preg_replace('/[\x{200B}-\x{200D}\x{2060}\x{FEFF}]/u', '', $key);
+    $key = str_replace("\xC2\xA0", ' ', $key);
+    $key = trim($key);
+    if ($key === '') return null;
+    return $key;
+  };
+
+  $normalizeRecordKeys = function(array $record) use ($normalizeColumnId) {
+    $clean = [];
+    foreach ($record as $rawKey => $value) {
+      $key = $normalizeColumnId($rawKey);
+      if ($key === null) continue;
+      if ($key === 'type') continue;
+      if (strpos($key, '_') === 0) continue;
+      if (!array_key_exists($key, $clean)) {
+        $clean[$key] = $value;
+      }
+    }
+    return $clean;
+  };
+
   $columns = [];
-  $addColumn = function($id) use (&$columns){
-    $key = (string)$id;
-    if ($key === '') return;
+  $addColumn = function($id) use (&$columns, $normalizeColumnId) {
+    $key = $normalizeColumnId($id);
+    if ($key === null) return;
+    if ($key === 'type') {
+      if (!in_array('type', $columns, true)) {
+        $columns[] = 'type';
+      }
+      return;
+    }
     if (!in_array($key, $columns, true)) {
       $columns[] = $key;
     }
@@ -430,7 +462,8 @@ function generate_export_csv($cfg, $dataFile, $roundFilter = null, &$error = nul
   foreach (['city','lat','lon'] as $extra) { $addColumn($extra); }
   foreach ($roundMeta as $meta) {
     if (!is_array($meta)) continue;
-    foreach ($meta as $metaKey => $_value) {
+    $normalizedMeta = $normalizeRecordKeys($meta);
+    foreach ($normalizedMeta as $metaKey => $_value) {
       $addColumn($metaKey);
     }
   }
@@ -440,11 +473,9 @@ function generate_export_csv($cfg, $dataFile, $roundFilter = null, &$error = nul
     if ($roundFilter !== null && (int)($it['round'] ?? 0) !== $roundFilter) {
       continue;
     }
-    foreach ($it as $key => $value) {
-      if ($key === null) continue;
-      $keyStr = (string)$key;
-      if ($keyStr === '' || strpos($keyStr, '_') === 0) continue;
-      $addColumn($keyStr);
+    $normalizedItem = $normalizeRecordKeys($it);
+    foreach ($normalizedItem as $key => $_value) {
+      $addColumn($key);
     }
   }
   if (empty($columns)) {
@@ -502,8 +533,22 @@ function generate_export_csv($cfg, $dataFile, $roundFilter = null, &$error = nul
     if ($roundFilter !== null && (int)($it['round'] ?? 0) !== $roundFilter) {
       continue;
     }
-    $record = $it;
-    $record['type'] = 'address';
+    $record = $normalizeRecordKeys($it);
+    if (!array_key_exists('id', $record) && isset($it['id'])) {
+      $record['id'] = $it['id'];
+    }
+    if (!array_key_exists('round', $record) && isset($it['round'])) {
+      $record['round'] = $it['round'];
+    }
+    if (!array_key_exists('city', $record) && array_key_exists('city', $it)) {
+      $record['city'] = $it['city'];
+    }
+    if (!array_key_exists('lat', $record) && array_key_exists('lat', $it)) {
+      $record['lat'] = $it['lat'];
+    }
+    if (!array_key_exists('lon', $record) && array_key_exists('lon', $it)) {
+      $record['lon'] = $it['lon'];
+    }
     $writeRow($record, 'address');
   }
 
@@ -513,7 +558,7 @@ function generate_export_csv($cfg, $dataFile, $roundFilter = null, &$error = nul
     if ($roundFilter !== null && $round !== $roundFilter) {
       continue;
     }
-    $record = $meta;
+    $record = $normalizeRecordKeys($meta);
     $record['id'] = 'route_' . $roundId;
     $record['round'] = $round;
     $record['type'] = 'route';

@@ -12,7 +12,6 @@
             "deadline": "",
             "weight": null,
             "volume": null,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -29,7 +28,6 @@
             "deadline": "",
             "weight": 700,
             "volume": 13,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -46,27 +44,9 @@
             "deadline": "",
             "weight": 400,
             "volume": 1,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
-        },
-        {
-            "id": "route_2",
-            "round": 2,
-            "city": "",
-            "lat": null,
-            "lon": null,
-            "label": "",
-            "address": "",
-            "note": "",
-            "deadline": "",
-            "weight": null,
-            "volume": null,
-            "﻿type": "route",
-            "custom_order": "[\"row_c0841bf03e76\",\"row_b41b0cf7492d\",\"row_41fda3917714\"]",
-            "planned_date": "HÉTFŐ!!!",
-            "sort_mode": "custom"
         },
         {
             "id": "row_c0841bf03e76",
@@ -80,7 +60,6 @@
             "deadline": "",
             "weight": 1400,
             "volume": 5.5,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -97,7 +76,6 @@
             "deadline": "",
             "weight": 500,
             "volume": 3.5,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -114,27 +92,9 @@
             "deadline": "",
             "weight": 3500,
             "volume": 1,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
-        },
-        {
-            "id": "route_3",
-            "round": 3,
-            "city": "",
-            "lat": null,
-            "lon": null,
-            "label": "",
-            "address": "",
-            "note": "",
-            "deadline": "",
-            "weight": null,
-            "volume": null,
-            "﻿type": "route",
-            "custom_order": "[\"row_0a12e6373557\",\"row_65a1195a8faf\",\"row_7996d02f8ba4\",\"row_bb9060682530\",\"row_8f49aabdf602\"]",
-            "planned_date": "",
-            "sort_mode": "default"
         },
         {
             "id": "row_65a1195a8faf",
@@ -148,7 +108,6 @@
             "deadline": "",
             "weight": 2000,
             "volume": 10.5,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -165,7 +124,6 @@
             "deadline": "",
             "weight": 900,
             "volume": 5.5,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -182,7 +140,6 @@
             "deadline": "",
             "weight": 3900,
             "volume": 10.5,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -199,7 +156,6 @@
             "deadline": "",
             "weight": 1900,
             "volume": 12,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -216,7 +172,6 @@
             "deadline": "",
             "weight": 1700,
             "volume": 5,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -233,7 +188,6 @@
             "deadline": "",
             "weight": 1600,
             "volume": 1,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -250,7 +204,6 @@
             "deadline": "",
             "weight": 200,
             "volume": 11.5,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -267,7 +220,6 @@
             "deadline": "",
             "weight": 2700,
             "volume": 15,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -284,7 +236,6 @@
             "deadline": "",
             "weight": 1600,
             "volume": 4,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -301,7 +252,6 @@
             "deadline": "",
             "weight": 3400,
             "volume": 8.5,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -318,7 +268,6 @@
             "deadline": "",
             "weight": 3600,
             "volume": 5,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -335,7 +284,6 @@
             "deadline": "",
             "weight": 800,
             "volume": 2,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -352,27 +300,9 @@
             "deadline": "",
             "weight": 3000,
             "volume": 15,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
-        },
-        {
-            "id": "route_5",
-            "round": 5,
-            "city": "",
-            "lat": null,
-            "lon": null,
-            "label": "",
-            "address": "",
-            "note": "",
-            "deadline": "",
-            "weight": null,
-            "volume": null,
-            "﻿type": "route",
-            "custom_order": "",
-            "planned_date": "Kedd",
-            "sort_mode": "default"
         },
         {
             "id": "row_2f4fa8aab0af",
@@ -386,7 +316,6 @@
             "deadline": "",
             "weight": 1700,
             "volume": 6.5,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -403,7 +332,6 @@
             "deadline": "",
             "weight": 1000,
             "volume": 9,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -420,7 +348,6 @@
             "deadline": "",
             "weight": 400,
             "volume": 11.5,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -437,7 +364,6 @@
             "deadline": "2025-10-17",
             "weight": 3400,
             "volume": 13,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -454,7 +380,6 @@
             "deadline": "",
             "weight": 2400,
             "volume": 13,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -471,7 +396,6 @@
             "deadline": "",
             "weight": 3600,
             "volume": 1.5,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -488,7 +412,6 @@
             "deadline": "",
             "weight": 2800,
             "volume": 4,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -505,7 +428,6 @@
             "deadline": "",
             "weight": 3500,
             "volume": 6,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -522,7 +444,6 @@
             "deadline": "2025-10-17",
             "weight": 2000,
             "volume": 7.5,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -539,7 +460,6 @@
             "deadline": "",
             "weight": 1300,
             "volume": 2,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -556,7 +476,6 @@
             "deadline": "",
             "weight": 1600,
             "volume": 2,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -573,7 +492,6 @@
             "deadline": "",
             "weight": 200,
             "volume": 10.5,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -590,7 +508,6 @@
             "deadline": "",
             "weight": 3300,
             "volume": 4,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -607,7 +524,6 @@
             "deadline": "",
             "weight": 2100,
             "volume": 8,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -624,7 +540,6 @@
             "deadline": "",
             "weight": 1700,
             "volume": 3.5,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -641,7 +556,6 @@
             "deadline": "",
             "weight": 2200,
             "volume": 14,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -658,7 +572,6 @@
             "deadline": "",
             "weight": 1000,
             "volume": 5,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -675,7 +588,6 @@
             "deadline": "",
             "weight": 3000,
             "volume": 9.5,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -692,7 +604,6 @@
             "deadline": "",
             "weight": 2700,
             "volume": 5,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -709,7 +620,6 @@
             "deadline": "",
             "weight": 4000,
             "volume": 2,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -726,7 +636,6 @@
             "deadline": "",
             "weight": 500,
             "volume": 1.5,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -743,7 +652,6 @@
             "deadline": "",
             "weight": 2900,
             "volume": 4,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -760,7 +668,6 @@
             "deadline": "",
             "weight": 500,
             "volume": 11.5,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -777,7 +684,6 @@
             "deadline": "",
             "weight": 3100,
             "volume": 4.5,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -794,7 +700,6 @@
             "deadline": "",
             "weight": 2600,
             "volume": 5,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -811,7 +716,6 @@
             "deadline": "",
             "weight": 2100,
             "volume": 6.5,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -828,7 +732,6 @@
             "deadline": "",
             "weight": 800,
             "volume": 4.5,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -845,7 +748,6 @@
             "deadline": "",
             "weight": 4000,
             "volume": 4,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -862,7 +764,6 @@
             "deadline": "",
             "weight": 1700,
             "volume": 1.5,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -879,7 +780,6 @@
             "deadline": "",
             "weight": 1200,
             "volume": 13.5,
-            "﻿type": "address",
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -891,6 +791,29 @@
                 "row_bb9060682530",
                 "row_bc7af8ce7665"
             ],
+            "sort_mode": "default"
+        },
+        "2": {
+            "custom_order": [
+                "row_c0841bf03e76",
+                "row_b41b0cf7492d",
+                "row_41fda3917714"
+            ],
+            "planned_date": "HÉTFŐ!!!",
+            "sort_mode": "custom"
+        },
+        "3": {
+            "custom_order": [
+                "row_0a12e6373557",
+                "row_65a1195a8faf",
+                "row_7996d02f8ba4",
+                "row_bb9060682530",
+                "row_8f49aabdf602"
+            ],
+            "sort_mode": "default"
+        },
+        "5": {
+            "planned_date": "Kedd",
             "sort_mode": "default"
         }
     }
