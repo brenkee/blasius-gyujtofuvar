@@ -135,7 +135,7 @@
                 "text_color": "#000",
                 "font_family": "Arial,Helvetica,sans-serif",
                 "font_weight": 700,
-                "distance_threshold_meters": 15
+                "distance_threshold_meters": 20000
             },
             "focus_ring_radius": 20000,
             "focus_ring_color": "auto",
@@ -199,61 +199,66 @@
             "id": 0,
             "label": "ÚJ CÍMEK",
             "color": "#888"
-        },
+        }, 
         {
             "id": 1,
-            "label": "Berkenye: M2",
-            "color": "#1F00F5"
+            "label": "Pest Megye: M0",
+            "color": "#f1c40f"
         },
         {
             "id": 2,
-            "label": "Balaton Déli part: M7",
-            "color": "#FF1701"
+            "label": "Berkenye: M2",
+            "color": "#1abc9c"
         },
         {
             "id": 3,
-            "label": "Balaton Északi part: M7",
-            "color": "#E6E601"
+            "label": "Balaton Déli part: M7",
+            "color": "#2ecc71"
         },
         {
             "id": 4,
-            "label": "Győr: M1",
-            "color": "#5F00B8"
+            "label": "Balaton Északi part: M7",
+            "color": "#3498db"
         },
         {
             "id": 5,
-            "label": "Kecskemét: M5",
-            "color": "#FF7601"
+            "label": "Győr: M1",
+            "color": "#9b59b6"
         },
         {
             "id": 6,
-            "label": "Szeged: M5",
-            "color": "#FA00F1"
+            "label": "Kecskemét: M5",
+            "color": "#34495e"
         },
         {
             "id": 7,
-            "label": "Szolnok: M4",
-            "color": "#9A75FF"
+            "label": "Szeged: M5",
+            "color": "#d35400"
         },
         {
             "id": 8,
-            "label": "Hatvan: M3",
-            "color": "#FFDD83"
+            "label": "Szolnok: M4",
+            "color": "#e74c3c"
         },
         {
             "id": 9,
-            "label": "Salgótarján: M3",
-            "color": "#662C1D"
+            "label": "Hatvan: M3",
+            "color": "#c0392b"
         },
         {
             "id": 10,
-            "label": "Miskolc: M3",
-            "color": "#237028"
+            "label": "Salgótarján: M3",
+            "color": "#8e44ad"
         },
         {
             "id": 11,
+            "label": "Miskolc: M3",
+            "color": "#bdc3c7"
+        },
+        {
+            "id": 12,
             "label": "Szekszárd: M6",
-            "color": "#00FFE4"
+            "color": "#2c3e50"
         }
     ],
     "text": {
@@ -301,8 +306,8 @@
             "planned_time_label": "Tervezett idő",
             "planned_time_hint": "Add meg a kör tervezett idejét",
             "sort_mode_label": "Rendezési mód",
-            "sort_mode_default": "Alapértelmezett (távolság)",
-            "sort_mode_custom": "Egyéni (drag & drop)",
+            "sort_mode_default": "Alapértelmezett",
+            "sort_mode_custom": "Egyéni",
             "sort_mode_custom_hint": "Fogd és vidd a címeket a sorrend módosításához",
             "custom_sort_handle_hint": "Fogd meg és húzd a cím átrendezéséhez"
         },

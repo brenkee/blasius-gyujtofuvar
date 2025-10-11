@@ -24,12 +24,12 @@ h1{font-size:18px;margin:0 0 6px}
 .group{border:1px solid var(--border);border-radius:12px;background:var(--panel)}
 .group-header{display:flex;flex-direction:column;gap:8px;padding:10px;border-bottom:1px solid var(--border);background:calc(var(--panel) + 0)}
 .group-title{font-weight:800;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.group-drag-indicator{font-size:14px;color:var(--muted);display:inline-flex;align-items:center;justify-content:center}
-.group-controls{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.group-drag-indicator{display:none;font-size:14px;color:var(--muted);align-items:center;justify-content:center}
+.group-controls{display:flex;flex-wrap:nowrap;gap:12px;align-items:center}
 .group-tools{display:flex;gap:6px;flex-wrap:wrap}
 .group-planned-date{display:flex;gap:8px;flex-wrap:nowrap;align-items:center}
 .group-planned-date .planned-date-label{font-size:12px;font-weight:600;color:var(--muted);white-space:nowrap}
-.group-planned-date input{min-width:140px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text);transition:background-color .3s ease,border-color .3s ease}
+.group-planned-date input{width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text);transition:background-color .3s ease,border-color .3s ease}
 .planned-date-input.saved-flash{background:rgba(34,197,94,0.25);border-color:rgba(16,185,129,0.5)}
 .group-planned-time{display:flex;gap:8px;flex-wrap:nowrap;align-items:center}
 .group-planned-time .planned-time-label{font-size:12px;font-weight:600;color:var(--muted);white-space:nowrap}
@@ -37,7 +37,7 @@ h1{font-size:18px;margin:0 0 6px}
 .planned-time-input.saved-flash{background:rgba(34,197,94,0.25);border-color:rgba(16,185,129,0.5)}
 .group-sort{display:flex;gap:8px;align-items:center}
 .group-sort .sort-mode-label{font-size:12px;font-weight:600;color:var(--muted);white-space:nowrap}
-.group-sort select{min-width:200px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text);transition:background-color .3s ease,border-color .3s ease}
+.group-sort select{width:130px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text);transition:background-color .3s ease,border-color .3s ease}
 .group-body{display:grid;gap:10px;padding:10px}
 .row{border:1px solid var(--border);border-radius:10px;background:var(--panel)}
 .row.row--placeholder .num{visibility:hidden;background:transparent}
