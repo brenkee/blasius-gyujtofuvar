@@ -14,19 +14,6 @@
             "volume": null
         },
         {
-            "id": "row_0b758cb7c7ad",
-            "round": 2,
-            "city": "Szigetszentmiklós",
-            "lat": 47.3580372,
-            "lon": 19.0349059,
-            "label": "Molnár Réka",
-            "address": "2310 Szigetszentmiklós",
-            "note": "Tele autó, kérjük időben jelezni.",
-            "deadline": "",
-            "weight": 3600,
-            "volume": 13
-        },
-        {
             "id": "row_c0841bf03e76",
             "round": 2,
             "city": "Siófok",
@@ -40,19 +27,6 @@
             "volume": 5.5
         },
         {
-            "id": "row_41fda3917714",
-            "round": 2,
-            "city": "Kaposvár",
-            "lat": 46.3564692,
-            "lon": 17.7886886,
-            "label": "Molnár Péter",
-            "address": "Kaposvár",
-            "note": "Szűk utca, kisebb jármű kell.",
-            "deadline": "",
-            "weight": 500,
-            "volume": 3.5
-        },
-        {
             "id": "row_b41b0cf7492d",
             "round": 2,
             "city": "Nagykanizsa",
@@ -64,6 +38,19 @@
             "deadline": "",
             "weight": 3500,
             "volume": 1
+        },
+        {
+            "id": "row_41fda3917714",
+            "round": 2,
+            "city": "Kaposvár",
+            "lat": 46.3564692,
+            "lon": 17.7886886,
+            "label": "Molnár Péter",
+            "address": "Kaposvár",
+            "note": "Szűk utca, kisebb jármű kell.",
+            "deadline": "",
+            "weight": 500,
+            "volume": 3.5
         },
         {
             "id": "row_bb9060682530",
@@ -137,7 +124,7 @@
             "lat": 47.5826789,
             "lon": 19.0882252,
             "label": "Tóth Norbert",
-            "address": "1011 Budapest, Gárdonyi Géza utca 26/3.",
+            "address": "1011 Budapest, Gárdonyi Géza utca 26\/3.",
             "note": "Csak pénteken szállítható.",
             "deadline": "",
             "weight": 700,
@@ -150,7 +137,7 @@
             "lat": 47.7237728,
             "lon": 18.6637106,
             "label": "Szalai Péter",
-            "address": "2500 Esztergom, Bem József utca 7/2.",
+            "address": "2500 Esztergom, Bem József utca 7\/2.",
             "note": "Cégér: Zöld Ajtó Kft.",
             "deadline": "",
             "weight": 1700,
@@ -267,7 +254,7 @@
             "lat": 46.931132,
             "lon": 19.5603625,
             "label": "Fekete Tamás",
-            "address": "6000 Kecskemét, Béke utca 68/2.",
+            "address": "6000 Kecskemét, Béke utca 68\/2.",
             "note": "Tele autó, kérjük időben jelezni.",
             "deadline": "",
             "weight": 1700,
@@ -319,7 +306,7 @@
             "lat": 46.6148131,
             "lon": 19.2912764,
             "label": "Szalai Beáta",
-            "address": "6200 Kiskőrös, Petőfi Sándor utca 92/1.",
+            "address": "6200 Kiskőrös, Petőfi Sándor utca 92\/1.",
             "note": "Raklapemelő szükséges.",
             "deadline": "",
             "weight": 2400,
@@ -397,7 +384,7 @@
             "lat": 46.6738417,
             "lon": 21.0918552,
             "label": "Molnár Katalin",
-            "address": "5600 Békéscsaba, Bartók Béla út 2/3.",
+            "address": "5600 Békéscsaba, Bartók Béla út 2\/3.",
             "note": "1 órával előtte hívni.",
             "deadline": "",
             "weight": 1600,
@@ -653,7 +640,27 @@
     ],
     "round_meta": {
         "2": {
-            "planned_date": "HÉTFŐ!!!"
+            "custom_order": [
+                "row_c0841bf03e76",
+                "row_b41b0cf7492d",
+                "row_41fda3917714"
+            ],
+            "planned_date": "HÉTFŐ!!!",
+            "sort_mode": "custom"
+        },
+        "3": {
+            "custom_order": [
+                "row_0a12e6373557",
+                "row_65a1195a8faf",
+                "row_7996d02f8ba4",
+                "row_bb9060682530",
+                "row_8f49aabdf602"
+            ],
+            "sort_mode": "default"
+        },
+        "5": {
+            "planned_date": "Kedd",
+            "sort_mode": "default"
         }
     }
 }

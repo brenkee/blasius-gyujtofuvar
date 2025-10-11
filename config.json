@@ -35,7 +35,7 @@
         },
         "group_totals": true,
         "round_planned_date": true,
-        "round_planned_time": true
+        "round_planned_time": false
     },
     "files": {
         "data_file": "fuvar_data.json",
