@@ -11,8 +11,7 @@
             "note": "",
             "deadline": "",
             "weight": null,
-            "volume": null,
-            "﻿id": ""
+            "volume": null
         },
         {
             "id": "row_0b758cb7c7ad",
@@ -25,8 +24,7 @@
             "note": "Tele autó, kérjük időben jelezni.",
             "deadline": "",
             "weight": 3600,
-            "volume": 13,
-            "﻿id": ""
+            "volume": 13
         },
         {
             "id": "row_c0841bf03e76",
@@ -39,8 +37,7 @@
             "note": "Kapucsengő: 12.",
             "deadline": "",
             "weight": 1400,
-            "volume": 5.5,
-            "﻿id": ""
+            "volume": 5.5
         },
         {
             "id": "row_41fda3917714",
@@ -53,8 +50,7 @@
             "note": "Szűk utca, kisebb jármű kell.",
             "deadline": "",
             "weight": 500,
-            "volume": 3.5,
-            "﻿id": ""
+            "volume": 3.5
         },
         {
             "id": "row_b41b0cf7492d",
@@ -67,8 +63,7 @@
             "note": "Munkaidőn kívül nem átvehető.",
             "deadline": "",
             "weight": 3500,
-            "volume": 1,
-            "﻿id": ""
+            "volume": 1
         },
         {
             "id": "row_bb9060682530",
@@ -81,8 +76,7 @@
             "note": "Készpénzes fizetés.",
             "deadline": "",
             "weight": 400,
-            "volume": 1,
-            "﻿id": ""
+            "volume": 1
         },
         {
             "id": "row_65a1195a8faf",
@@ -95,8 +89,7 @@
             "note": "Készpénzes fizetés.",
             "deadline": "",
             "weight": 2000,
-            "volume": 10.5,
-            "﻿id": ""
+            "volume": 10.5
         },
         {
             "id": "row_0a12e6373557",
@@ -109,8 +102,7 @@
             "note": "Kapu kód: 1923#.",
             "deadline": "",
             "weight": 900,
-            "volume": 5.5,
-            "﻿id": ""
+            "volume": 5.5
         },
         {
             "id": "row_7996d02f8ba4",
@@ -123,8 +115,7 @@
             "note": "Kerülni a földutat.",
             "deadline": "",
             "weight": 3900,
-            "volume": 10.5,
-            "﻿id": ""
+            "volume": 10.5
         },
         {
             "id": "row_8f49aabdf602",
@@ -137,8 +128,7 @@
             "note": "Hétfő–csütörtök 8–15 között átvehető.",
             "deadline": "",
             "weight": 1900,
-            "volume": 12,
-            "﻿id": ""
+            "volume": 12
         },
         {
             "id": "row_bc7af8ce7665",
@@ -147,12 +137,11 @@
             "lat": 47.5826789,
             "lon": 19.0882252,
             "label": "Tóth Norbert",
-            "address": "1011 Budapest, Gárdonyi Géza utca 26\/3.",
+            "address": "1011 Budapest, Gárdonyi Géza utca 26/3.",
             "note": "Csak pénteken szállítható.",
             "deadline": "",
             "weight": 700,
-            "volume": 13,
-            "﻿id": ""
+            "volume": 13
         },
         {
             "id": "row_bebc8cf46620",
@@ -161,12 +150,11 @@
             "lat": 47.7237728,
             "lon": 18.6637106,
             "label": "Szalai Péter",
-            "address": "2500 Esztergom, Bem József utca 7\/2.",
+            "address": "2500 Esztergom, Bem József utca 7/2.",
             "note": "Cégér: Zöld Ajtó Kft.",
             "deadline": "",
             "weight": 1700,
-            "volume": 5,
-            "﻿id": ""
+            "volume": 5
         },
         {
             "id": "row_9bdd22ece779",
@@ -179,8 +167,7 @@
             "note": "Kerülni a földutat.",
             "deadline": "",
             "weight": 1600,
-            "volume": 1,
-            "﻿id": ""
+            "volume": 1
         },
         {
             "id": "row_29959ab0ae0f",
@@ -193,8 +180,7 @@
             "note": "Emelőhátfal szükséges.",
             "deadline": "",
             "weight": 200,
-            "volume": 11.5,
-            "﻿id": ""
+            "volume": 11.5
         },
         {
             "id": "row_2f33b86f5535",
@@ -207,8 +193,7 @@
             "note": "Rakodás a hátsó bejáratnál.",
             "deadline": "",
             "weight": 2700,
-            "volume": 15,
-            "﻿id": ""
+            "volume": 15
         },
         {
             "id": "row_a2bb2feaf5d0",
@@ -221,8 +206,7 @@
             "note": "Rakodás a hátsó bejáratnál.",
             "deadline": "",
             "weight": 1600,
-            "volume": 4,
-            "﻿id": ""
+            "volume": 4
         },
         {
             "id": "row_4f31f93a93b7",
@@ -235,8 +219,7 @@
             "note": "Készpénzes fizetés.",
             "deadline": "",
             "weight": 3400,
-            "volume": 8.5,
-            "﻿id": ""
+            "volume": 8.5
         },
         {
             "id": "row_99a6d5734905",
@@ -249,8 +232,7 @@
             "note": "Emelőhátfal szükséges.",
             "deadline": "",
             "weight": 3600,
-            "volume": 5,
-            "﻿id": ""
+            "volume": 5
         },
         {
             "id": "row_618693f05b82",
@@ -263,8 +245,7 @@
             "note": "Emelet: 3., lift nincs.",
             "deadline": "",
             "weight": 800,
-            "volume": 2,
-            "﻿id": ""
+            "volume": 2
         },
         {
             "id": "row_9ccf0634c1f0",
@@ -277,8 +258,7 @@
             "note": "Érkezés után 10 perc várakozás.",
             "deadline": "",
             "weight": 3000,
-            "volume": 15,
-            "﻿id": ""
+            "volume": 15
         },
         {
             "id": "row_2f4fa8aab0af",
@@ -287,12 +267,11 @@
             "lat": 46.931132,
             "lon": 19.5603625,
             "label": "Fekete Tamás",
-            "address": "6000 Kecskemét, Béke utca 68\/2.",
+            "address": "6000 Kecskemét, Béke utca 68/2.",
             "note": "Tele autó, kérjük időben jelezni.",
             "deadline": "",
             "weight": 1700,
-            "volume": 6.5,
-            "﻿id": ""
+            "volume": 6.5
         },
         {
             "id": "row_5ddfb4d3aa10",
@@ -305,8 +284,7 @@
             "note": "Kerülni a földutat.",
             "deadline": "",
             "weight": 1000,
-            "volume": 9,
-            "﻿id": ""
+            "volume": 9
         },
         {
             "id": "row_5fcace16cbc3",
@@ -319,8 +297,7 @@
             "note": "Tele autó, kérjük időben jelezni.",
             "deadline": "",
             "weight": 400,
-            "volume": 11.5,
-            "﻿id": ""
+            "volume": 11.5
         },
         {
             "id": "row_0bcb93651e17",
@@ -333,8 +310,7 @@
             "note": "Készpénzes fizetés.",
             "deadline": "2025-10-17",
             "weight": 3400,
-            "volume": 13,
-            "﻿id": ""
+            "volume": 13
         },
         {
             "id": "row_ef991c49976b",
@@ -343,12 +319,11 @@
             "lat": 46.6148131,
             "lon": 19.2912764,
             "label": "Szalai Beáta",
-            "address": "6200 Kiskőrös, Petőfi Sándor utca 92\/1.",
+            "address": "6200 Kiskőrös, Petőfi Sándor utca 92/1.",
             "note": "Raklapemelő szükséges.",
             "deadline": "",
             "weight": 2400,
-            "volume": 13,
-            "﻿id": ""
+            "volume": 13
         },
         {
             "id": "row_a74cfd73e699",
@@ -361,8 +336,7 @@
             "note": "Kapucsengő: 12.",
             "deadline": "",
             "weight": 3600,
-            "volume": 1.5,
-            "﻿id": ""
+            "volume": 1.5
         },
         {
             "id": "row_5a46c59289a3",
@@ -375,8 +349,7 @@
             "note": "Rakodás a hátsó bejáratnál.",
             "deadline": "",
             "weight": 2800,
-            "volume": 4,
-            "﻿id": ""
+            "volume": 4
         },
         {
             "id": "row_a66b4187e9e3",
@@ -389,8 +362,7 @@
             "note": "Emelet: 3., lift nincs.",
             "deadline": "",
             "weight": 3500,
-            "volume": 6,
-            "﻿id": ""
+            "volume": 6
         },
         {
             "id": "row_ee3553698617",
@@ -403,8 +375,7 @@
             "note": "Kutyára figyelni!",
             "deadline": "2025-10-17",
             "weight": 2000,
-            "volume": 7.5,
-            "﻿id": ""
+            "volume": 7.5
         },
         {
             "id": "row_69f3bbe3125f",
@@ -417,8 +388,7 @@
             "note": "Tele autó, kérjük időben jelezni.",
             "deadline": "",
             "weight": 1300,
-            "volume": 2,
-            "﻿id": ""
+            "volume": 2
         },
         {
             "id": "row_9d0c20175049",
@@ -427,12 +397,11 @@
             "lat": 46.6738417,
             "lon": 21.0918552,
             "label": "Molnár Katalin",
-            "address": "5600 Békéscsaba, Bartók Béla út 2\/3.",
+            "address": "5600 Békéscsaba, Bartók Béla út 2/3.",
             "note": "1 órával előtte hívni.",
             "deadline": "",
             "weight": 1600,
-            "volume": 2,
-            "﻿id": ""
+            "volume": 2
         },
         {
             "id": "row_b7ad9c29c7a9",
@@ -445,8 +414,7 @@
             "note": "Csak előzetes egyeztetéssel.",
             "deadline": "",
             "weight": 200,
-            "volume": 10.5,
-            "﻿id": ""
+            "volume": 10.5
         },
         {
             "id": "row_f824bd142dbf",
@@ -459,8 +427,7 @@
             "note": "Készpénzes fizetés.",
             "deadline": "",
             "weight": 3300,
-            "volume": 4,
-            "﻿id": ""
+            "volume": 4
         },
         {
             "id": "row_1a0bb977ab16",
@@ -473,8 +440,7 @@
             "note": "Kapucsengő: 12.",
             "deadline": "",
             "weight": 2100,
-            "volume": 8,
-            "﻿id": ""
+            "volume": 8
         },
         {
             "id": "row_203bb3bbae97",
@@ -487,8 +453,7 @@
             "note": "Emelőhátfal szükséges.",
             "deadline": "",
             "weight": 1700,
-            "volume": 3.5,
-            "﻿id": ""
+            "volume": 3.5
         },
         {
             "id": "row_33ee58274ede",
@@ -501,8 +466,7 @@
             "note": "Kerülni a földutat.",
             "deadline": "",
             "weight": 2200,
-            "volume": 14,
-            "﻿id": ""
+            "volume": 14
         },
         {
             "id": "row_06cbae50fa20",
@@ -515,8 +479,7 @@
             "note": "Raklapemelő szükséges.",
             "deadline": "",
             "weight": 1000,
-            "volume": 5,
-            "﻿id": ""
+            "volume": 5
         },
         {
             "id": "row_907e99bb7388",
@@ -529,8 +492,7 @@
             "note": "Udvarba beállni tilos.",
             "deadline": "",
             "weight": 3000,
-            "volume": 9.5,
-            "﻿id": ""
+            "volume": 9.5
         },
         {
             "id": "row_ff90601982a7",
@@ -543,8 +505,7 @@
             "note": "Kapu kód: 1923#.",
             "deadline": "",
             "weight": 2700,
-            "volume": 5,
-            "﻿id": ""
+            "volume": 5
         },
         {
             "id": "row_84198e8d7f9e",
@@ -557,8 +518,7 @@
             "note": "Cégér: Zöld Ajtó Kft.",
             "deadline": "",
             "weight": 4000,
-            "volume": 2,
-            "﻿id": ""
+            "volume": 2
         },
         {
             "id": "row_04227b05e091",
@@ -571,8 +531,7 @@
             "note": "Kapu kód: 1923#.",
             "deadline": "",
             "weight": 500,
-            "volume": 1.5,
-            "﻿id": ""
+            "volume": 1.5
         },
         {
             "id": "row_8362e2503560",
@@ -585,8 +544,7 @@
             "note": "Munkaidőn kívül nem átvehető.",
             "deadline": "",
             "weight": 2900,
-            "volume": 4,
-            "﻿id": ""
+            "volume": 4
         },
         {
             "id": "row_87a47607c60d",
@@ -599,8 +557,7 @@
             "note": "Kutyára figyelni!",
             "deadline": "",
             "weight": 500,
-            "volume": 11.5,
-            "﻿id": ""
+            "volume": 11.5
         },
         {
             "id": "row_61c03a3ebf0f",
@@ -613,8 +570,7 @@
             "note": "Készpénzes fizetés.",
             "deadline": "",
             "weight": 3100,
-            "volume": 4.5,
-            "﻿id": ""
+            "volume": 4.5
         },
         {
             "id": "row_4cda267af2a6",
@@ -627,8 +583,7 @@
             "note": "Raklapemelő szükséges.",
             "deadline": "",
             "weight": 2600,
-            "volume": 5,
-            "﻿id": ""
+            "volume": 5
         },
         {
             "id": "row_44683641f9a4",
@@ -641,8 +596,7 @@
             "note": "1 órával előtte hívni.",
             "deadline": "",
             "weight": 2100,
-            "volume": 6.5,
-            "﻿id": ""
+            "volume": 6.5
         },
         {
             "id": "row_084cd19f238f",
@@ -655,8 +609,7 @@
             "note": "Kapu kód: 1923#.",
             "deadline": "",
             "weight": 800,
-            "volume": 4.5,
-            "﻿id": ""
+            "volume": 4.5
         },
         {
             "id": "row_affd562dfeab",
@@ -669,8 +622,7 @@
             "note": "Csak előzetes egyeztetéssel.",
             "deadline": "",
             "weight": 4000,
-            "volume": 4,
-            "﻿id": ""
+            "volume": 4
         },
         {
             "id": "row_c411f877902c",
@@ -683,8 +635,7 @@
             "note": "Portán bejelentkezni.",
             "deadline": "",
             "weight": 1700,
-            "volume": 1.5,
-            "﻿id": ""
+            "volume": 1.5
         },
         {
             "id": "row_479d711300fb",
@@ -697,8 +648,7 @@
             "note": "Kerülni a földutat.",
             "deadline": "",
             "weight": 1200,
-            "volume": 13.5,
-            "﻿id": ""
+            "volume": 13.5
         }
     ],
     "round_meta": {
