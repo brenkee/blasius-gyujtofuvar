@@ -17,6 +17,22 @@
             "sort_mode": ""
         },
         {
+            "id": "row_bc7af8ce7665",
+            "round": 1,
+            "city": "Budapest",
+            "lat": 47.5826789,
+            "lon": 19.0882252,
+            "label": "Tóth Norbert",
+            "address": "1011 Budapest, Gárdonyi Géza utca 26\/3.",
+            "note": "Csak pénteken szállítható.",
+            "deadline": "",
+            "weight": 700,
+            "volume": 13,
+            "custom_order": "",
+            "planned_date": "",
+            "sort_mode": ""
+        },
+        {
             "id": "row_bb9060682530",
             "round": 1,
             "city": "Budaörs",
@@ -33,17 +49,17 @@
             "sort_mode": ""
         },
         {
-            "id": "row_bc7af8ce7665",
-            "round": 1,
-            "city": "Budapest",
-            "lat": 47.5826789,
-            "lon": 19.0882252,
-            "label": "Tóth Norbert",
-            "address": "1011 Budapest, Gárdonyi Géza utca 26\/3.",
-            "note": "Csak pénteken szállítható.",
+            "id": "row_c0841bf03e76",
+            "round": 3,
+            "city": "Siófok",
+            "lat": 46.8981297,
+            "lon": 18.0477158,
+            "label": "Bognár Júlia",
+            "address": "8600 Siófok, Gárdonyi Géza utca 170.",
+            "note": "Kapucsengő: 12.",
             "deadline": "",
-            "weight": 700,
-            "volume": 13,
+            "weight": 1400,
+            "volume": 5.5,
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -81,22 +97,6 @@
             "sort_mode": ""
         },
         {
-            "id": "row_c0841bf03e76",
-            "round": 3,
-            "city": "Siófok",
-            "lat": 46.8981297,
-            "lon": 18.0477158,
-            "label": "Bognár Júlia",
-            "address": "8600 Siófok, Gárdonyi Géza utca 170.",
-            "note": "Kapucsengő: 12.",
-            "deadline": "",
-            "weight": 1400,
-            "volume": 5.5,
-            "custom_order": "",
-            "planned_date": "",
-            "sort_mode": ""
-        },
-        {
             "id": "row_0a12e6373557",
             "round": 4,
             "city": "Balatonalmádi",
@@ -129,22 +129,6 @@
             "sort_mode": ""
         },
         {
-            "id": "row_7996d02f8ba4",
-            "round": 4,
-            "city": "Tapolca",
-            "lat": 46.8908069,
-            "lon": 17.4381375,
-            "label": "Fehér István",
-            "address": "8300 Tapolca",
-            "note": "Kerülni a földutat.",
-            "deadline": "",
-            "weight": 3900,
-            "volume": 10.5,
-            "custom_order": "",
-            "planned_date": "",
-            "sort_mode": ""
-        },
-        {
             "id": "row_65a1195a8faf",
             "round": 4,
             "city": "Székesfehérvár",
@@ -155,6 +139,22 @@
             "note": "Készpénzes fizetés.",
             "deadline": "",
             "weight": 2000,
+            "volume": 10.5,
+            "custom_order": "",
+            "planned_date": "",
+            "sort_mode": ""
+        },
+        {
+            "id": "row_7996d02f8ba4",
+            "round": 4,
+            "city": "Tapolca",
+            "lat": 46.8908069,
+            "lon": 17.4381375,
+            "label": "Fehér István",
+            "address": "8300 Tapolca",
+            "note": "Kerülni a földutat.",
+            "deadline": "",
+            "weight": 3900,
             "volume": 10.5,
             "custom_order": "",
             "planned_date": "",
@@ -792,7 +792,7 @@
                 "row_bc7af8ce7665"
             ],
             "planned_date": "Hétfő",
-            "sort_mode": "custom"
+            "sort_mode": "default"
         },
         "2": {
             "custom_order": [
@@ -809,14 +809,14 @@
                 "row_b41b0cf7492d",
                 "row_c0841bf03e76"
             ],
-            "sort_mode": "custom"
+            "sort_mode": "default"
         },
         "4": {
             "custom_order": [
                 "row_0a12e6373557",
                 "row_8f49aabdf602",
-                "row_7996d02f8ba4",
-                "row_65a1195a8faf"
+                "row_65a1195a8faf",
+                "row_7996d02f8ba4"
             ],
             "sort_mode": "custom"
         },
@@ -834,13 +834,6 @@
             ],
             "planned_date": "Kedd",
             "sort_mode": "custom"
-        },
-        "9": {
-            "custom_order": [
-                "row_f824bd142dbf",
-                "row_1a0bb977ab16"
-            ],
-            "sort_mode": "default"
         }
     }
 }

@@ -301,11 +301,11 @@
             "pin_counter_title": "Aktív pin jelölők száma"
         },
         "round": {
-            "planned_date_label": "Tervezett dátum",
+            "planned_date_label": "Megjegyzés",
             "planned_date_hint": "Add meg a kör tervezett dátumát",
             "planned_time_label": "Tervezett idő",
             "planned_time_hint": "Add meg a kör tervezett idejét",
-            "sort_mode_label": "Rendezési mód",
+            "sort_mode_label": "Rendezés",
             "sort_mode_default": "Alapértelmezett",
             "sort_mode_custom": "Egyéni",
             "sort_mode_custom_hint": "Fogd és vidd a címeket a sorrend módosításához",
