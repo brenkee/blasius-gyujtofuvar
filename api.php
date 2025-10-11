@@ -546,7 +546,11 @@ if ($action === 'import_csv') {
 
     $typeRaw = isset($assoc['type']) ? trim((string)$assoc['type']) : '';
     unset($assoc['type']);
-    $typeNormalized = strtolower($typeRaw);
+    $typeNormalized = $typeRaw === '' ? 'address' : strtolower($typeRaw);
+    if ($typeNormalized !== 'address' && $typeNormalized !== 'route') {
+      fclose($fh);
+      $sendJsonError("Ismeretlen típus a(z) {$rowNumber}. sorban (érték: {$typeRaw}).");
+    }
 
     $idRaw = isset($assoc['id']) ? trim((string)$assoc['id']) : '';
     unset($assoc['id']);
