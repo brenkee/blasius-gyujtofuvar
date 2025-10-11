@@ -1,20 +1,17 @@
 {
     "items": [
         {
-            "id": "row_0xff5br0dyfg",
-            "round": 0,
+            "id": "row_qzstoh52hj",
             "city": "",
             "lat": null,
             "lon": null,
+            "round": 0,
             "label": "",
             "address": "",
             "note": "",
             "deadline": "",
             "weight": null,
-            "volume": null,
-            "custom_order": "",
-            "planned_date": "",
-            "sort_mode": ""
+            "volume": null
         },
         {
             "id": "row_bc7af8ce7665",
@@ -44,6 +41,22 @@
             "deadline": "",
             "weight": 400,
             "volume": 1,
+            "custom_order": "",
+            "planned_date": "",
+            "sort_mode": ""
+        },
+        {
+            "id": "row_0xff5br0dyfg",
+            "round": 1,
+            "city": "Tokod",
+            "lat": 47.7237728,
+            "lon": 18.6637106,
+            "label": "teszt",
+            "address": "2500 Esztergom, Bem József utca 7\/2.",
+            "note": "teszt",
+            "deadline": "",
+            "weight": null,
+            "volume": null,
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -172,22 +185,6 @@
             "deadline": "",
             "weight": 1600,
             "volume": 1,
-            "custom_order": "",
-            "planned_date": "",
-            "sort_mode": ""
-        },
-        {
-            "id": "row_bebc8cf46620",
-            "round": 5,
-            "city": "Tokod",
-            "lat": 47.7237728,
-            "lon": 18.6637106,
-            "label": "Szalai Péter",
-            "address": "2500 Esztergom, Bem József utca 7\/2.",
-            "note": "Cégér: Zöld Ajtó Kft.",
-            "deadline": "",
-            "weight": 1700,
-            "volume": 5,
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -789,7 +786,8 @@
         "1": {
             "custom_order": [
                 "row_bb9060682530",
-                "row_bc7af8ce7665"
+                "row_bc7af8ce7665",
+                "row_0xff5br0dyfg"
             ],
             "planned_date": "Hétfő",
             "sort_mode": "default"
@@ -823,7 +821,6 @@
         "5": {
             "custom_order": [
                 "row_9bdd22ece779",
-                "row_bebc8cf46620",
                 "row_2f33b86f5535",
                 "row_a2bb2feaf5d0",
                 "row_4f31f93a93b7",
