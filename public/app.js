@@ -17,7 +17,8 @@
     activeEditor: null,
     conflictNotified: new Set(),
     conflictOverlay: null,
-    markerOverlapCounts: new Map()
+    markerOverlapCounts: new Map(),
+    displayIndexById: new Map()
   };
 
   const history = [];
@@ -1166,26 +1167,60 @@
   function updatePinCount(){ if (pinCountEl) pinCountEl.textContent = markerLayer.getLayers().length.toString(); }
 
   function refreshMarkerOverlapIndicators(){
-    const coords = new Map();
     const perId = new Map();
+    const coordsList = [];
     state.items.forEach(it => {
       const lat = Number(it?.lat);
       const lon = Number(it?.lon);
       if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
-      const key = `${lat.toFixed(6)}|${lon.toFixed(6)}`;
-      const arr = coords.get(key);
-      if (arr) arr.push(it.id);
-      else coords.set(key, [it.id]);
+      coordsList.push({id: it.id, lat, lon});
     });
-    coords.forEach(ids => {
-      const count = ids.length;
-      ids.forEach(id => perId.set(id, count));
-    });
+    const thresholdMeters = Math.max(0, cfgNumber('ui.marker.overlap_badge.distance_threshold_meters', 0) || 0);
+    if (thresholdMeters <= 0) {
+      const coords = new Map();
+      coordsList.forEach(entry => {
+        const key = `${entry.lat.toFixed(6)}|${entry.lon.toFixed(6)}`;
+        const arr = coords.get(key);
+        if (arr) arr.push(entry.id);
+        else coords.set(key, [entry.id]);
+      });
+      coords.forEach(ids => {
+        const count = ids.length;
+        ids.forEach(id => perId.set(id, count));
+      });
+    } else {
+      const thresholdKm = thresholdMeters / 1000;
+      const visited = new Set();
+      for (let i = 0; i < coordsList.length; i++) {
+        const start = coordsList[i];
+        if (!start || visited.has(start.id)) continue;
+        const cluster = [];
+        const queue = [start];
+        visited.add(start.id);
+        while (queue.length) {
+          const current = queue.pop();
+          if (!current) continue;
+          cluster.push(current);
+          for (let j = 0; j < coordsList.length; j++) {
+            const candidate = coordsList[j];
+            if (!candidate || visited.has(candidate.id)) continue;
+            const distKm = haversineKm(current.lat, current.lon, candidate.lat, candidate.lon);
+            if (distKm <= thresholdKm) {
+              visited.add(candidate.id);
+              queue.push(candidate);
+            }
+          }
+        }
+        const size = cluster.length || 1;
+        cluster.forEach(entry => perId.set(entry.id, size));
+      }
+    }
     state.markerOverlapCounts = perId;
     state.items.forEach((it, idx)=>{
       const mk = state.markersById.get(it.id);
       if (!mk) return;
-      mk.setIcon(iconForItem(it, idx));
+      const iconIndex = displayIndexZeroBased(it, idx);
+      mk.setIcon(iconForItem(it, iconIndex));
     });
   }
 
@@ -1327,6 +1362,17 @@
       iconAnchor:[anchorX, anchorY],
       popupAnchor:[popupAnchorX, popupAnchorY]
     });
+  }
+
+  function displayIndexZeroBased(it, fallbackIndex){
+    if (!it || !it.id) return fallbackIndex;
+    const map = state.displayIndexById;
+    if (map instanceof Map){
+      const raw = map.get(it.id);
+      const num = Number(raw);
+      if (Number.isFinite(num) && num > 0) return num - 1;
+    }
+    return fallbackIndex;
   }
 
   function iconForItem(it, index){
@@ -1988,7 +2034,8 @@
 
   function upsertMarker(it, index){
     if (it.lat==null || it.lon==null) return;
-    const icon = iconForItem(it, index);
+    const iconIndex = displayIndexZeroBased(it, index);
+    const icon = iconForItem(it, iconIndex);
     let mk = state.markersById.get(it.id);
     if (!mk){
       mk = L.marker([it.lat, it.lon], {icon}).addTo(markerLayer);
@@ -2059,10 +2106,22 @@
 
   function renumberAll(){
     let i=0;
+    const displayMap = new Map();
     groupsEl.querySelectorAll('.row').forEach(row=>{
       const nEl = row.querySelector('[data-num]'); if (!nEl) return;
-      nEl.textContent = String(++i).padStart(2,'0');
+      const isPlaceholder = row.dataset.placeholder === 'true';
+      if (isPlaceholder){
+        nEl.textContent = '';
+        nEl.style.background = 'transparent';
+        nEl.style.color = 'transparent';
+        nEl.style.visibility = 'hidden';
+        return;
+      }
+      nEl.style.visibility = '';
       const id = row.dataset.rowId;
+      const idx = ++i;
+      nEl.textContent = String(idx).padStart(2,'0');
+      if (id) displayMap.set(id, idx);
       const it = state.items.find(x=>x.id===id);
       if (it){
         const c = colorForRound(+it.round||0);
@@ -2070,9 +2129,13 @@
         nEl.style.color = idealTextColor(c);
       }
     });
+    state.displayIndexById = displayMap;
     state.items.forEach((it,idx)=>{
       const mk = state.markersById.get(it.id);
-      if (mk){ mk.setIcon(iconForItem(it, idx)); }
+      if (mk){
+        const iconIndex = displayIndexZeroBased(it, idx);
+        mk.setIcon(iconForItem(it, iconIndex));
+      }
     });
     requestMarkerOverlapRefresh();
   }
