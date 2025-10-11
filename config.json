@@ -134,7 +134,8 @@
                 "stroke_width": 1,
                 "text_color": "#000",
                 "font_family": "Arial,Helvetica,sans-serif",
-                "font_weight": 700
+                "font_weight": 700,
+                "distance_threshold_meters": 15
             },
             "focus_ring_radius": 20000,
             "focus_ring_color": "auto",
