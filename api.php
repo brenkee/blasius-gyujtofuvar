@@ -453,12 +453,20 @@ if ($action === 'import_csv') {
     if ($mid) { $metricIds[$mid] = true; }
   }
 
+  $addressColumnLookup = ['city' => true, 'lat' => true, 'lon' => true, 'collapsed' => true];
+  foreach (array_keys($fieldMap) as $fid) {
+    $addressColumnLookup[$fid] = true;
+  }
+  foreach (array_keys($metricIds) as $mid) {
+    $addressColumnLookup[$mid] = true;
+  }
+
   $canonicalLookup = [];
   $registerCanonical = function($key) use (&$canonicalLookup) {
     if ($key === null) return;
     $canonicalLookup[strtolower($key)] = $key;
   };
-  foreach (['id', 'round', 'city', 'lat', 'lon', 'collapsed'] as $baseKey) {
+  foreach (['type', 'id', 'round', 'city', 'lat', 'lon'] as $baseKey) {
     $registerCanonical($baseKey);
   }
   foreach (array_keys($fieldMap) as $fid) {
@@ -520,6 +528,7 @@ if ($action === 'import_csv') {
 
   $rowNumber = 1;
   $items = [];
+  $routeMetaUpdates = [];
   while (($row = fgetcsv($fh, 0, $delimiter)) !== false) {
     $rowNumber++;
     if (!is_array($row)) { continue; }
@@ -535,18 +544,12 @@ if ($action === 'import_csv') {
       $assoc[$colName] = $row[$idx] ?? '';
     }
 
+    $typeRaw = isset($assoc['type']) ? trim((string)$assoc['type']) : '';
+    unset($assoc['type']);
+    $typeNormalized = strtolower($typeRaw);
+
     $idRaw = isset($assoc['id']) ? trim((string)$assoc['id']) : '';
     unset($assoc['id']);
-    if ($idRaw === '') {
-      $id = $makeId();
-    } else {
-      if (isset($usedIds[$idRaw])) {
-        $id = $makeId();
-      } else {
-        $id = $idRaw;
-        $usedIds[$id] = true;
-      }
-    }
 
     $roundRaw = isset($assoc['round']) ? trim((string)$assoc['round']) : '';
     unset($assoc['round']);
@@ -560,15 +563,40 @@ if ($action === 'import_csv') {
       $round = (int)$roundRaw;
     }
 
-    $item = ['id' => $id, 'round' => $round];
-
-    if (array_key_exists('collapsed', $assoc)) {
-      $collapsedRaw = strtolower(trim((string)$assoc['collapsed']));
-      $item['collapsed'] = !in_array($collapsedRaw, ['0','false','no','nem',''], true);
-      unset($assoc['collapsed']);
-    } else {
-      $item['collapsed'] = true;
+    if ($typeNormalized === 'route') {
+      $roundKey = (string)$round;
+      $meta = [];
+      $hasValue = false;
+      foreach ($assoc as $key => $value) {
+        if ($key === null) continue;
+        $keyStr = (string)$key;
+        if ($keyStr === '' || strpos($keyStr, '_') === 0) continue;
+        if (isset($addressColumnLookup[$keyStr])) continue;
+        $val = is_scalar($value) ? trim((string)$value) : '';
+        if ($val === '') continue;
+        $meta[$keyStr] = $val;
+        $hasValue = true;
+      }
+      if ($hasValue) {
+        $routeMetaUpdates[$roundKey] = $meta;
+      } else {
+        $routeMetaUpdates[$roundKey] = [];
+      }
+      continue;
     }
+
+    if ($idRaw === '') {
+      $id = $makeId();
+    } else {
+      if (isset($usedIds[$idRaw])) {
+        $id = $makeId();
+      } else {
+        $id = $idRaw;
+        $usedIds[$id] = true;
+      }
+    }
+
+    $item = ['id' => $id, 'round' => $round];
 
     if (array_key_exists('city', $assoc)) {
       $item['city'] = trim((string)$assoc['city']);
@@ -631,6 +659,7 @@ if ($action === 'import_csv') {
       if ($key === null) continue;
       $keyStr = (string)$key;
       if ($keyStr === '' || strpos($keyStr, '_') === 0 || array_key_exists($keyStr, $item)) continue;
+      if (isset($addressColumnLookup[$keyStr])) continue;
       $item[$keyStr] = is_scalar($value) ? trim((string)$value) : $value;
     }
 
@@ -640,6 +669,19 @@ if ($action === 'import_csv') {
 
   $roundMeta = $existingRoundMeta;
   if (!is_array($roundMeta)) { $roundMeta = []; }
+
+  $baseRoundMeta = $importMode === 'append' ? $roundMeta : [];
+  if (!is_array($baseRoundMeta)) { $baseRoundMeta = []; }
+  foreach ($routeMetaUpdates as $roundKey => $meta) {
+    $key = (string)$roundKey;
+    if ($key === '') continue;
+    if (!is_array($meta) || empty($meta)) {
+      unset($baseRoundMeta[$key]);
+      continue;
+    }
+    $baseRoundMeta[$key] = $meta;
+  }
+  $roundMeta = normalize_round_meta($baseRoundMeta);
 
   $finalItems = $importMode === 'append' ? array_merge($existingItems, $items) : $items;
 

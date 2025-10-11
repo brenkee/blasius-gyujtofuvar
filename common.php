@@ -377,8 +377,12 @@ $STATE_LOCK_FILE = __DIR__ . '/' . ($CFG['files']['lock_file'] ?? 'fuvar_state.l
 function generate_export_csv($cfg, $dataFile, $roundFilter = null, &$error = null) {
   $error = null;
 
-  [$items] = data_store_read($dataFile);
+  [$items, $roundMeta] = data_store_read($dataFile);
   $items = array_values(array_filter(is_array($items) ? $items : []));
+  $roundMeta = is_array($roundMeta) ? $roundMeta : [];
+  if (!empty($roundMeta)) {
+    ksort($roundMeta, SORT_STRING);
+  }
 
   $autoSort = (bool)($cfg['app']['auto_sort_by_round'] ?? true);
   $zeroBottom = (bool)($cfg['app']['round_zero_at_bottom'] ?? true);
@@ -410,11 +414,18 @@ function generate_export_csv($cfg, $dataFile, $roundFilter = null, &$error = nul
       $columns[] = $key;
     }
   };
+  $addColumn('type');
   $addColumn('id');
   $addColumn('round');
   foreach ($fieldIds as $fid) { $addColumn($fid); }
   foreach ($metricIds as $mid) { $addColumn($mid); }
-  foreach (['city','lat','lon','collapsed'] as $extra) { $addColumn($extra); }
+  foreach (['city','lat','lon'] as $extra) { $addColumn($extra); }
+  foreach ($roundMeta as $meta) {
+    if (!is_array($meta)) continue;
+    foreach ($meta as $metaKey => $_value) {
+      $addColumn($metaKey);
+    }
+  }
 
   foreach ($items as $it) {
     if (!is_array($it)) continue;
@@ -429,7 +440,7 @@ function generate_export_csv($cfg, $dataFile, $roundFilter = null, &$error = nul
     }
   }
   if (empty($columns)) {
-    $columns = ['id','round'];
+    $columns = ['type','id','round'];
   }
 
   $delimiter = ';';
@@ -439,25 +450,30 @@ function generate_export_csv($cfg, $dataFile, $roundFilter = null, &$error = nul
     return null;
   }
 
-  fputcsv($fh, $columns, $delimiter);
-  foreach ($items as $it) {
-    if (!is_array($it)) continue;
-    if ($roundFilter !== null && (int)($it['round'] ?? 0) !== $roundFilter) {
-      continue;
-    }
+  $metricIdSet = [];
+  foreach ($metricIds as $mid) {
+    $metricIdSet[$mid] = true;
+  }
+
+  $writeRow = function(array $record, $type) use ($columns, $delimiter, $fh, $metricIdSet) {
     $row = [];
     foreach ($columns as $col) {
-      if ($col === null || $col === '') { $row[] = ''; continue; }
-      if (!array_key_exists($col, $it) || $it[$col] === null) {
+      if ($col === null || $col === '') {
         $row[] = '';
         continue;
       }
-      $value = $it[$col];
+      if ($col === 'type') {
+        $row[] = $type;
+        continue;
+      }
+      if (!array_key_exists($col, $record) || $record[$col] === null) {
+        $row[] = '';
+        continue;
+      }
+      $value = $record[$col];
       if ($col === 'round') {
         $row[] = (string)((int)$value);
-      } elseif ($col === 'collapsed') {
-        $row[] = (!empty($value) && $value !== '0' && $value !== 0 && $value !== 'false') ? '1' : '0';
-      } elseif ($col === 'lat' || $col === 'lon' || in_array($col, $metricIds, true)) {
+      } elseif ($col === 'lat' || $col === 'lon' || isset($metricIdSet[$col])) {
         if ($value === '') {
           $row[] = '';
         } elseif (is_numeric($value)) {
@@ -470,6 +486,30 @@ function generate_export_csv($cfg, $dataFile, $roundFilter = null, &$error = nul
       }
     }
     fputcsv($fh, $row, $delimiter);
+  };
+
+  fputcsv($fh, $columns, $delimiter);
+  foreach ($items as $it) {
+    if (!is_array($it)) continue;
+    if ($roundFilter !== null && (int)($it['round'] ?? 0) !== $roundFilter) {
+      continue;
+    }
+    $record = $it;
+    $record['type'] = 'address';
+    $writeRow($record, 'address');
+  }
+
+  foreach ($roundMeta as $roundId => $meta) {
+    if (!is_array($meta) || empty($meta)) continue;
+    $round = (int)$roundId;
+    if ($roundFilter !== null && $round !== $roundFilter) {
+      continue;
+    }
+    $record = $meta;
+    $record['id'] = 'route_' . $roundId;
+    $record['round'] = $round;
+    $record['type'] = 'route';
+    $writeRow($record, 'route');
   }
 
   rewind($fh);
@@ -662,23 +702,63 @@ function normalize_round_meta($roundMeta) {
   foreach ($roundMeta as $rid => $meta) {
     if (!is_array($meta)) continue;
     $key = (string)$rid;
+    if ($key === '') continue;
     $entry = [];
-    if (array_key_exists('planned_date', $meta)) {
-      $val = trim((string)$meta['planned_date']);
-      if ($val !== '') {
+    foreach ($meta as $metaKey => $value) {
+      if ($metaKey === null) continue;
+      $metaKeyStr = (string)$metaKey;
+      if ($metaKeyStr === '') continue;
+      if ($metaKeyStr === 'planned_date') {
+        $val = trim((string)$value);
+        if ($val === '') continue;
         if (function_exists('mb_substr')) {
           $val = mb_substr($val, 0, 120);
         } else {
           $val = substr($val, 0, 120);
         }
-        $entry['planned_date'] = $val;
+        $entry[$metaKeyStr] = $val;
+        continue;
+      }
+      if (is_scalar($value)) {
+        $val = trim((string)$value);
+        if ($val === '') continue;
+        if (function_exists('mb_substr')) {
+          $val = mb_substr($val, 0, 200);
+        } else {
+          $val = substr($val, 0, 200);
+        }
+        $entry[$metaKeyStr] = $val;
       }
     }
     if (!empty($entry)) {
+      ksort($entry);
       $out[$key] = $entry;
     }
   }
+  if (!empty($out)) {
+    ksort($out, SORT_STRING);
+  }
   return $out;
+}
+
+function normalize_items(array $items) {
+  $normalized = [];
+  foreach ($items as $item) {
+    if (!is_array($item)) continue;
+    $clean = [];
+    foreach ($item as $key => $value) {
+      if ($key === null) continue;
+      $keyStr = is_string($key) ? $key : (string)$key;
+      $keyStr = preg_replace('/^\xEF\xBB\xBF/u', '', $keyStr);
+      if ($keyStr === '') continue;
+      if ($keyStr === 'collapsed' || $keyStr === 'type') continue;
+      $clean[$keyStr] = $value;
+    }
+    if (!empty($clean)) {
+      $normalized[] = $clean;
+    }
+  }
+  return $normalized;
 }
 
 function data_store_read($file) {
@@ -699,6 +779,7 @@ function data_store_read($file) {
   if (isset($decoded['items']) && is_array($decoded['items'])) {
     $items = array_values($decoded['items']);
   }
+  $items = normalize_items($items);
   if (isset($decoded['round_meta']) && is_array($decoded['round_meta'])) {
     $roundMeta = normalize_round_meta($decoded['round_meta']);
   }
@@ -706,9 +787,10 @@ function data_store_read($file) {
 }
 
 function data_store_write($file, $items, $roundMeta) {
+  $normalizedItems = normalize_items(is_array($items) ? $items : []);
   $normalizedMeta = normalize_round_meta($roundMeta);
   $payload = [
-    'items' => array_values(is_array($items) ? $items : []),
+    'items' => array_values($normalizedItems),
     'round_meta' => !empty($normalizedMeta) ? $normalizedMeta : (object)[]
   ];
   return file_put_contents($file, json_encode($payload, JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT));
