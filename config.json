@@ -194,6 +194,24 @@
         "max_waypoints": 10,
         "geocode_origin_on_start": true
     },
+/*
+türkiz #01E0EB
+    közép kék #0063E5
+sötét kék #0B009E
+    citrom #F5E600
+    narancs #FF9500
+    piros #FF2801
+    barna #8C5332
+    neon zöld #00FF40
+    camo #536F3B
+    lila #891BF6
+    orgona #F68CFF
+    silver #B8B8B8
+    navy #201F5C
+magenta #FF1C7B
+    közép zöld #03A336
+*/
+
     "rounds": [
         {
             "id": 0,
@@ -203,62 +221,62 @@
         {
             "id": 1,
             "label": "Pest Megye: M0",
-            "color": "#f1c40f"
+            "color": "#03A336"
         },
         {
             "id": 2,
             "label": "Berkenye: M2",
-            "color": "#1abc9c"
+            "color": "#8C5332"
         },
         {
             "id": 3,
             "label": "Balaton Déli part: M7",
-            "color": "#2ecc71"
+            "color": "#FF9500"
         },
         {
             "id": 4,
             "label": "Balaton Északi part: M7",
-            "color": "#3498db"
+            "color": "#F68CFF"
         },
         {
             "id": 5,
             "label": "Győr: M1",
-            "color": "#9b59b6"
+            "color": "#201F5C"
         },
         {
             "id": 6,
             "label": "Kecskemét: M5",
-            "color": "#34495e"
+            "color": "#891BF6"
         },
         {
             "id": 7,
             "label": "Szeged: M5",
-            "color": "#d35400"
+            "color": "#00FF40"
         },
         {
             "id": 8,
             "label": "Szolnok: M4",
-            "color": "#e74c3c"
+            "color": "#F5E600"
         },
         {
             "id": 9,
             "label": "Hatvan: M3",
-            "color": "#c0392b"
+            "color": "#B8B8B8"
         },
         {
             "id": 10,
             "label": "Salgótarján: M3",
-            "color": "#8e44ad"
+            "color": "#536F3B"
         },
         {
             "id": 11,
             "label": "Miskolc: M3",
-            "color": "#bdc3c7"
+            "color": "#0063E5"
         },
         {
             "id": 12,
             "label": "Szekszárd: M6",
-            "color": "#2c3e50"
+            "color": "#FF2801"
         }
     ],
     "text": {

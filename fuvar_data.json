@@ -17,22 +17,6 @@
             "sort_mode": ""
         },
         {
-            "id": "row_bc7af8ce7665",
-            "round": 1,
-            "city": "Budapest",
-            "lat": 47.5826789,
-            "lon": 19.0882252,
-            "label": "Tóth Norbert",
-            "address": "1011 Budapest, Gárdonyi Géza utca 26\/3.",
-            "note": "Csak pénteken szállítható.",
-            "deadline": "",
-            "weight": 700,
-            "volume": 13,
-            "custom_order": "",
-            "planned_date": "",
-            "sort_mode": ""
-        },
-        {
             "id": "row_bb9060682530",
             "round": 1,
             "city": "Budaörs",
@@ -44,6 +28,22 @@
             "deadline": "",
             "weight": 400,
             "volume": 1,
+            "custom_order": "",
+            "planned_date": "",
+            "sort_mode": ""
+        },
+        {
+            "id": "row_bc7af8ce7665",
+            "round": 1,
+            "city": "Budapest",
+            "lat": 47.5826789,
+            "lon": 19.0882252,
+            "label": "Tóth Norbert",
+            "address": "1011 Budapest, Gárdonyi Géza utca 26\/3.",
+            "note": "Csak pénteken szállítható.",
+            "deadline": "",
+            "weight": 700,
+            "volume": 13,
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
@@ -791,7 +791,8 @@
                 "row_bb9060682530",
                 "row_bc7af8ce7665"
             ],
-            "sort_mode": "default"
+            "planned_date": "HÉTFŐ",
+            "sort_mode": "custom"
         },
         "2": {
             "custom_order": [
