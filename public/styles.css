@@ -23,16 +23,36 @@ h1{font-size:18px;margin:0 0 6px}
 .groups{display:grid;gap:12px}
 .group{border:1px solid var(--border);border-radius:12px;background:var(--panel)}
 .group-header{display:flex;flex-direction:column;gap:8px;padding:10px;border-bottom:1px solid var(--border);background:calc(var(--panel) + 0)}
-.group-title{font-weight:800}
+.group-title{font-weight:800;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.group-drag-indicator{font-size:14px;color:var(--muted);display:inline-flex;align-items:center;justify-content:center}
+.group-controls{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
 .group-tools{display:flex;gap:6px;flex-wrap:wrap}
 .group-planned-date{display:flex;gap:8px;flex-wrap:nowrap;align-items:center}
 .group-planned-date .planned-date-label{font-size:12px;font-weight:600;color:var(--muted);white-space:nowrap}
 .group-planned-date input{min-width:140px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text);transition:background-color .3s ease,border-color .3s ease}
 .planned-date-input.saved-flash{background:rgba(34,197,94,0.25);border-color:rgba(16,185,129,0.5)}
+.group-planned-time{display:flex;gap:8px;flex-wrap:nowrap;align-items:center}
+.group-planned-time .planned-time-label{font-size:12px;font-weight:600;color:var(--muted);white-space:nowrap}
+.group-planned-time input{min-width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text);transition:background-color .3s ease,border-color .3s ease}
+.planned-time-input.saved-flash{background:rgba(34,197,94,0.25);border-color:rgba(16,185,129,0.5)}
+.group-sort{display:flex;gap:8px;align-items:center}
+.group-sort .sort-mode-label{font-size:12px;font-weight:600;color:var(--muted);white-space:nowrap}
+.group-sort select{min-width:200px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text);transition:background-color .3s ease,border-color .3s ease}
 .group-body{display:grid;gap:10px;padding:10px}
 .row{border:1px solid var(--border);border-radius:10px;background:var(--panel)}
 .row.row--placeholder .num{visibility:hidden;background:transparent}
 .row .header{display:flex;align-items:flex-start;gap:8px;padding:10px;border-bottom:1px solid var(--border)}
+.row .drag-cell{width:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.drag-handle{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:6px;border:1px solid transparent;background:transparent;color:var(--muted);font-size:14px;cursor:grab;padding:0}
+.drag-handle span{pointer-events:none}
+.drag-handle--inactive{opacity:.35;cursor:not-allowed;border-color:transparent}
+.drag-handle--hidden{opacity:0;pointer-events:none}
+.row--draggable .drag-handle{border-color:var(--border);background:var(--panel)}
+.row--draggable .drag-handle:hover{background:rgba(148,163,184,0.12)}
+.row--draggable .drag-handle:active{cursor:grabbing}
+.row.dragging{opacity:.85}
+.row.drag-over-before{box-shadow:0 -2px 0 0 var(--accent) inset}
+.row.drag-over-after{box-shadow:0 2px 0 0 var(--accent) inset}
 .num{min-width:36px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff}
 .header-main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}
 .title-label-row{display:flex;align-items:center;gap:6px;min-width:0}

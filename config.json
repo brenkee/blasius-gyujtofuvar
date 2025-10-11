@@ -34,7 +34,8 @@
             "delete": true
         },
         "group_totals": true,
-        "round_planned_date": true
+        "round_planned_date": true,
+        "round_planned_time": true
     },
     "files": {
         "data_file": "fuvar_data.json",
@@ -295,7 +296,14 @@
         },
         "round": {
             "planned_date_label": "Tervezett dátum",
-            "planned_date_hint": "Add meg a kör tervezett dátumát"
+            "planned_date_hint": "Add meg a kör tervezett dátumát",
+            "planned_time_label": "Tervezett idő",
+            "planned_time_hint": "Add meg a kör tervezett idejét",
+            "sort_mode_label": "Rendezési mód",
+            "sort_mode_default": "Alapértelmezett (távolság)",
+            "sort_mode_custom": "Egyéni (drag & drop)",
+            "sort_mode_custom_hint": "Fogd és vidd a címeket a sorrend módosításához",
+            "custom_sort_handle_hint": "Fogd meg és húzd a cím átrendezéséhez"
         },
         "group": {
             "sum_template": "Összesen: {parts}",

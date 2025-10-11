@@ -102,9 +102,13 @@ $printListTitle = $CFG['print']['list_title'] ?? 'Szállítási lista';
       if ($roundFilter!==null && $rid!==$roundFilter) continue;
       $rlabel = $ROUND_MAP[$rid]['label'] ?? (string)$rid;
       $plannedKey = (string)$rid;
-      $plannedValue = '';
+      $plannedDateValue = '';
+      $plannedTimeValue = '';
       if (isset($roundMeta[$plannedKey]['planned_date'])) {
-        $plannedValue = trim((string)$roundMeta[$plannedKey]['planned_date']);
+        $plannedDateValue = trim((string)$roundMeta[$plannedKey]['planned_date']);
+      }
+      if (isset($roundMeta[$plannedKey]['planned_time'])) {
+        $plannedTimeValue = trim((string)$roundMeta[$plannedKey]['planned_time']);
       }
 
       $totalsParts = [];
@@ -116,9 +120,13 @@ $printListTitle = $CFG['print']['list_title'] ?? 'Szállítási lista';
       }
       $sumText = $totalsParts ? str_replace('{parts}', implode($sumSeparator, $totalsParts), $sumTemplate) : '';
       echo '<div class="round"><div>'.htmlspecialchars($rlabel).'</div>';
-      if ($plannedValue !== '') {
+      if ($plannedDateValue !== '') {
         $plannedLabel = $CFG['text']['round']['planned_date_label'] ?? 'Tervezett dátum';
-        echo '<div class="planned">'.htmlspecialchars($plannedLabel.': '.$plannedValue).'</div>';
+        echo '<div class="planned">'.htmlspecialchars($plannedLabel.': '.$plannedDateValue).'</div>';
+      }
+      if ($plannedTimeValue !== '') {
+        $plannedTimeLabel = $CFG['text']['round']['planned_time_label'] ?? 'Tervezett idő';
+        echo '<div class="planned">'.htmlspecialchars($plannedTimeLabel.': '.$plannedTimeValue).'</div>';
       }
       if ($sumText !== '') echo '<div class="sum">'.htmlspecialchars($sumText).'</div>';
       echo '</div>';

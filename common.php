@@ -37,7 +37,8 @@ $CFG_DEFAULT = [
       "delete" => true
     ],
     "group_totals" => true,
-    "round_planned_date" => true
+    "round_planned_date" => true,
+    "round_planned_time" => true
   ],
   "files" => [
     "data_file" => "fuvar_data.json",
@@ -157,7 +158,14 @@ $CFG_DEFAULT = [
     ],
     "round" => [
       "planned_date_label" => "Tervezett dátum",
-      "planned_date_hint" => "Válaszd ki a kör tervezett dátumát"
+      "planned_date_hint" => "Válaszd ki a kör tervezett dátumát",
+      "planned_time_label" => "Tervezett idő",
+      "planned_time_hint" => "Add meg a kör tervezett idejét",
+      "sort_mode_label" => "Rendezési mód",
+      "sort_mode_default" => "Alapértelmezett (távolság)",
+      "sort_mode_custom" => "Egyéni (drag & drop)",
+      "sort_mode_custom_hint" => "Fogd és vidd a címeket a sorrend módosításához",
+      "custom_sort_handle_hint" => "Fogd meg és húzd a cím átrendezéséhez"
     ],
     "group" => [
       "sum_template" => "Összesen: {parts}",
@@ -719,6 +727,47 @@ function normalize_round_meta($roundMeta) {
         $entry[$metaKeyStr] = $val;
         continue;
       }
+      if ($metaKeyStr === 'planned_time') {
+        $val = trim((string)$value);
+        if ($val === '') continue;
+        if (function_exists('mb_substr')) {
+          $val = mb_substr($val, 0, 40);
+        } else {
+          $val = substr($val, 0, 40);
+        }
+        $entry[$metaKeyStr] = $val;
+        continue;
+      }
+      if ($metaKeyStr === 'sort_mode') {
+        $val = strtolower(trim((string)$value));
+        $entry[$metaKeyStr] = ($val === 'custom') ? 'custom' : 'default';
+        continue;
+      }
+      if ($metaKeyStr === 'custom_order') {
+        $source = $value;
+        if (!is_array($source) && is_string($source) && trim($source) !== '') {
+          $decoded = json_decode($source, true);
+          if (is_array($decoded)) {
+            $source = $decoded;
+          }
+        }
+        if (is_array($source)) {
+          $list = [];
+          $seen = [];
+          foreach ($source as $itemVal) {
+            if ($itemVal === null) continue;
+            $itemStr = trim((string)$itemVal);
+            if ($itemStr === '') continue;
+            if (isset($seen[$itemStr])) continue;
+            $seen[$itemStr] = true;
+            $list[] = $itemStr;
+          }
+          if (!empty($list)) {
+            $entry[$metaKeyStr] = $list;
+          }
+        }
+        continue;
+      }
       if (is_scalar($value)) {
         $val = trim((string)$value);
         if ($val === '') continue;
@@ -729,6 +778,9 @@ function normalize_round_meta($roundMeta) {
         }
         $entry[$metaKeyStr] = $val;
       }
+    }
+    if (!isset($entry['sort_mode'])) {
+      $entry['sort_mode'] = (!empty($entry['custom_order'])) ? 'custom' : 'default';
     }
     if (!empty($entry)) {
       ksort($entry);
