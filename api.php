@@ -350,7 +350,30 @@ if ($action === 'geocode') {
   if (!is_array($arr) || !count($arr)) { http_response_code(404); echo json_encode(['error'=>'noresult']); exit; }
   $best = $arr[0];
   $addr = isset($best['address']) && is_array($best['address']) ? $best['address'] : [];
-  $city = $addr['city'] ?? $addr['town'] ?? $addr['village'] ?? $addr['municipality'] ?? $addr['county'] ?? '';
+  $city = '';
+  $cityKeys = [
+    'city',
+    'town',
+    'village',
+    'municipality',
+    'hamlet',
+    'locality',
+    'isolated_dwelling',
+    'suburb',
+    'neighbourhood',
+    'quarter',
+    'city_district',
+    'residential',
+  ];
+  foreach ($cityKeys as $key) {
+    if (!empty($addr[$key]) && is_string($addr[$key])) {
+      $candidate = trim($addr[$key]);
+      if ($candidate !== '' && !preg_match('/\b(megye|vármegye|járás)\b/iu', $candidate)) {
+        $city = $candidate;
+        break;
+      }
+    }
+  }
   echo json_encode(['lat'=>(float)$best['lat'], 'lon'=>(float)$best['lon'], 'city'=>$city, 'normalized'=>$qNorm], JSON_UNESCAPED_UNICODE);
   exit;
 }
