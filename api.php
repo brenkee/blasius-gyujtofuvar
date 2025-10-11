@@ -458,7 +458,7 @@ if ($action === 'import_csv') {
     if ($key === null) return;
     $canonicalLookup[strtolower($key)] = $key;
   };
-  foreach (['id', 'round', 'city', 'lat', 'lon', 'collapsed'] as $baseKey) {
+  foreach (['id', 'round', 'city', 'lat', 'lon', 'collapsed', 'round_planned_date', 'round_sort_mode', 'round_custom_order'] as $baseKey) {
     $registerCanonical($baseKey);
   }
   foreach (array_keys($fieldMap) as $fid) {
@@ -520,6 +520,7 @@ if ($action === 'import_csv') {
 
   $rowNumber = 1;
   $items = [];
+  $parsedRoundMeta = [];
   while (($row = fgetcsv($fh, 0, $delimiter)) !== false) {
     $rowNumber++;
     if (!is_array($row)) { continue; }
@@ -561,6 +562,44 @@ if ($action === 'import_csv') {
     }
 
     $item = ['id' => $id, 'round' => $round];
+    $roundKey = (string)$round;
+    if (!isset($parsedRoundMeta[$roundKey])) { $parsedRoundMeta[$roundKey] = []; }
+
+    if (array_key_exists('round_planned_date', $assoc)) {
+      $planned = trim((string)$assoc['round_planned_date']);
+      if ($planned !== '') {
+        if (function_exists('mb_substr')) {
+          $planned = mb_substr($planned, 0, 120);
+        } else {
+          $planned = substr($planned, 0, 120);
+        }
+        $parsedRoundMeta[$roundKey]['planned_date'] = $planned;
+      }
+      unset($assoc['round_planned_date']);
+    }
+    if (array_key_exists('round_sort_mode', $assoc)) {
+      $modeRaw = strtolower(trim((string)$assoc['round_sort_mode']));
+      $parsedRoundMeta[$roundKey]['sort_mode'] = $modeRaw === 'custom' ? 'custom' : 'default';
+      unset($assoc['round_sort_mode']);
+    }
+    if (array_key_exists('round_custom_order', $assoc)) {
+      $rawOrder = trim((string)$assoc['round_custom_order']);
+      unset($assoc['round_custom_order']);
+      if ($rawOrder !== '') {
+        $parts = preg_split('/\s*\|\s*/', $rawOrder);
+        if (!is_array($parts)) { $parts = [$rawOrder]; }
+        $order = [];
+        foreach ($parts as $part) {
+          $str = trim((string)$part);
+          if ($str === '' || in_array($str, $order, true)) continue;
+          $order[] = $str;
+        }
+        if (!empty($order)) {
+          $parsedRoundMeta[$roundKey]['custom_order'] = $order;
+          $parsedRoundMeta[$roundKey]['sort_mode'] = 'custom';
+        }
+      }
+    }
 
     if (array_key_exists('collapsed', $assoc)) {
       $collapsedRaw = strtolower(trim((string)$assoc['collapsed']));
@@ -638,8 +677,17 @@ if ($action === 'import_csv') {
   }
   fclose($fh);
 
-  $roundMeta = $existingRoundMeta;
-  if (!is_array($roundMeta)) { $roundMeta = []; }
+  if (!is_array($existingRoundMeta)) { $existingRoundMeta = []; }
+
+  $roundMeta = $importMode === 'append' ? $existingRoundMeta : [];
+  foreach ($parsedRoundMeta as $rid => $metaEntry) {
+    if (!is_array($metaEntry) || empty($metaEntry)) continue;
+    if (!isset($roundMeta[$rid]) || !is_array($roundMeta[$rid])) {
+      $roundMeta[$rid] = [];
+    }
+    $roundMeta[$rid] = array_merge($roundMeta[$rid], $metaEntry);
+  }
+  $roundMeta = normalize_round_meta($roundMeta);
 
   $finalItems = $importMode === 'append' ? array_merge($existingItems, $items) : $items;
 

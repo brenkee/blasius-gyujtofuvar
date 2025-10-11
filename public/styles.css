@@ -22,15 +22,24 @@ h1{font-size:18px;margin:0 0 6px}
 .new-address-container:empty{display:none}
 .groups{display:grid;gap:12px}
 .group{border:1px solid var(--border);border-radius:12px;background:var(--panel)}
-.group-header{display:flex;flex-direction:column;gap:8px;padding:10px;border-bottom:1px solid var(--border);background:calc(var(--panel) + 0)}
-.group-title{font-weight:800}
-.group-tools{display:flex;gap:6px;flex-wrap:wrap}
+.group-header{display:flex;flex-direction:column;gap:10px;padding:10px;border-bottom:1px solid var(--border);background:calc(var(--panel) + 0)}
+.group-header-top{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.group-title{font-weight:800;display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+.group-tools{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.group-header-meta{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
 .group-planned-date{display:flex;gap:8px;flex-wrap:nowrap;align-items:center}
 .group-planned-date .planned-date-label{font-size:12px;font-weight:600;color:var(--muted);white-space:nowrap}
 .group-planned-date input{min-width:140px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text);transition:background-color .3s ease,border-color .3s ease}
 .planned-date-input.saved-flash{background:rgba(34,197,94,0.25);border-color:rgba(16,185,129,0.5)}
+.group-sort-mode{display:flex;align-items:center;gap:8px}
+.group-sort-label{font-size:12px;font-weight:600;color:var(--muted);white-space:nowrap}
+.round-sort-select{padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text);min-width:150px}
 .group-body{display:grid;gap:10px;padding:10px}
 .row{border:1px solid var(--border);border-radius:10px;background:var(--panel)}
+.row--draggable{cursor:grab}
+.row--dragging{opacity:.75}
+.row--drop-before{box-shadow:0 -2px 0 0 var(--accent) inset}
+.row--drop-after{box-shadow:0 2px 0 0 var(--accent) inset}
 .row.row--placeholder .num{visibility:hidden;background:transparent}
 .row .header{display:flex;align-items:flex-start;gap:8px;padding:10px;border-bottom:1px solid var(--border)}
 .num{min-width:36px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff}

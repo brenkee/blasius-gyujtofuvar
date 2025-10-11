@@ -377,23 +377,35 @@ $STATE_LOCK_FILE = __DIR__ . '/' . ($CFG['files']['lock_file'] ?? 'fuvar_state.l
 function generate_export_csv($cfg, $dataFile, $roundFilter = null, &$error = null) {
   $error = null;
 
-  [$items] = data_store_read($dataFile);
+  [$items, $roundMeta] = data_store_read($dataFile);
   $items = array_values(array_filter(is_array($items) ? $items : []));
+  if (!is_array($roundMeta)) { $roundMeta = []; }
 
   $autoSort = (bool)($cfg['app']['auto_sort_by_round'] ?? true);
   $zeroBottom = (bool)($cfg['app']['round_zero_at_bottom'] ?? true);
   if ($autoSort) {
-    usort($items, function($a, $b) use ($zeroBottom) {
-      $ra = (int)($a['round'] ?? 0);
-      $rb = (int)($b['round'] ?? 0);
-      if ($zeroBottom) {
-        $az = $ra === 0 ? 1 : 0;
-        $bz = $rb === 0 ? 1 : 0;
-        if ($az !== $bz) return $az - $bz;
+    $grouped = [];
+    foreach ($items as $item) {
+      $rid = (int)($item['round'] ?? 0);
+      if (!isset($grouped[$rid])) {
+        $grouped[$rid] = [];
       }
-      if ($ra === $rb) return 0;
-      return $ra <=> $rb;
-    });
+      $grouped[$rid][] = $item;
+    }
+    $roundIds = array_keys($grouped);
+    sort($roundIds, SORT_NUMERIC);
+    if ($zeroBottom) {
+      $roundIds = array_values(array_filter($roundIds, function($id){ return $id !== 0; }));
+      $roundIds[] = 0;
+      $roundIds = array_values(array_unique($roundIds));
+    }
+    $sorted = [];
+    foreach ($roundIds as $rid) {
+      if (isset($grouped[$rid])) {
+        foreach ($grouped[$rid] as $it) { $sorted[] = $it; }
+      }
+    }
+    $items = $sorted;
   }
 
   $itemsCfg = $cfg['items'] ?? [];
@@ -412,6 +424,9 @@ function generate_export_csv($cfg, $dataFile, $roundFilter = null, &$error = nul
   };
   $addColumn('id');
   $addColumn('round');
+  $addColumn('round_planned_date');
+  $addColumn('round_sort_mode');
+  $addColumn('round_custom_order');
   foreach ($fieldIds as $fid) { $addColumn($fid); }
   foreach ($metricIds as $mid) { $addColumn($mid); }
   foreach (['city','lat','lon','collapsed'] as $extra) { $addColumn($extra); }
@@ -448,6 +463,23 @@ function generate_export_csv($cfg, $dataFile, $roundFilter = null, &$error = nul
     $row = [];
     foreach ($columns as $col) {
       if ($col === null || $col === '') { $row[] = ''; continue; }
+      if ($col === 'round_planned_date') {
+        $rk = (string)((int)($it['round'] ?? 0));
+        $row[] = isset($roundMeta[$rk]['planned_date']) ? (string)$roundMeta[$rk]['planned_date'] : '';
+        continue;
+      }
+      if ($col === 'round_sort_mode') {
+        $rk = (string)((int)($it['round'] ?? 0));
+        $mode = isset($roundMeta[$rk]['sort_mode']) ? (string)$roundMeta[$rk]['sort_mode'] : 'default';
+        $row[] = $mode === 'custom' ? 'custom' : 'default';
+        continue;
+      }
+      if ($col === 'round_custom_order') {
+        $rk = (string)((int)($it['round'] ?? 0));
+        $order = isset($roundMeta[$rk]['custom_order']) && is_array($roundMeta[$rk]['custom_order']) ? $roundMeta[$rk]['custom_order'] : [];
+        $row[] = !empty($order) ? implode('|', $order) : '';
+        continue;
+      }
       if (!array_key_exists($col, $it) || $it[$col] === null) {
         $row[] = '';
         continue;
@@ -673,6 +705,39 @@ function normalize_round_meta($roundMeta) {
         }
         $entry['planned_date'] = $val;
       }
+    }
+    $sortMode = 'default';
+    if (array_key_exists('sort_mode', $meta)) {
+      $modeRaw = strtolower(trim((string)$meta['sort_mode']));
+      $sortMode = $modeRaw === 'custom' ? 'custom' : 'default';
+      $entry['sort_mode'] = $sortMode;
+    }
+    $customOrder = [];
+    if (array_key_exists('custom_order', $meta)) {
+      $raw = $meta['custom_order'];
+      if (is_string($raw)) {
+        $parts = preg_split('/\s*\|\s*/', trim($raw), -1, PREG_SPLIT_NO_EMPTY);
+        if (is_array($parts)) {
+          $raw = $parts;
+        }
+      }
+      if (is_array($raw)) {
+        $seen = [];
+        foreach ($raw as $id) {
+          $str = trim((string)$id);
+          if ($str === '' || isset($seen[$str])) continue;
+          $seen[$str] = true;
+          $customOrder[] = $str;
+        }
+      }
+    }
+    if (!empty($customOrder)) {
+      $entry['custom_order'] = array_values($customOrder);
+      $entry['sort_mode'] = 'custom';
+      $sortMode = 'custom';
+    }
+    if ($sortMode === 'default' && !array_key_exists('sort_mode', $entry)) {
+      $entry['sort_mode'] = 'default';
     }
     if (!empty($entry)) {
       $out[$key] = $entry;
