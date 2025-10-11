@@ -430,9 +430,18 @@ if ($action === 'import_csv') {
   }
   $headers = [];
   $rawHeaders = [];
+  $normalizeHeaderName = function($value) {
+    $name = trim((string)$value);
+    if ($name === '') return null;
+    $name = str_replace("\xEF\xBB\xBF", '', $name);
+    $name = preg_replace('/[\x{200B}-\x{200D}\x{2060}\x{FEFF}]/u', '', $name);
+    $name = str_replace("\xC2\xA0", ' ', $name);
+    $name = trim($name);
+    return $name !== '' ? $name : null;
+  };
+
   foreach ($header as $idx => $col) {
-    $name = trim((string)$col);
-    $rawHeaders[$idx] = $name !== '' ? $name : null;
+    $rawHeaders[$idx] = $normalizeHeaderName($col);
   }
 
   [$existingItems, $existingRoundMeta] = data_store_read($DATA_FILE);
@@ -477,6 +486,7 @@ if ($action === 'import_csv') {
   }
 
   $headers = [];
+  $usedCanonicalHeaders = [];
   foreach ($rawHeaders as $idx => $name) {
     if ($name === null) {
       $headers[$idx] = null;
@@ -484,10 +494,17 @@ if ($action === 'import_csv') {
     }
     $lower = strtolower($name);
     if (isset($canonicalLookup[$lower])) {
-      $headers[$idx] = $canonicalLookup[$lower];
+      $canonical = $canonicalLookup[$lower];
     } else {
-      $headers[$idx] = $name;
+      $canonical = $name;
     }
+    $canonicalLower = strtolower($canonical);
+    if (isset($usedCanonicalHeaders[$canonicalLower])) {
+      $headers[$idx] = null;
+      continue;
+    }
+    $headers[$idx] = $canonical;
+    $usedCanonicalHeaders[$canonicalLower] = true;
   }
 
   $usedIds = [];
@@ -546,7 +563,11 @@ if ($action === 'import_csv') {
 
     $typeRaw = isset($assoc['type']) ? trim((string)$assoc['type']) : '';
     unset($assoc['type']);
-    $typeNormalized = strtolower($typeRaw);
+    $typeNormalized = $typeRaw === '' ? 'address' : strtolower($typeRaw);
+    if ($typeNormalized !== 'address' && $typeNormalized !== 'route') {
+      fclose($fh);
+      $sendJsonError("Ismeretlen típus a(z) {$rowNumber}. sorban (érték: {$typeRaw}).");
+    }
 
     $idRaw = isset($assoc['id']) ? trim((string)$assoc['id']) : '';
     unset($assoc['id']);
