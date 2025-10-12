@@ -18,7 +18,14 @@
     conflictNotified: new Set(),
     conflictOverlay: null,
     markerOverlapCounts: new Map(),
-    displayIndexById: new Map()
+    displayIndexById: new Map(),
+    currentUser: window.APP_BOOTSTRAP?.currentUser || null,
+    permissions: {
+      role: 'viewer',
+      canEdit: false,
+      canManageUsers: false
+    },
+    auth: window.APP_BOOTSTRAP?.auth || {}
   };
 
   const history = [];
@@ -31,6 +38,82 @@
   const themeToggle = document.getElementById('themeToggle');
   const panelTopEl = document.getElementById('panelTop');
   let quickSearchClearBtn = null;
+
+  const bodyEl = document.body;
+  const userIndicatorName = document.querySelector('.user-indicator__name');
+  const userIndicatorRole = document.querySelector('.user-indicator__role');
+
+  const normalizeRole = role => (typeof role === 'string' ? role.trim().toLowerCase() : 'viewer');
+
+  function updateUserIndicator(user){
+    if (userIndicatorName) {
+      userIndicatorName.textContent = user?.username ?? '';
+    }
+    if (userIndicatorRole) {
+      const role = normalizeRole(user?.role);
+      userIndicatorRole.textContent = role ? role.charAt(0).toUpperCase() + role.slice(1) : '';
+    }
+  }
+
+  function syncPermissionRestrictedUi(){
+    const readOnly = !state.permissions.canEdit;
+    if (undoBtn) {
+      updateUndoButton();
+    }
+    if (typeof importBtn !== 'undefined' && importBtn) {
+      if (!importBtn.dataset.originalTitle) {
+        importBtn.dataset.originalTitle = importBtn.getAttribute('title') || '';
+      }
+      importBtn.disabled = readOnly;
+      if (readOnly) {
+        importBtn.setAttribute('aria-disabled', 'true');
+        importBtn.title = text('messages.import_read_only', 'Nincs jogosultság az importáláshoz.');
+      } else {
+        importBtn.removeAttribute('aria-disabled');
+        const title = importBtn.dataset.originalTitle ?? '';
+        if (title) {
+          importBtn.title = title;
+        } else {
+          importBtn.removeAttribute('title');
+        }
+      }
+    }
+    if (typeof importInput !== 'undefined' && importInput) {
+      importInput.disabled = readOnly;
+      if (readOnly) {
+        importInput.value = '';
+      }
+    }
+    if (typeof adminUsersBtn !== 'undefined' && adminUsersBtn) {
+      const canManage = !!state.permissions.canManageUsers;
+      adminUsersBtn.disabled = !canManage;
+      adminUsersBtn.style.display = canManage ? '' : 'none';
+    }
+  }
+
+  function applyPermissionsFromUser(user){
+    const role = normalizeRole(user?.role);
+    const canEdit = role === 'admin' || role === 'editor';
+    const canManageUsers = role === 'admin';
+    state.currentUser = user || null;
+    state.permissions = { role, canEdit, canManageUsers };
+    if (bodyEl) {
+      bodyEl.classList.toggle('role-viewer', !canEdit);
+      bodyEl.setAttribute('data-role', role);
+    }
+    updateUserIndicator(user);
+    setTimeout(()=>{ try { syncPermissionRestrictedUi(); } catch (err) { console.error(err); } }, 0);
+    return state.permissions;
+  }
+
+  let readOnlyNoticeShown = false;
+  function showReadOnlyNotice(message){
+    if (readOnlyNoticeShown) return;
+    readOnlyNoticeShown = true;
+    window.alert(message || 'Nincs jogosultságod a módosításokhoz.');
+  }
+
+  applyPermissionsFromUser(state.currentUser);
 
   const flashTimers = new WeakMap();
 
@@ -1094,7 +1177,7 @@
     return Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 0;
   }
   function undoFeatureEnabled(){
-    return cfg('history.undo_enabled', true) && feature('toolbar.undo', true) && undoBtn;
+    return state.permissions.canEdit && cfg('history.undo_enabled', true) && feature('toolbar.undo', true) && undoBtn;
   }
   function pushSnapshot() {
     if (!undoFeatureEnabled()) return;
@@ -1724,6 +1807,10 @@
     state.conflictNotified.clear();
   }
   async function saveAll(){
+    if (!state.permissions.canEdit) {
+      showReadOnlyNotice();
+      return false;
+    }
     try{
       const sanitizedItems = state.items.map(item => {
         if (!item || typeof item !== 'object') return item;
@@ -1913,6 +2000,9 @@
     return state.items.some(it => ((+it.round||0)===0) && !(it[addrField] && it[addrField].toString().trim()) && it.lat==null && it.lon==null);
   }
   function ensureBlankRowInDefaultRound(){
+    if (!state.permissions.canEdit) {
+      return;
+    }
     if (!hasBlankInDefaultRound()){
       const blank = {
         id:'row_'+Math.random().toString(36).slice(2),
@@ -2429,8 +2519,9 @@
     row.dataset.rowId = it.id;
     const opts = options || {};
     const isPlaceholderItem = isItemCompletelyBlank(it);
+    const readOnlyRow = !state.permissions.canEdit;
     const allowDragFeature = opts.dragEnabled === true;
-    const dragEnabled = allowDragFeature && !isPlaceholderItem;
+    const dragEnabled = allowDragFeature && !isPlaceholderItem && !readOnlyRow;
     const dragHandleTitle = text('round.custom_sort_handle_hint', 'Fogd meg és húzd a cím átrendezéséhez');
     const dragCellHtml = allowDragFeature
       ? (dragEnabled
@@ -2591,7 +2682,7 @@
       dragHandle.addEventListener('pointercancel', resetReady);
       dragHandle.addEventListener('click', e => e.preventDefault());
     }
-    if (allowDragFeature) {
+    if (allowDragFeature && !readOnlyRow) {
       row.addEventListener('dragover', handleRowDragOver);
       row.addEventListener('dragleave', handleRowDragLeave);
       row.addEventListener('drop', handleRowDrop);
@@ -2660,104 +2751,131 @@
     const okBtn  = row.querySelector('.ok');
     const delBtn = row.querySelector('.del');
 
-    fieldInputs.forEach((inp, fid)=>{
-      inp.addEventListener('change', ()=>{
-        const idx = state.items.findIndex(x=>x.id===it.id);
-        if (idx<0) return;
-        pushSnapshot();
-        const def = fieldsMap.get(fid) || {};
-        let val;
-        if (def.type === 'number'){
-          const trimmed = inp.value.trim();
-          const num = parseFloat(trimmed);
-          val = trimmed==='' || !Number.isFinite(num) ? null : num;
-        } else {
-          val = inp.value.trim();
-        }
-        state.items[idx][fid] = val;
-        if (fid === addressFieldId){
-          const cityNow = cityFromDisplay(state.items[idx][fid], state.items[idx].city);
-          state.items[idx].city = cityNow;
-          const cityEl = row.querySelector('[data-city]');
-          if (cityEl){
-            cityEl.textContent = cityNow || '—';
-            cityEl.setAttribute('title', cityNow || '—');
+    if (!state.permissions.canEdit) {
+      row.classList.add('row--read-only');
+      fieldInputs.forEach(input => {
+        if (input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement || input instanceof HTMLSelectElement) {
+          input.disabled = true;
+          if (input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) {
+            input.setAttribute('readonly', 'true');
           }
-          refreshDeleteButtonState(row, state.items[idx]);
         }
-        updateRowPlaceholderState(row, state.items[idx]);
-        updateRowHeaderLabel(row, state.items[idx]);
-        if (fid === deadlineFieldId){
-          updateDeadlineIndicator(row, state.items[idx]);
-        }
-        upsertMarker(state.items[idx], idx);
-        saveAll();
-        updateRowHeaderMeta(row, state.items[idx]);
       });
-    });
-
-    metricInputs.forEach((inp, fid)=>{
-      inp.addEventListener('change', ()=>{
-        const idx = state.items.findIndex(x=>x.id===it.id);
-        if (idx<0) return;
-        pushSnapshot();
-        const raw = inp.value.trim();
-        if (raw==='') state.items[idx][fid] = null;
-        else {
-          const num = parseFloat(raw);
-          state.items[idx][fid] = Number.isFinite(num) ? num : null;
+      metricInputs.forEach(input => {
+        if (input instanceof HTMLInputElement) {
+          input.disabled = true;
         }
-        updateRowPlaceholderState(row, state.items[idx]);
-        updateRowHeaderLabel(row, state.items[idx]);
-        upsertMarker(state.items[idx], idx);
-        saveAll();
-        renderGroupHeaderTotalsForRound(+state.items[idx].round||0);
-        updateRowHeaderMeta(row, state.items[idx]);
       });
-    });
+      row.querySelectorAll('textarea').forEach(el => { el.disabled = true; el.setAttribute('readonly', ''); });
+      if (roundS instanceof HTMLSelectElement) { roundS.disabled = true; }
+      if (okBtn instanceof HTMLButtonElement) { okBtn.disabled = true; }
+      if (delBtn instanceof HTMLButtonElement) { delBtn.disabled = true; }
+    } else {
+      fieldInputs.forEach((inp, fid)=>{
+        inp.addEventListener('change', ()=>{
+          const idx = state.items.findIndex(x=>x.id===it.id);
+          if (idx<0) return;
+          pushSnapshot();
+          const def = fieldsMap.get(fid) || {};
+          let val;
+          if (def.type === 'number'){
+            const trimmed = inp.value.trim();
+            const num = parseFloat(trimmed);
+            val = trimmed==='' || !Number.isFinite(num) ? null : num;
+          } else {
+            val = inp.value.trim();
+          }
+          state.items[idx][fid] = val;
+          if (fid === addressFieldId){
+            const cityNow = cityFromDisplay(state.items[idx][fid], state.items[idx].city);
+            state.items[idx].city = cityNow;
+            const cityEl = row.querySelector('[data-city]');
+            if (cityEl){
+              cityEl.textContent = cityNow || '—';
+              cityEl.setAttribute('title', cityNow || '—');
+            }
+            refreshDeleteButtonState(row, state.items[idx]);
+          }
+          updateRowPlaceholderState(row, state.items[idx]);
+          updateRowHeaderLabel(row, state.items[idx]);
+          if (fid === deadlineFieldId){
+            updateDeadlineIndicator(row, state.items[idx]);
+          }
+          upsertMarker(state.items[idx], idx);
+          saveAll();
+          updateRowHeaderMeta(row, state.items[idx]);
+        });
+      });
 
-    roundS.addEventListener('change', async ()=>{
-      const idx = state.items.findIndex(x=>x.id===it.id); if (idx<0) return;
-      const selRound = +roundS.value;
-      const addrVal = state.items[idx][addressFieldId];
-      const hasAddress = !!(addrVal && addrVal.toString().trim());
-      const hasPin = (state.items[idx].lat!=null && state.items[idx].lon!=null);
+      metricInputs.forEach((inp, fid)=>{
+        inp.addEventListener('change', ()=>{
+          const idx = state.items.findIndex(x=>x.id===it.id);
+          if (idx<0) return;
+          pushSnapshot();
+          const raw = inp.value.trim();
+          if (raw==='') state.items[idx][fid] = null;
+          else {
+            const num = parseFloat(raw);
+            state.items[idx][fid] = Number.isFinite(num) ? num : null;
+          }
+          updateRowPlaceholderState(row, state.items[idx]);
+          updateRowHeaderLabel(row, state.items[idx]);
+          upsertMarker(state.items[idx], idx);
+          saveAll();
+          renderGroupHeaderTotalsForRound(+state.items[idx].round||0);
+          updateRowHeaderMeta(row, state.items[idx]);
+        });
+      });
 
-      if (!hasAddress) { state.items[idx]._pendingRound = selRound; return; }
-      if (!hasPin) {
-        try{ await doOk(state.items[idx].id, selRound); }
-        catch(e){ console.error(e); alert(text('messages.geocode_failed', 'Geokódolás sikertelen.')); roundS.value = String(state.items[idx].round ?? 0); }
-        return;
+      if (roundS instanceof HTMLSelectElement) {
+        roundS.addEventListener('change', async ()=>{
+          const idx = state.items.findIndex(x=>x.id===it.id); if (idx<0) return;
+          const selRound = +roundS.value;
+          const addrVal = state.items[idx][addressFieldId];
+          const hasAddress = !!(addrVal && addrVal.toString().trim());
+          const hasPin = (state.items[idx].lat!=null && state.items[idx].lon!=null);
+
+          if (!hasAddress) { state.items[idx]._pendingRound = selRound; return; }
+          if (!hasPin) {
+            try{ await doOk(state.items[idx].id, selRound); }
+            catch(e){ console.error(e); alert(text('messages.geocode_failed', 'Geokódolás sikertelen.')); roundS.value = String(state.items[idx].round ?? 0); }
+            return;
+          }
+          const prevRound = +state.items[idx].round||0;
+          pushSnapshot();
+          state.items[idx].round = selRound;
+          removeItemFromCustomOrder(prevRound, it.id);
+          maybeAddItemToCustomOrder(selRound, it.id);
+          await saveAll();
+          renderEverything();
+          renderGroupHeaderTotalsForRound(prevRound);
+          renderGroupHeaderTotalsForRound(selRound);
+        });
       }
-      const prevRound = +state.items[idx].round||0;
-      pushSnapshot();
-      state.items[idx].round = selRound;
-      removeItemFromCustomOrder(prevRound, it.id);
-      maybeAddItemToCustomOrder(selRound, it.id);
-      await saveAll();
-      renderEverything();
-      renderGroupHeaderTotalsForRound(prevRound);
-      renderGroupHeaderTotalsForRound(selRound);
-    });
 
-    okBtn.addEventListener('click', async ()=>{ try{ await doOk(it.id, null); } catch(e){ console.error(e); alert(text('messages.geocode_failed_detailed', 'Geokódolás sikertelen. Próbáld pontosítani a címet.')); } });
-
-    delBtn.addEventListener('click', ()=>{
-      if (delBtn.disabled) return;
-      const idx = state.items.findIndex(x=>x.id===it.id);
-      if (idx>=0) {
-        pushSnapshot();
-        const rPrev = +state.items[idx].round||0;
-        state.items.splice(idx,1);
-        removeItemFromCustomOrder(rPrev, it.id);
-        clearCollapsePref(it.id);
-        renderGroupHeaderTotalsForRound(rPrev);
+      if (okBtn instanceof HTMLButtonElement) {
+        okBtn.addEventListener('click', async ()=>{ try{ await doOk(it.id, null); } catch(e){ console.error(e); alert(text('messages.geocode_failed_detailed', 'Geokódolás sikertelen. Próbáld pontosítani a címet.')); } });
       }
-      const mk = state.markersById.get(it.id);
-      if (mk){ markerLayer.removeLayer(mk); state.markersById.delete(it.id); updatePinCount(); requestMarkerOverlapRefresh(); }
-      saveAll();
-      renderEverything();
-    });
+
+      if (delBtn instanceof HTMLButtonElement) {
+        delBtn.addEventListener('click', ()=>{
+          if (delBtn.disabled) return;
+          const idx = state.items.findIndex(x=>x.id===it.id);
+          if (idx>=0) {
+            pushSnapshot();
+            const rPrev = +state.items[idx].round||0;
+            state.items.splice(idx,1);
+            removeItemFromCustomOrder(rPrev, it.id);
+            clearCollapsePref(it.id);
+            renderGroupHeaderTotalsForRound(rPrev);
+          }
+          const mk = state.markersById.get(it.id);
+          if (mk){ markerLayer.removeLayer(mk); state.markersById.delete(it.id); updatePinCount(); requestMarkerOverlapRefresh(); }
+          saveAll();
+          renderEverything();
+        });
+      }
+    }
 
     updateRowHeaderMeta(row, it);
     state.rowsById.set(it.id, row);
@@ -2964,6 +3082,7 @@
       newAddressEl.innerHTML = '';
       newAddressEl.style.display = 'none';
     }
+    const readOnly = !state.permissions.canEdit;
     ensureBlankRowInDefaultRound();
     autoSortItems();
 
@@ -2973,7 +3092,7 @@
       placeholderItem = item;
       if ((+item.round || 0) === 0) break;
     }
-    if (newAddressEl && placeholderItem) {
+    if (newAddressEl && placeholderItem && !readOnly) {
       const placeholderRow = renderRow(placeholderItem, 0, {suppressNumber: true, newAddress: true});
       if (placeholderRow) {
         newAddressEl.appendChild(placeholderRow);
@@ -2998,7 +3117,7 @@
       const groupEl = makeGroupHeader(rid, totals);
       const body = groupEl.querySelector(`[data-group-body="${rid}"]`);
       const sortMode = getRoundSortMode(rid);
-      const allowDrag = sortMode === 'custom';
+      const allowDrag = !readOnly && sortMode === 'custom';
       inRound.forEach(it => {
         body.appendChild(renderRow(it, globalIndex, {dragEnabled: allowDrag, sortMode}));
         globalIndex++;
@@ -3038,102 +3157,118 @@
       if (btnPrint) btnPrint.addEventListener('click', ()=>{ window.open(EP.printRound(rid), '_blank'); });
 
       const btnDelete = groupEl.querySelector('.grp-del');
-      if (btnDelete) btnDelete.addEventListener('click', async ()=>{
-        const name = (ROUND_MAP.get(rid)?.label) || String(rid);
-        const msgTpl = cfg('text.messages.delete_round_confirm', 'Biztosan törlöd a(z) "{name}" kör összes címét?');
-        if (!confirm(format(msgTpl, {name}))) return;
-        try{
-          pushSnapshot();
-          const removedIds = state.items.filter(it => (+it.round||0)===rid).map(it=>it.id);
-          const headers = buildHeaders({'Content-Type':'application/json'});
-          const requestId = makeRequestId();
-          headers.set('X-Request-ID', requestId);
-          const r = await fetch(EP.deleteRound, {
-            method:'POST',
-            headers,
-            body: JSON.stringify({round:rid})
+      if (btnDelete) {
+        if (readOnly) {
+          btnDelete.disabled = true;
+          btnDelete.title = text('messages.delete_round_error', 'Nincs jogosultság a törléshez.');
+        } else {
+          btnDelete.addEventListener('click', async ()=>{
+            const name = (ROUND_MAP.get(rid)?.label) || String(rid);
+            const msgTpl = cfg('text.messages.delete_round_confirm', 'Biztosan törlöd a(z) "{name}" kör összes címét?');
+            if (!confirm(format(msgTpl, {name}))) return;
+            try{
+              pushSnapshot();
+              const removedIds = state.items.filter(it => (+it.round||0)===rid).map(it=>it.id);
+              const headers = buildHeaders({'Content-Type':'application/json'});
+              const requestId = makeRequestId();
+              headers.set('X-Request-ID', requestId);
+              const r = await fetch(EP.deleteRound, {
+                method:'POST',
+                headers,
+                body: JSON.stringify({round:rid})
+              });
+              const t = await r.text();
+              let ok=false, j=null;
+              try { j = JSON.parse(t); ok = !!j.ok; }
+              catch(_) { ok = r.ok; }
+              if (!ok) throw new Error('delete_failed');
+
+              const revNum = Number(j?.rev);
+              if (Number.isFinite(revNum)) {
+                updateKnownRevision(revNum);
+                resetForeignRevisions();
+                changeNotice.hide();
+              }
+
+              state.items = state.items.filter(it => (+it.round||0)!==rid);
+              clearRoundMeta(rid);
+              removedIds.forEach(id=>{
+                const mk = state.markersById.get(id);
+                if (mk){ markerLayer.removeLayer(mk); state.markersById.delete(id); updatePinCount(); requestMarkerOverlapRefresh(); }
+              });
+
+              ensureBlankRowInDefaultRound();
+              await saveAll();
+              renderEverything();
+              const successTpl = cfg('text.messages.delete_round_success', 'Kör törölve. Tételek: {count}.');
+              alert(format(successTpl, {count: j?.deleted ?? removedIds.length}));
+            }catch(e){ console.error(e); alert(cfg('text.messages.delete_round_error', 'A kör törlése nem sikerült.')); }
           });
-          const t = await r.text();
-          let ok=false, j=null;
-          try { j = JSON.parse(t); ok = !!j.ok; }
-          catch(_) { ok = r.ok; }
-          if (!ok) throw new Error('delete_failed');
-
-          const revNum = Number(j?.rev);
-          if (Number.isFinite(revNum)) {
-            updateKnownRevision(revNum);
-            resetForeignRevisions();
-            changeNotice.hide();
-          }
-
-          state.items = state.items.filter(it => (+it.round||0)!==rid);
-          clearRoundMeta(rid);
-          removedIds.forEach(id=>{
-            const mk = state.markersById.get(id);
-            if (mk){ markerLayer.removeLayer(mk); state.markersById.delete(id); updatePinCount(); requestMarkerOverlapRefresh(); }
-          });
-
-          ensureBlankRowInDefaultRound();
-          await saveAll();
-          renderEverything();
-          const successTpl = cfg('text.messages.delete_round_success', 'Kör törölve. Tételek: {count}.');
-          alert(format(successTpl, {count: j?.deleted ?? removedIds.length}));
-        }catch(e){ console.error(e); alert(cfg('text.messages.delete_round_error', 'A kör törlése nem sikerült.')); }
-      });
+        }
+      }
 
       const btnNav = groupEl.querySelector('.grp-nav');
       if (btnNav) btnNav.addEventListener('click', ()=>{ openGmapsForRound(rid); });
 
       const plannedDateInput = groupEl.querySelector('.planned-date-input');
-      if (plannedDateInput) {
-        plannedDateInput.addEventListener('change', async ()=>{
-          const newVal = plannedDateInput.value.trim();
-          const prevVal = getPlannedDateForRound(rid);
-          if (newVal === prevVal) return;
-          pushSnapshot();
-          setPlannedDateForRound(rid, newVal);
-          const ok = await saveAll();
-          if (ok) {
-            plannedDateInput.value = getPlannedDateForRound(rid);
-            flashSaved(plannedDateInput);
-          }
-        });
+      if (plannedDateInput instanceof HTMLInputElement) {
+        plannedDateInput.disabled = readOnly;
+        if (!readOnly) {
+          plannedDateInput.addEventListener('change', async ()=>{
+            const newVal = plannedDateInput.value.trim();
+            const prevVal = getPlannedDateForRound(rid);
+            if (newVal === prevVal) return;
+            pushSnapshot();
+            setPlannedDateForRound(rid, newVal);
+            const ok = await saveAll();
+            if (ok) {
+              plannedDateInput.value = getPlannedDateForRound(rid);
+              flashSaved(plannedDateInput);
+            }
+          });
+        }
       }
 
       const plannedTimeInput = groupEl.querySelector('.planned-time-input');
-      if (plannedTimeInput) {
-        plannedTimeInput.addEventListener('change', async ()=>{
-          const newVal = plannedTimeInput.value.trim();
-          const prevVal = getPlannedTimeForRound(rid);
-          if (newVal === prevVal) return;
-          pushSnapshot();
-          setPlannedTimeForRound(rid, newVal);
-          const ok = await saveAll();
-          if (ok) {
-            plannedTimeInput.value = getPlannedTimeForRound(rid);
-            flashSaved(plannedTimeInput);
-          }
-        });
+      if (plannedTimeInput instanceof HTMLInputElement) {
+        plannedTimeInput.disabled = readOnly;
+        if (!readOnly) {
+          plannedTimeInput.addEventListener('change', async ()=>{
+            const newVal = plannedTimeInput.value.trim();
+            const prevVal = getPlannedTimeForRound(rid);
+            if (newVal === prevVal) return;
+            pushSnapshot();
+            setPlannedTimeForRound(rid, newVal);
+            const ok = await saveAll();
+            if (ok) {
+              plannedTimeInput.value = getPlannedTimeForRound(rid);
+              flashSaved(plannedTimeInput);
+            }
+          });
+        }
       }
 
       const sortSelect = groupEl.querySelector('.round-sort-mode');
-      if (sortSelect) {
-        sortSelect.addEventListener('change', async ()=>{
-          const newMode = sortSelect.value === 'custom' ? 'custom' : 'default';
-          const prevMode = getRoundSortMode(rid);
-          if (newMode === prevMode) return;
-          pushSnapshot();
-          setRoundSortMode(rid, newMode);
-          if (newMode === 'custom') {
-            const ids = state.items
-              .filter(item => (+item.round||0) === rid && !isItemCompletelyBlank(item))
-              .map(item => item.id)
-              .filter(id => id != null);
-            syncCustomOrderWithItems(rid, ids);
-          }
-          renderEverything();
-          await saveAll();
-        });
+      if (sortSelect instanceof HTMLSelectElement) {
+        sortSelect.disabled = readOnly;
+        if (!readOnly) {
+          sortSelect.addEventListener('change', async ()=>{
+            const newMode = sortSelect.value === 'custom' ? 'custom' : 'default';
+            const prevMode = getRoundSortMode(rid);
+            if (newMode === prevMode) return;
+            pushSnapshot();
+            setRoundSortMode(rid, newMode);
+            if (newMode === 'custom') {
+              const ids = state.items
+                .filter(item => (+item.round||0) === rid && !isItemCompletelyBlank(item))
+                .map(item => item.id)
+                .filter(id => id != null);
+              syncCustomOrderWithItems(rid, ids);
+            }
+            renderEverything();
+            await saveAll();
+          });
+        }
       }
 
       groupsEl.appendChild(groupEl);
@@ -3637,6 +3772,515 @@
         const firstFocusable = toolbarMenu.querySelector('button:not([disabled])');
         if (firstFocusable instanceof HTMLElement) firstFocusable.focus();
       }
+    });
+  }
+
+  const adminUsersBtn = document.getElementById('adminUsersBtn');
+
+  const adminUi = {
+    overlay: null,
+    dialog: null,
+    tableBody: null,
+    emptyState: null,
+    loadingEl: null,
+    form: null,
+    fields: {},
+    titleEl: null,
+    messageEl: null,
+    users: [],
+    selectedId: null,
+    toastEl: null,
+    toastTimer: null,
+    escListener: null,
+  };
+
+  function destroyAdminToast(){
+    if (adminUi.toastTimer) {
+      clearTimeout(adminUi.toastTimer);
+      adminUi.toastTimer = null;
+    }
+    if (adminUi.toastEl) {
+      adminUi.toastEl.remove();
+      adminUi.toastEl = null;
+    }
+  }
+
+  function showAdminToast(message, type = 'success'){
+    destroyAdminToast();
+    if (!message) return;
+    const toast = document.createElement('div');
+    toast.className = 'admin-toast';
+    if (type === 'error') {
+      toast.classList.add('admin-toast--error');
+    } else if (type === 'success') {
+      toast.classList.add('admin-toast--success');
+    }
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    adminUi.toastEl = toast;
+    adminUi.toastTimer = setTimeout(()=>{ destroyAdminToast(); }, 3200);
+  }
+
+  function showAdminFormMessage(message, type = 'info'){
+    const el = adminUi.messageEl;
+    if (!el) return;
+    el.className = 'admin-form-message';
+    if (!message) {
+      el.textContent = '';
+      el.hidden = true;
+      return;
+    }
+    el.hidden = false;
+    if (type === 'error') {
+      el.classList.add('admin-form-message--error');
+    } else if (type === 'success') {
+      el.classList.add('admin-form-message--success');
+    } else {
+      el.classList.add('admin-form-message--info');
+    }
+    el.textContent = message;
+  }
+
+  function setAdminFormDisabled(disabled){
+    if (!adminUi.form) return;
+    const elements = adminUi.form.querySelectorAll('input, select, button');
+    elements.forEach(el => {
+      if (el instanceof HTMLElement) {
+        el.disabled = disabled;
+      }
+    });
+  }
+
+  function setAdminLoading(loading){
+    if (adminUi.loadingEl) {
+      adminUi.loadingEl.hidden = !loading;
+    }
+    if (adminUi.form) {
+      adminUi.form.classList.toggle('is-loading', !!loading);
+    }
+    setAdminFormDisabled(!!loading);
+  }
+
+  function formatRoleLabel(role){
+    const normalized = normalizeRole(role);
+    if (normalized === 'admin') return text('admin.panel.role_admin', 'Admin');
+    if (normalized === 'editor') return text('admin.panel.role_editor', 'Editor');
+    return text('admin.panel.role_viewer', 'Viewer');
+  }
+
+  function formatAdminDate(value){
+    if (!value) return '—';
+    let date;
+    try {
+      const iso = value.includes('T') ? value : `${value.replace(' ', 'T')}Z`;
+      date = new Date(iso);
+    } catch (_) {
+      date = null;
+    }
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+      return value;
+    }
+    try {
+      return date.toLocaleString('hu-HU', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch (_) {
+      return date.toISOString().replace('T', ' ').slice(0, 16);
+    }
+  }
+
+  function updateAdminRowSelection(){
+    if (!adminUi.tableBody) return;
+    const rows = adminUi.tableBody.querySelectorAll('tr');
+    rows.forEach(row => {
+      const id = row.dataset.userId ? Number(row.dataset.userId) : null;
+      const isActive = adminUi.selectedId != null && id != null && Number(adminUi.selectedId) === id;
+      row.classList.toggle('is-active', isActive);
+      if (isActive) {
+        row.setAttribute('aria-selected', 'true');
+      } else {
+        row.removeAttribute('aria-selected');
+      }
+    });
+  }
+
+  function renderAdminUsers(){
+    if (!adminUi.tableBody) return;
+    const tbody = adminUi.tableBody;
+    tbody.innerHTML = '';
+    const list = Array.isArray(adminUi.users) ? adminUi.users : [];
+    if (!list.length) {
+      if (adminUi.emptyState) adminUi.emptyState.hidden = false;
+      return;
+    }
+    if (adminUi.emptyState) adminUi.emptyState.hidden = true;
+    list.forEach(user => {
+      const tr = document.createElement('tr');
+      tr.dataset.userId = user && user.id != null ? String(user.id) : '';
+      tr.tabIndex = 0;
+      tr.innerHTML = `
+        <td>${esc(user?.username ?? '')}</td>
+        <td>${esc(formatRoleLabel(user?.role))}</td>
+        <td>${esc(user?.email ? user.email : '—')}</td>
+        <td>${esc(formatAdminDate(user?.last_login_at))}</td>
+      `;
+      tr.addEventListener('click', ()=> selectAdminUser(user?.id ?? null));
+      tr.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          selectAdminUser(user?.id ?? null);
+        }
+      });
+      tbody.appendChild(tr);
+    });
+    updateAdminRowSelection();
+  }
+
+  function prepareNewUser(){
+    adminUi.selectedId = null;
+    updateAdminRowSelection();
+    if (adminUi.fields.username) adminUi.fields.username.value = '';
+    if (adminUi.fields.email) adminUi.fields.email.value = '';
+    if (adminUi.fields.role) adminUi.fields.role.value = 'viewer';
+    if (adminUi.fields.password) {
+      adminUi.fields.password.value = '';
+      adminUi.fields.password.placeholder = text('admin.panel.password_placeholder_new', 'Jelszó');
+    }
+    if (adminUi.titleEl) adminUi.titleEl.textContent = text('admin.panel.create_title', 'Új felhasználó');
+    const hasSuccessMsg = adminUi.messageEl && adminUi.messageEl.classList.contains('admin-form-message--success');
+    if (!hasSuccessMsg) {
+      showAdminFormMessage(text('admin.panel.new_hint', 'Adj meg egy felhasználónevet és jelszót, majd kattints a Mentés gombra.'), 'info');
+    }
+    if (adminUi.fields.username instanceof HTMLElement) {
+      adminUi.fields.username.focus();
+    }
+  }
+
+  function selectAdminUser(id){
+    if (id == null) {
+      prepareNewUser();
+      return;
+    }
+    const target = (adminUi.users || []).find(u => Number(u?.id) === Number(id));
+    adminUi.selectedId = target ? target.id : null;
+    updateAdminRowSelection();
+    if (target) {
+      if (adminUi.fields.username) adminUi.fields.username.value = target.username ?? '';
+      if (adminUi.fields.email) adminUi.fields.email.value = target.email ?? '';
+      if (adminUi.fields.role) adminUi.fields.role.value = normalizeRole(target.role) || 'viewer';
+      if (adminUi.fields.password) {
+        adminUi.fields.password.value = '';
+        adminUi.fields.password.placeholder = text('admin.panel.password_placeholder_edit', 'Új jelszó (ha változtatnád)');
+      }
+      if (adminUi.titleEl) adminUi.titleEl.textContent = text('admin.panel.edit_title', 'Felhasználó szerkesztése');
+      const hasSuccessMsg = adminUi.messageEl && adminUi.messageEl.classList.contains('admin-form-message--success');
+      if (!hasSuccessMsg) {
+        showAdminFormMessage(text('admin.panel.edit_hint', 'A jelszó mezőt hagyd üresen, ha nem szeretnéd módosítani.'), 'info');
+      }
+      if (adminUi.fields.username instanceof HTMLElement) {
+        adminUi.fields.username.focus();
+        if (typeof adminUi.fields.username.select === 'function') {
+          adminUi.fields.username.select();
+        }
+      }
+    } else {
+      prepareNewUser();
+    }
+  }
+
+  function closeAdminPanel(){
+    if (adminUi.escListener) {
+      document.removeEventListener('keydown', adminUi.escListener);
+      adminUi.escListener = null;
+    }
+    if (adminUi.overlay && adminUi.overlay.parentNode) {
+      adminUi.overlay.parentNode.removeChild(adminUi.overlay);
+    }
+    adminUi.overlay = null;
+    adminUi.dialog = null;
+    adminUi.tableBody = null;
+    adminUi.emptyState = null;
+    adminUi.loadingEl = null;
+    adminUi.form = null;
+    adminUi.fields = {};
+    adminUi.titleEl = null;
+    adminUi.messageEl = null;
+    adminUi.users = [];
+    adminUi.selectedId = null;
+    destroyAdminToast();
+  }
+
+  async function fetchAdminUsers(preserveId = null){
+    if (!state.permissions.canManageUsers || !state.auth || !state.auth.users || !state.auth.users.list) {
+      return;
+    }
+    setAdminLoading(true);
+    try {
+      const payload = await fetchJSON(state.auth.users.list, {cache: 'no-store'});
+      if (!payload || payload.ok !== true || !Array.isArray(payload.users)) {
+        throw new Error(payload?.error || 'users_list_failed');
+      }
+      adminUi.users = payload.users;
+      renderAdminUsers();
+      const currentId = preserveId != null ? preserveId
+        : (adminUi.selectedId != null ? adminUi.selectedId : (state.currentUser?.id ?? null));
+      if (currentId != null && adminUi.users.some(u => Number(u.id) === Number(currentId))) {
+        selectAdminUser(currentId);
+      } else if (adminUi.users.length) {
+        selectAdminUser(adminUi.users[0].id);
+      } else {
+        prepareNewUser();
+      }
+    } catch (err) {
+      console.error('users_list failed', err);
+      adminUi.users = [];
+      renderAdminUsers();
+      showAdminFormMessage(text('admin.panel.load_error', 'Nem sikerült betölteni a felhasználókat.'), 'error');
+    } finally {
+      setAdminLoading(false);
+      if (adminUi.overlay && adminUi.fields.username instanceof HTMLElement && !adminUi.fields.username.disabled) {
+        setTimeout(()=> adminUi.fields.username.focus(), 0);
+      }
+    }
+  }
+
+  async function handleAdminFormSubmit(event){
+    event.preventDefault();
+    if (!state.permissions.canManageUsers) {
+      showReadOnlyNotice(text('admin.panel.no_permission', 'Nincs jogosultság a felhasználók kezeléséhez.'));
+      return;
+    }
+    if (!state.auth || !state.auth.users || !state.auth.users.save) {
+      alert(text('admin.panel.missing_api', 'A felhasználókezelés nincs engedélyezve ezen az oldalon.'));
+      return;
+    }
+    const username = adminUi.fields.username?.value.trim() ?? '';
+    const email = adminUi.fields.email?.value.trim() ?? '';
+    const role = adminUi.fields.role?.value ?? 'viewer';
+    const passwordRaw = adminUi.fields.password?.value ?? '';
+    const id = adminUi.selectedId != null ? Number(adminUi.selectedId) : null;
+    if (!username) {
+      showAdminFormMessage(text('admin.panel.validation.username', 'A felhasználónév kötelező.'), 'error');
+      return;
+    }
+    const payload = {username, email, role};
+    if (id != null && Number.isFinite(id)) {
+      payload.id = id;
+    }
+    const trimmedPassword = passwordRaw.trim();
+    if (payload.id == null && trimmedPassword === '') {
+      showAdminFormMessage(text('admin.panel.validation.password', 'Új felhasználónál jelszó megadása szükséges.'), 'error');
+      return;
+    }
+    if (trimmedPassword !== '') {
+      payload.password = passwordRaw;
+    }
+    setAdminFormDisabled(true);
+    showAdminFormMessage(text('admin.panel.saving', 'Mentés folyamatban…'), 'info');
+    try {
+      const headers = buildHeaders({'Content-Type':'application/json'});
+      const requestId = makeRequestId();
+      headers.set('X-Request-ID', requestId);
+      const response = await fetch(state.auth.users.save, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload)
+      });
+      const raw = await response.text();
+      let data;
+      try { data = JSON.parse(raw); } catch (_) { throw new Error('bad_json'); }
+      if (!response.ok || !data || data.ok !== true) {
+        const code = data?.error || 'save_failed';
+        const messageMap = {
+          username_required: text('admin.panel.validation.username', 'A felhasználónév kötelező.'),
+          password_required: text('admin.panel.validation.password', 'Új felhasználónál jelszó megadása szükséges.'),
+          invalid_role: text('admin.panel.error.invalid_role', 'Ismeretlen jogosultság.'),
+          username_exists: text('admin.panel.error.username_exists', 'Ez a felhasználónév már létezik.'),
+          user_not_found: text('admin.panel.error.user_not_found', 'A felhasználó nem található.'),
+          forbidden: text('admin.panel.no_permission', 'Nincs jogosultság a felhasználók kezeléséhez.')
+        };
+        const display = messageMap[code] || text('admin.panel.error.save_failed', 'Nem sikerült menteni a felhasználót.');
+        const err = new Error(code);
+        err.display = display;
+        throw err;
+      }
+      const saved = data.user || null;
+      if (adminUi.fields.password) {
+        adminUi.fields.password.value = '';
+      }
+      showAdminFormMessage(text('admin.panel.saved', 'Felhasználó mentve.'), 'success');
+      showAdminToast(text('admin.panel.toast_saved', 'Felhasználó sikeresen mentve.'), 'success');
+      await fetchAdminUsers(saved?.id ?? payload.id ?? null);
+      if (saved && state.currentUser && Number(saved.id) === Number(state.currentUser.id)) {
+        applyPermissionsFromUser(saved);
+        syncPermissionRestrictedUi();
+        if (window.APP_BOOTSTRAP) {
+          window.APP_BOOTSTRAP.currentUser = saved;
+        }
+        if (!state.permissions.canManageUsers) {
+          closeAdminPanel();
+          showReadOnlyNotice(text('admin.panel.role_changed', 'Jogosultságaid frissültek. Egyes műveletek már nem elérhetők.'));
+        }
+      }
+    } catch (err) {
+      console.error('users_save failed', err);
+      const msg = err.display || text('admin.panel.error.save_failed', 'Nem sikerült menteni a felhasználót.');
+      showAdminFormMessage(msg, 'error');
+      showAdminToast(msg, 'error');
+    } finally {
+      setAdminFormDisabled(false);
+    }
+  }
+
+  function buildAdminOverlay(){
+    const overlay = document.createElement('div');
+    overlay.className = 'admin-overlay';
+    const title = text('admin.panel.title', 'Felhasználók kezelése');
+    const closeLabel = text('admin.panel.close', 'Bezárás');
+    const usernameLabel = text('admin.panel.username_label', 'Felhasználónév');
+    const emailLabel = text('admin.panel.email_label', 'E-mail cím');
+    const roleLabel = text('admin.panel.role_label', 'Szerepkör');
+    const passwordLabel = text('admin.panel.password_label', 'Jelszó');
+    const newLabel = text('admin.panel.new', 'Új felhasználó');
+    const saveLabel = text('admin.panel.save', 'Mentés');
+    const loadingLabel = text('admin.panel.loading', 'Betöltés…');
+    const emptyLabel = text('admin.panel.empty', 'Nincs még felhasználó.');
+    const lastLoginLabel = text('admin.panel.last_login_label', 'Utolsó belépés');
+    overlay.innerHTML = `
+      <div class="admin-dialog" role="dialog" aria-modal="true" aria-labelledby="adminDialogTitle">
+        <div class="admin-dialog__header">
+          <h2 id="adminDialogTitle">${esc(title)}</h2>
+          <button type="button" class="admin-dialog__close" aria-label="${esc(closeLabel)}">×</button>
+        </div>
+        <div class="admin-dialog__content">
+          <div class="admin-users-wrapper">
+            <div class="admin-loading" hidden>${esc(loadingLabel)}</div>
+            <table class="admin-users-table">
+              <thead>
+                <tr>
+                  <th>${esc(usernameLabel)}</th>
+                  <th>${esc(roleLabel)}</th>
+                  <th>${esc(emailLabel)}</th>
+                  <th>${esc(lastLoginLabel)}</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+            <div class="admin-empty-state" hidden>${esc(emptyLabel)}</div>
+          </div>
+          <form class="admin-user-form" autocomplete="off">
+            <h3 class="admin-form-title" data-admin-form-title>${esc(text('admin.panel.create_title', 'Új felhasználó'))}</h3>
+            <div class="admin-form-message" hidden></div>
+            <div>
+              <label for="adminUsername">${esc(usernameLabel)}</label>
+              <input id="adminUsername" data-admin-field="username" type="text" required autocomplete="username" />
+            </div>
+            <div>
+              <label for="adminEmail">${esc(emailLabel)}</label>
+              <input id="adminEmail" data-admin-field="email" type="email" autocomplete="email" />
+            </div>
+            <div>
+              <label for="adminRole">${esc(roleLabel)}</label>
+              <select id="adminRole" data-admin-field="role">
+                <option value="admin">${esc(text('admin.panel.role_admin', 'Admin'))}</option>
+                <option value="editor">${esc(text('admin.panel.role_editor', 'Editor'))}</option>
+                <option value="viewer">${esc(text('admin.panel.role_viewer', 'Viewer'))}</option>
+              </select>
+            </div>
+            <div>
+              <label for="adminPassword">${esc(passwordLabel)}</label>
+              <input id="adminPassword" data-admin-field="password" type="password" autocomplete="new-password" />
+            </div>
+            <div class="admin-dialog__actions">
+              <button type="button" class="admin-dialog__new">${esc(newLabel)}</button>
+              <div class="admin-dialog__actions-spacer"></div>
+              <button type="submit" class="admin-dialog__save">${esc(saveLabel)}</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+    adminUi.overlay = overlay;
+    adminUi.dialog = overlay.querySelector('.admin-dialog');
+    adminUi.tableBody = overlay.querySelector('.admin-users-table tbody');
+    adminUi.emptyState = overlay.querySelector('.admin-empty-state');
+    adminUi.loadingEl = overlay.querySelector('.admin-loading');
+    adminUi.form = overlay.querySelector('.admin-user-form');
+    adminUi.messageEl = overlay.querySelector('.admin-form-message');
+    adminUi.titleEl = overlay.querySelector('[data-admin-form-title]');
+    adminUi.fields = {
+      username: overlay.querySelector('[data-admin-field="username"]'),
+      email: overlay.querySelector('[data-admin-field="email"]'),
+      role: overlay.querySelector('[data-admin-field="role"]'),
+      password: overlay.querySelector('[data-admin-field="password"]'),
+    };
+    const closeBtn = overlay.querySelector('.admin-dialog__close');
+    const newBtn = overlay.querySelector('.admin-dialog__new');
+    if (closeBtn) closeBtn.addEventListener('click', ()=> closeAdminPanel());
+    overlay.addEventListener('click', event => {
+      if (event.target === overlay) {
+        closeAdminPanel();
+      }
+    });
+    adminUi.escListener = (event)=> {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeAdminPanel();
+      }
+    };
+    document.addEventListener('keydown', adminUi.escListener);
+    if (adminUi.form) {
+      adminUi.form.addEventListener('submit', handleAdminFormSubmit);
+    }
+    if (newBtn) {
+      newBtn.addEventListener('click', event => {
+        event.preventDefault();
+        prepareNewUser();
+      });
+    }
+    return overlay;
+  }
+
+  async function openAdminPanel(){
+    if (adminUi.overlay) {
+      return;
+    }
+    if (!state.permissions.canManageUsers) {
+      showReadOnlyNotice(text('admin.panel.no_permission', 'Nincs jogosultság a felhasználók kezeléséhez.'));
+      return;
+    }
+    if (!state.auth || !state.auth.users || !state.auth.users.list || !state.auth.users.save) {
+      alert(text('admin.panel.missing_api', 'A felhasználókezelés nincs engedélyezve ezen az oldalon.'));
+      return;
+    }
+    const overlay = buildAdminOverlay();
+    document.body.appendChild(overlay);
+    prepareNewUser();
+    const toolbarMenuEl = document.getElementById('toolbarMenu');
+    const toolbarToggleEl = document.getElementById('toolbarMenuToggle');
+    if (toolbarMenuEl && toolbarToggleEl) {
+      toolbarMenuEl.hidden = true;
+      toolbarToggleEl.setAttribute('aria-expanded', 'false');
+    }
+    await fetchAdminUsers(state.currentUser?.id ?? null);
+    const focusTarget = adminUi.fields.username || adminUi.dialog;
+    if (focusTarget instanceof HTMLElement) {
+      setTimeout(()=> focusTarget.focus(), 30);
+    }
+  }
+
+  if (adminUsersBtn) {
+    adminUsersBtn.addEventListener('click', event => {
+      event.preventDefault();
+      if (adminUsersBtn.disabled) {
+        showReadOnlyNotice(text('admin.panel.no_permission', 'Nincs jogosultság a felhasználók kezeléséhez.'));
+        return;
+      }
+      openAdminPanel();
     });
   }
 

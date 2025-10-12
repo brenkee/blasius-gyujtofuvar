@@ -18,12 +18,94 @@ $action = $_GET['action'] ?? null;
 if (!$action) { http_response_code(400); echo 'Missing action'; exit; }
 
 $jsonHeader = function(){ header('Content-Type: application/json; charset=utf-8'); };
-$sendJsonError = function($message, $code = 400) use ($jsonHeader){
+$sendJsonError = function($message, $code = 400, array $extra = []) use ($jsonHeader){
   $jsonHeader();
   http_response_code($code);
-  echo json_encode(['ok' => false, 'error' => $message], JSON_UNESCAPED_UNICODE);
+  $payload = ['ok' => false, 'error' => $message];
+  if (!empty($extra)) {
+    $payload = array_merge($payload, $extra);
+  }
+  echo json_encode($payload, JSON_UNESCAPED_UNICODE);
   exit;
 };
+
+$sendAuthError = function(string $message, int $code) use ($sendJsonError) {
+  $sendJsonError($message, $code);
+};
+
+$requireLogin = function() use (&$CURRENT_USER, $sendAuthError) {
+  if (!auth_user_can_view($CURRENT_USER)) {
+    $sendAuthError('not_authenticated', 401);
+  }
+  return $CURRENT_USER;
+};
+
+$requireEditor = function() use ($requireLogin, $sendAuthError) {
+  $user = $requireLogin();
+  if (!auth_user_can_edit($user)) {
+    $sendAuthError('forbidden', 403);
+  }
+  return $user;
+};
+
+$requireAdmin = function() use ($requireLogin, $sendAuthError) {
+  $user = $requireLogin();
+  if (!auth_user_can_manage_users($user)) {
+    $sendAuthError('forbidden', 403);
+  }
+  return $user;
+};
+
+if ($action === 'auth_logout') {
+  if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    $sendJsonError('invalid_method', 405);
+  }
+  $requireLogin();
+  auth_logout();
+  $jsonHeader();
+  echo json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
+  exit;
+}
+
+if ($action === 'auth_me') {
+  $user = $requireLogin();
+  $jsonHeader();
+  echo json_encode(['ok' => true, 'user' => $user], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  exit;
+}
+
+if ($action === 'users_list') {
+  $requireAdmin();
+  $jsonHeader();
+  echo json_encode(['ok' => true, 'users' => auth_list_users()], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  exit;
+}
+
+if ($action === 'users_save') {
+  if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    $sendJsonError('invalid_method', 405);
+  }
+  $requireAdmin();
+  $body = file_get_contents('php://input');
+  $payload = json_decode($body, true);
+  if (!is_array($payload)) {
+    $sendJsonError('invalid_payload', 400);
+  }
+  try {
+    $saved = auth_save_user($payload);
+  } catch (RuntimeException $e) {
+    $code = $e->getMessage();
+    $errorCode = in_array($code, ['username_required','password_required','invalid_role','username_exists','user_not_found'], true)
+      ? $code
+      : 'save_failed';
+    $sendJsonError($errorCode, 400);
+  } catch (Throwable $e) {
+    $sendJsonError('save_failed', 500, ['message' => $e->getMessage()]);
+  }
+  $jsonHeader();
+  echo json_encode(['ok' => true, 'user' => $saved], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  exit;
+}
 
 function require_actor_id() {
   $actor = normalized_actor_id($_SERVER['HTTP_X_CLIENT_ID'] ?? '');
@@ -110,6 +192,7 @@ function commit_dataset_update(array $newItems, array $newRoundMeta, $actorId, $
 }
 
 if ($action === 'cfg') {
+  $requireLogin();
   $jsonHeader();
   $panelStickyRaw = $CFG['ui']['panel']['sticky_top'] ?? false;
   if (is_array($panelStickyRaw)) {
@@ -229,18 +312,21 @@ if ($action === 'cfg') {
 }
 
 if ($action === 'session') {
+  $requireLogin();
   $jsonHeader();
   echo json_encode(['ok' => true, 'client_id' => generate_client_id()], JSON_UNESCAPED_UNICODE);
   exit;
 }
 
 if ($action === 'revision') {
+  $requireLogin();
   $jsonHeader();
   echo json_encode(['rev' => read_current_revision()], JSON_UNESCAPED_UNICODE);
   exit;
 }
 
 if ($action === 'changes') {
+  $requireLogin();
   $since = isset($_GET['since']) ? (int)$_GET['since'] : 0;
   $excludeActor = normalized_actor_id($_GET['exclude_actor'] ?? '') ?? null;
   $excludeBatchRaw = $_GET['exclude_batch'] ?? '';
@@ -300,6 +386,7 @@ if ($action === 'changes') {
 }
 
 if ($action === 'load') {
+  $requireLogin();
   $jsonHeader();
   [$items, $roundMeta] = data_store_read($DATA_FILE);
   if (!$roundMeta) { $roundMeta = (object)[]; }
@@ -309,6 +396,7 @@ if ($action === 'load') {
 }
 
 if ($action === 'save') {
+  $requireEditor();
   $jsonHeader();
   $actorId = require_actor_id();
   $requestId = require_request_id();
@@ -339,6 +427,7 @@ if ($action === 'save') {
 }
 
 if ($action === 'geocode') {
+  $requireEditor();
   $jsonHeader();
   $q = trim($_GET['q'] ?? '');
   if ($q === '') { http_response_code(400); echo json_encode(['error'=>'empty']); exit; }
@@ -370,6 +459,7 @@ if ($action === 'geocode') {
 }
 
 if ($action === 'export') {
+  $requireLogin();
   $roundFilter = isset($_GET['round']) ? (int)$_GET['round'] : null;
 
   $error = null;
@@ -388,6 +478,7 @@ if ($action === 'export') {
 }
 
 if ($action === 'import_csv') {
+  $requireEditor();
   if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     $sendJsonError('Hibás HTTP metódus.', 405);
   }
@@ -749,6 +840,7 @@ if ($action === 'import_csv') {
 }
 
 if ($action === 'delete_round') {
+  $requireEditor();
   $jsonHeader();
   $actorId = require_actor_id();
   $requestId = require_request_id();
@@ -844,6 +936,7 @@ if ($action === 'delete_round') {
 }
 
 if ($action === 'download_archive') {
+  $requireEditor();
   stream_file_download($ARCHIVE_FILE, 'fuvar_archive.txt', 'text/plain; charset=utf-8');
 }
 

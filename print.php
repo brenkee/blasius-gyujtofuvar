@@ -1,6 +1,12 @@
 <?php
 require __DIR__ . '/common.php';
 
+$initUser = $CURRENT_USER ?? null;
+if (!auth_user_can_view($initUser)) {
+  header('Location: index.php');
+  exit;
+}
+
 $initError = $DATA_INIT_ERROR ?? null;
 if (!empty($initError)) {
   header('Content-Type: text/plain; charset=utf-8');

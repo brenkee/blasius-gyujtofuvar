@@ -331,6 +331,20 @@ $CFG_DEFAULT = [
     "title_suffix" => " – Nyomtatás",
     "list_title" => "Szállítási lista"
   ],
+  "auth" => [
+    "session_name" => "GFSESSID",
+    "session_lifetime_days" => 30,
+    "login_ui" => [
+      "title" => "Gyűjtőfuvar – Belépés",
+      "subtitle" => "Jelentkezz be a folytatáshoz",
+      "logo" => null,
+      "background_color" => "#f8fafc",
+      "text_color" => "#0f172a",
+      "card_background" => "#ffffff",
+      "accent_color" => "#2563eb",
+      "footer_html" => ""
+    ]
+  ],
   "backup" => [
     "enabled" => true,
     "dir" => "backups",
@@ -390,6 +404,36 @@ $STATE_LOCK_FILE = __DIR__ . '/' . ($CFG['files']['lock_file'] ?? 'fuvar_state.l
 
 $DATA_BOOTSTRAP_INFO = [];
 $DATA_INIT_ERROR = null;
+$CURRENT_USER = null;
+
+if (!defined('AUTH_SESSION_KEY')) {
+  define('AUTH_SESSION_KEY', 'auth_user_id');
+}
+
+$authSessionName = trim((string)($CFG['auth']['session_name'] ?? 'GFSESSID'));
+$authSessionLifetimeDays = (int)($CFG['auth']['session_lifetime_days'] ?? 30);
+if ($authSessionLifetimeDays < 1) {
+  $authSessionLifetimeDays = 30;
+}
+$authSessionLifetimeSeconds = $authSessionLifetimeDays * 86400;
+
+if (session_status() !== PHP_SESSION_ACTIVE) {
+  $secureCookie = !empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off';
+  $cookieParams = [
+    'lifetime' => $authSessionLifetimeSeconds,
+    'path' => '/',
+    'secure' => $secureCookie,
+    'httponly' => true,
+    'samesite' => 'Lax',
+  ];
+  if (!headers_sent()) {
+    if ($authSessionName !== '') {
+      session_name($authSessionName);
+    }
+    session_set_cookie_params($cookieParams);
+  }
+  session_start();
+}
 
 /**
  * Biztonságos backup: létezés-ellenőrzés és mtime használat védetten.
@@ -1348,6 +1392,320 @@ function read_change_log_entries() {
   return $entries;
 }
 
+function auth_is_missing_user_table_error(Throwable $e): bool {
+  $msg = strtolower($e->getMessage());
+  return strpos($msg, 'no such table') !== false && strpos($msg, 'users') !== false;
+}
+
+function auth_pdo(): ?PDO {
+  static $cached = null;
+  static $failed = false;
+  global $DATA_FILE;
+  if ($failed) {
+    return null;
+  }
+  if ($cached instanceof PDO) {
+    return $cached;
+  }
+  if (!data_store_is_sqlite($DATA_FILE)) {
+    return null;
+  }
+  try {
+    [$pdo] = data_store_sqlite_open($DATA_FILE);
+    $cached = $pdo;
+    return $pdo;
+  } catch (Throwable $e) {
+    $failed = true;
+    error_log('Auth DB connection failed: ' . $e->getMessage());
+    return null;
+  }
+}
+
+function auth_user_row_by_id(int $id): ?array {
+  $pdo = auth_pdo();
+  if (!$pdo) {
+    return null;
+  }
+  try {
+    $stmt = $pdo->prepare('SELECT * FROM users WHERE id = :id');
+    $stmt->execute([':id' => $id]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    return $row !== false ? $row : null;
+  } catch (Throwable $e) {
+    if ($e instanceof PDOException && auth_is_missing_user_table_error($e)) {
+      return null;
+    }
+    throw $e;
+  }
+}
+
+function auth_user_row_by_username(string $username): ?array {
+  $pdo = auth_pdo();
+  if (!$pdo) {
+    return null;
+  }
+  try {
+    $stmt = $pdo->prepare('SELECT * FROM users WHERE lower(username) = lower(:username) LIMIT 1');
+    $stmt->execute([':username' => $username]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    return $row !== false ? $row : null;
+  } catch (Throwable $e) {
+    if ($e instanceof PDOException && auth_is_missing_user_table_error($e)) {
+      return null;
+    }
+    throw $e;
+  }
+}
+
+function auth_public_user(array $row): array {
+  return [
+    'id' => isset($row['id']) ? (int)$row['id'] : null,
+    'username' => (string)($row['username'] ?? ''),
+    'email' => (string)($row['email'] ?? ''),
+    'role' => (string)($row['role'] ?? 'viewer'),
+    'created_at' => $row['created_at'] ?? null,
+    'updated_at' => $row['updated_at'] ?? null,
+    'last_login_at' => $row['last_login_at'] ?? null,
+  ];
+}
+
+function auth_get_session_user_id(): ?int {
+  if (empty($_SESSION[AUTH_SESSION_KEY])) {
+    return null;
+  }
+  $id = (int)$_SESSION[AUTH_SESSION_KEY];
+  return $id > 0 ? $id : null;
+}
+
+function auth_set_session_user_id(?int $id): void {
+  if (!is_int($id) || $id <= 0) {
+    unset($_SESSION[AUTH_SESSION_KEY]);
+    return;
+  }
+  $_SESSION[AUTH_SESSION_KEY] = $id;
+}
+
+function auth_resolve_current_user(): ?array {
+  $userId = auth_get_session_user_id();
+  if (!$userId) {
+    return null;
+  }
+  $row = auth_user_row_by_id($userId);
+  if (!$row) {
+    auth_set_session_user_id(null);
+    return null;
+  }
+  return auth_public_user($row);
+}
+
+function auth_initialize_current_user(): void {
+  global $CURRENT_USER;
+  try {
+    $CURRENT_USER = auth_resolve_current_user();
+  } catch (Throwable $e) {
+    error_log('Auth init error: ' . $e->getMessage());
+    $CURRENT_USER = null;
+  }
+}
+
+function auth_update_last_login(int $userId): void {
+  $pdo = auth_pdo();
+  if (!$pdo) {
+    return;
+  }
+  try {
+    $stmt = $pdo->prepare('UPDATE users SET last_login_at = :ts, updated_at = :ts WHERE id = :id');
+    $stmt->execute([
+      ':ts' => gmdate('Y-m-d H:i:s'),
+      ':id' => $userId,
+    ]);
+  } catch (Throwable $e) {
+    if ($e instanceof PDOException && auth_is_missing_user_table_error($e)) {
+      return;
+    }
+    throw $e;
+  }
+}
+
+function auth_attempt_login(string $username, string $password): array {
+  global $CURRENT_USER;
+  $username = trim($username);
+  $password = (string)$password;
+  if ($username === '' || $password === '') {
+    throw new RuntimeException('missing_credentials');
+  }
+  $row = auth_user_row_by_username($username);
+  if (!$row || empty($row['password_hash']) || !password_verify($password, (string)$row['password_hash'])) {
+    throw new RuntimeException('invalid_credentials');
+  }
+  if (function_exists('password_needs_rehash') && password_needs_rehash((string)$row['password_hash'], PASSWORD_DEFAULT)) {
+    $pdo = auth_pdo();
+    if ($pdo) {
+      try {
+        $stmt = $pdo->prepare('UPDATE users SET password_hash = :hash, updated_at = :ts WHERE id = :id');
+        $stmt->execute([
+          ':hash' => password_hash($password, PASSWORD_DEFAULT),
+          ':ts' => gmdate('Y-m-d H:i:s'),
+          ':id' => $row['id'],
+        ]);
+      } catch (Throwable $e) {
+        if (!($e instanceof PDOException && auth_is_missing_user_table_error($e))) {
+          throw $e;
+        }
+      }
+    }
+  }
+  if (session_status() === PHP_SESSION_ACTIVE) {
+    session_regenerate_id(true);
+  }
+  auth_set_session_user_id((int)$row['id']);
+  auth_update_last_login((int)$row['id']);
+  $CURRENT_USER = auth_public_user($row);
+  return $CURRENT_USER;
+}
+
+function auth_logout(): void {
+  global $CURRENT_USER;
+  auth_set_session_user_id(null);
+  if (session_status() === PHP_SESSION_ACTIVE) {
+    session_regenerate_id(true);
+  }
+  $CURRENT_USER = null;
+}
+
+function auth_normalize_role(string $role): string {
+  return strtolower(trim($role));
+}
+
+function auth_is_valid_role(string $role): bool {
+  return in_array($role, ['admin', 'editor', 'viewer'], true);
+}
+
+function auth_user_can_view(?array $user): bool {
+  return is_array($user);
+}
+
+function auth_user_can_edit(?array $user): bool {
+  if (!is_array($user)) {
+    return false;
+  }
+  $role = auth_normalize_role((string)($user['role'] ?? ''));
+  return in_array($role, ['admin', 'editor'], true);
+}
+
+function auth_user_can_manage_users(?array $user): bool {
+  if (!is_array($user)) {
+    return false;
+  }
+  $role = auth_normalize_role((string)($user['role'] ?? ''));
+  return $role === 'admin';
+}
+
+function auth_list_users(): array {
+  $pdo = auth_pdo();
+  if (!$pdo) {
+    return [];
+  }
+  try {
+    $stmt = $pdo->query('SELECT id, username, role, email, created_at, updated_at, last_login_at FROM users ORDER BY lower(username)');
+    $rows = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+  } catch (Throwable $e) {
+    if ($e instanceof PDOException && auth_is_missing_user_table_error($e)) {
+      return [];
+    }
+    throw $e;
+  }
+  return array_map('auth_public_user', $rows ?: []);
+}
+
+function auth_save_user(array $input): array {
+  global $CURRENT_USER;
+  $pdo = auth_pdo();
+  if (!$pdo) {
+    throw new RuntimeException('auth_db_unavailable');
+  }
+
+  $id = isset($input['id']) ? (int)$input['id'] : null;
+  $username = trim((string)($input['username'] ?? ''));
+  $email = trim((string)($input['email'] ?? ''));
+  $roleRaw = auth_normalize_role((string)($input['role'] ?? ''));
+  $password = isset($input['password']) ? (string)$input['password'] : '';
+
+  if ($username === '') {
+    throw new RuntimeException('username_required');
+  }
+  if (!auth_is_valid_role($roleRaw)) {
+    throw new RuntimeException('invalid_role');
+  }
+  $now = gmdate('Y-m-d H:i:s');
+
+  if ($id === null) {
+    if ($password === '') {
+      throw new RuntimeException('password_required');
+    }
+    try {
+      $stmt = $pdo->prepare('INSERT INTO users (username, password_hash, role, email, created_at, updated_at) VALUES (:username, :hash, :role, :email, :created_at, :updated_at)');
+      $stmt->execute([
+        ':username' => $username,
+        ':hash' => password_hash($password, PASSWORD_DEFAULT),
+        ':role' => $roleRaw,
+        ':email' => $email,
+        ':created_at' => $now,
+        ':updated_at' => $now,
+      ]);
+    } catch (PDOException $e) {
+      if ((int)$e->getCode() === 23000 || stripos($e->getMessage(), 'unique') !== false) {
+        throw new RuntimeException('username_exists');
+      }
+      throw $e;
+    }
+    $newId = (int)$pdo->lastInsertId();
+    $row = auth_user_row_by_id($newId);
+    return $row ? auth_public_user($row) : [
+      'id' => $newId,
+      'username' => $username,
+      'email' => $email,
+      'role' => $roleRaw,
+    ];
+  }
+
+  $existing = auth_user_row_by_id($id);
+  if (!$existing) {
+    throw new RuntimeException('user_not_found');
+  }
+  $conflict = auth_user_row_by_username($username);
+  if ($conflict && (int)$conflict['id'] !== $id) {
+    throw new RuntimeException('username_exists');
+  }
+
+  $fields = [
+    'username' => $username,
+    'role' => $roleRaw,
+    'email' => $email,
+    'updated_at' => $now,
+  ];
+  if ($password !== '') {
+    $fields['password_hash'] = password_hash($password, PASSWORD_DEFAULT);
+  }
+
+  $setParts = [];
+  $params = [':id' => $id];
+  foreach ($fields as $col => $value) {
+    $setParts[] = "$col = :$col";
+    $params[":$col"] = $value;
+  }
+  $sql = 'UPDATE users SET ' . implode(', ', $setParts) . ' WHERE id = :id';
+  $stmt = $pdo->prepare($sql);
+  $stmt->execute($params);
+
+  $row = auth_user_row_by_id($id);
+  $public = $row ? auth_public_user($row) : auth_public_user(array_merge($existing, $fields));
+  if ($CURRENT_USER && (int)$CURRENT_USER['id'] === $id) {
+    $CURRENT_USER = $public;
+  }
+  return $public;
+}
+
 function bootstrap_data_store_if_needed() {
   global $DATA_FILE, $DATA_BOOTSTRAP_INFO, $DATA_INIT_ERROR;
 
@@ -1389,3 +1747,4 @@ function bootstrap_data_store_if_needed() {
 }
 
 bootstrap_data_store_if_needed();
+auth_initialize_current_user();

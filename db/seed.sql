@@ -6,3 +6,6 @@ INSERT INTO items (id, position, data) VALUES
 INSERT INTO round_meta (round_id, data) VALUES
   ('1', '{"id":1,"label":"1. kör","color":"#e11d48"}'),
   ('2', '{"id":2,"label":"2. kör","color":"#f59e0b"}');
+
+INSERT INTO users (username, password_hash, role, email)
+VALUES ('admin', '$2y$12$EYWtZ8ErGhR0LftRgSryA.7k056Y4DUewn4sYgBk22n5hfvqO98Cu', 'admin', '');
