@@ -1,4 +1,8 @@
-<?php require __DIR__ . '/common.php'; ?>
+<?php
+require __DIR__ . '/common.php';
+require __DIR__ . '/src/auth/session_guard.php';
+\App\Auth\require_login();
+?>
 <!doctype html>
 <html lang="hu">
 <head>

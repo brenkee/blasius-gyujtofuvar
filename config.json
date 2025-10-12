@@ -1,4 +1,5 @@
 {
+    "base_url": "",
     "app": {
         "title": "BLASIUS - Gyűjtőfuvar szervező",
         "auto_sort_by_round": true,
@@ -41,18 +42,34 @@
         "data_file": "data/app.db",
         "export_file": "fuvar_export.csv",
         "export_download_name": "fuvar_export.csv",
-        "archive_file": "fuvar_archive.log"
+        "archive_file": "fuvar_archive.log",
+        "auth_db_file": "data/auth.db"
     },
     "backup": {
         "enabled": true,
         "dir": "backups",
         "min_interval_minutes": 10,
         "retention_policy": [
-            {"min_age_hours": 12, "period_hours": 1},
-            {"min_age_hours": 24, "period_hours": 3},
-            {"min_age_hours": 72, "period_hours": 24},
-            {"min_age_hours": 168, "period_hours": 72},
-            {"min_age_hours": 720, "period_hours": 168}
+            {
+                "min_age_hours": 12,
+                "period_hours": 1
+            },
+            {
+                "min_age_hours": 24,
+                "period_hours": 3
+            },
+            {
+                "min_age_hours": 72,
+                "period_hours": 24
+            },
+            {
+                "min_age_hours": 168,
+                "period_hours": 72
+            },
+            {
+                "min_age_hours": 720,
+                "period_hours": 168
+            }
         ]
     },
     "map": {
@@ -208,7 +225,7 @@
             "id": 0,
             "label": "ÚJ CÍMEK",
             "color": "#888"
-        }, 
+        },
         {
             "id": 1,
             "label": "Pest Megye: M0",

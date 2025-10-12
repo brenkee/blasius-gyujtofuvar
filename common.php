@@ -3,6 +3,7 @@
 
 $CONFIG_FILE = __DIR__ . '/config.json';
 $CFG_DEFAULT = [
+  "base_url" => '',
   "app" => [
     "title" => "Gyűjtőfuvar – címkezelő",
     "auto_sort_by_round" => true,
@@ -43,6 +44,7 @@ $CFG_DEFAULT = [
     "files" => [
     "data_file" => "data/app.db",
     "export_file" => "fuvar_export.csv",
+    "auth_db_file" => "data/auth.db",
     "export_download_name" => "fuvar_export.csv",
     "archive_file" => "fuvar_archive.log",
     "revision_file" => "fuvar_revision.json",

@@ -1,5 +1,7 @@
 <?php
 require __DIR__ . '/common.php';
+require __DIR__ . '/src/auth/session_guard.php';
+\App\Auth\require_login();
 
 $initError = $DATA_INIT_ERROR ?? null;
 if (!empty($initError)) {

@@ -1,5 +1,8 @@
 <?php
 require __DIR__ . '/common.php';
+require __DIR__ . '/src/auth/session_guard.php';
+
+\App\Auth\require_login(['api' => true]);
 
 header('X-Content-Type-Options: nosniff');
 
