@@ -111,10 +111,13 @@ function init_app_database(array $options = []): array {
         }
     }
 
+    $adminBootstrap = ensure_default_admin_user($pdo);
+
     return [
         'created' => $created,
         'migrations' => $executedMigrations,
         'seeded' => $seeded,
+        'admin_bootstrap' => $adminBootstrap,
         'db_path' => $dbPath,
     ];
 }
@@ -155,6 +158,33 @@ function database_is_empty(PDO $pdo): bool {
     return true;
 }
 
+/**
+ * Ensure that at least one administrator user exists (admin/admin by default).
+ */
+function ensure_default_admin_user(PDO $pdo): bool {
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name = 'users'");
+    $stmt->execute();
+    if ((int)$stmt->fetchColumn() === 0) {
+        return false;
+    }
+
+    $existing = $pdo->query('SELECT id FROM users LIMIT 1');
+    if ($existing !== false && $existing->fetchColumn() !== false) {
+        return false;
+    }
+
+    $hash = password_hash('admin', PASSWORD_DEFAULT);
+    $insert = $pdo->prepare('INSERT INTO users (username, email, password_hash, role, must_change_password) VALUES (:username, :email, :password_hash, :role, 1)');
+    $insert->execute([
+        ':username' => 'admin',
+        ':email' => 'admin@example.com',
+        ':password_hash' => $hash,
+        ':role' => 'admin',
+    ]);
+
+    return true;
+}
+
 if (PHP_SAPI === 'cli' && realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     try {
         $result = init_app_database();
@@ -166,6 +196,9 @@ if (PHP_SAPI === 'cli' && realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE
             $messages[] = 'Nem volt új migráció.';
         }
         $messages[] = $result['seeded'] ? 'Minta adatok betöltve.' : 'Minta adatok nem kerültek betöltésre.';
+        if (!empty($result['admin_bootstrap'])) {
+            $messages[] = 'Alapértelmezett admin fiók létrehozva (admin / admin). Első bejelentkezéskor kötelező a jelszócsere.';
+        }
         echo implode(PHP_EOL, $messages) . PHP_EOL;
     } catch (Throwable $e) {
         fwrite(STDERR, 'Adatbázis inicializációs hiba: ' . $e->getMessage() . PHP_EOL);

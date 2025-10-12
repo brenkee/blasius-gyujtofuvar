@@ -1,4 +1,16 @@
-<?php require __DIR__ . '/common.php'; ?>
+<?php
+require __DIR__ . '/common.php';
+require __DIR__ . '/auth_lib.php';
+
+$CURRENT_USER = auth_require_login();
+if (auth_user_must_change_password($CURRENT_USER)) {
+    header('Location: /admin.php?force=profile');
+    exit;
+}
+$CSRF_TOKEN = auth_generate_csrf_token();
+$IS_ADMIN = auth_user_has_role($CURRENT_USER, AUTH_ROLE_ADMIN);
+$IS_EDITOR = auth_user_has_role($CURRENT_USER, AUTH_ROLE_EDITOR);
+?>
 <!doctype html>
 <html lang="hu">
 <head>
@@ -27,7 +39,14 @@
       downloadArchive: 'api.php?action=download_archive',
       printAll: 'print.php',
       printRound: (rid)=>'print.php?round='+encodeURIComponent(rid)
-    }
+    },
+    user: {
+      id: <?= json_encode($CURRENT_USER['id'], JSON_UNESCAPED_UNICODE) ?>,
+      username: <?= json_encode($CURRENT_USER['username'], JSON_UNESCAPED_UNICODE) ?>,
+      email: <?= json_encode($CURRENT_USER['email'], JSON_UNESCAPED_UNICODE) ?>,
+      role: <?= json_encode($CURRENT_USER['role'], JSON_UNESCAPED_UNICODE) ?>
+    },
+    csrfToken: <?= json_encode($CSRF_TOKEN, JSON_UNESCAPED_UNICODE) ?>
   };
 </script>
 <script defer src="public/app.js"></script>
@@ -80,6 +99,9 @@
           || !empty($toolbarFeatures['print_all'])
           || !empty($toolbarFeatures['download_archive'])
           || !empty($toolbarFeatures['theme_toggle']);
+        if (!$toolbarMenuHasItems) {
+          $toolbarMenuHasItems = true; // Mindig jelenjen meg a menü a kijelentkezéshez.
+        }
       ?>
       <div class="toolbar">
         <?php if (!empty($toolbarFeatures['expand_all'])): ?>
@@ -113,6 +135,9 @@
               <span class="visually-hidden"><?= htmlspecialchars($toolbarMenuLabel) ?></span>
             </button>
             <div id="toolbarMenu" class="toolbar-menu" hidden>
+              <div class="toolbar-user">
+                <span class="toolbar-user-name">👤 <?= htmlspecialchars($CURRENT_USER['username']) ?> (<?= htmlspecialchars($CURRENT_USER['role']) ?>)</span>
+              </div>
               <?php if (!empty($toolbarFeatures['import_all'])): ?>
                 <button id="importBtn" type="button" title="<?= htmlspecialchars($toolbarText['import_all']['title'] ?? '') ?>">
                   <?= htmlspecialchars($toolbarText['import_all']['label'] ?? 'Import (CSV)') ?>
@@ -139,6 +164,13 @@
                   <?= htmlspecialchars($toolbarText['theme_toggle']['label'] ?? '🌙 / ☀️') ?>
                 </button>
               <?php endif; ?>
+              <?php if ($IS_ADMIN): ?>
+                <a class="toolbar-menu-link" href="admin.php">Admin felület</a>
+              <?php endif; ?>
+              <form method="post" action="logout.php" class="toolbar-logout">
+                <input type="hidden" name="_csrf" value="<?= htmlspecialchars($CSRF_TOKEN, ENT_QUOTES) ?>" />
+                <button type="submit">Kijelentkezés</button>
+              </form>
             </div>
           </div>
         <?php endif; ?>

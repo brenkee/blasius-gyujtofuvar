@@ -1,5 +1,6 @@
 <?php
 require __DIR__ . '/common.php';
+require __DIR__ . '/auth_lib.php';
 
 header('X-Content-Type-Options: nosniff');
 
@@ -14,6 +15,11 @@ if (!empty($DATA_INIT_ERROR)) {
   exit;
 }
 
+$CURRENT_USER = auth_require_login(false);
+$USER_MUST_CHANGE = auth_user_must_change_password($CURRENT_USER);
+$USER_IS_ADMIN = auth_user_has_role($CURRENT_USER, AUTH_ROLE_ADMIN);
+$USER_IS_EDITOR = auth_user_has_role($CURRENT_USER, AUTH_ROLE_EDITOR);
+
 $action = $_GET['action'] ?? null;
 if (!$action) { http_response_code(400); echo 'Missing action'; exit; }
 
@@ -24,6 +30,35 @@ $sendJsonError = function($message, $code = 400) use ($jsonHeader){
   echo json_encode(['ok' => false, 'error' => $message], JSON_UNESCAPED_UNICODE);
   exit;
 };
+
+$requireEditor = function() use ($USER_IS_EDITOR, $sendJsonError) {
+  if (!$USER_IS_EDITOR) {
+    $sendJsonError('forbidden', 403);
+  }
+};
+
+$requireAdmin = function() use ($USER_IS_ADMIN, $sendJsonError) {
+  if (!$USER_IS_ADMIN) {
+    $sendJsonError('admin_only', 403);
+  }
+};
+
+$rejectIfPasswordChangeNeeded = function(array $blockedActions, string $action) use ($USER_MUST_CHANGE, $sendJsonError) {
+  if ($USER_MUST_CHANGE && in_array($action, $blockedActions, true)) {
+    $sendJsonError('password_change_required', 409);
+  }
+};
+
+$blockedOnPasswordChange = ['save', 'import_csv', 'delete_round'];
+$editorActions = ['save', 'import_csv', 'delete_round'];
+$adminActions = ['download_archive'];
+
+$rejectIfPasswordChangeNeeded($blockedOnPasswordChange, $action);
+if (in_array($action, $adminActions, true)) {
+  $requireAdmin();
+} elseif (in_array($action, $editorActions, true)) {
+  $requireEditor();
+}
 
 function require_actor_id() {
   $actor = normalized_actor_id($_SERVER['HTTP_X_CLIENT_ID'] ?? '');
@@ -310,6 +345,7 @@ if ($action === 'load') {
 
 if ($action === 'save') {
   $jsonHeader();
+  auth_require_csrf_from_request();
   $actorId = require_actor_id();
   $requestId = require_request_id();
   $batchId = optional_batch_id();
@@ -391,6 +427,7 @@ if ($action === 'import_csv') {
   if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     $sendJsonError('Hibás HTTP metódus.', 405);
   }
+  auth_require_csrf_from_request();
   $actorId = require_actor_id();
   $requestId = require_request_id();
   $batchId = optional_batch_id();
@@ -750,6 +787,7 @@ if ($action === 'import_csv') {
 
 if ($action === 'delete_round') {
   $jsonHeader();
+  auth_require_csrf_from_request();
   $actorId = require_actor_id();
   $requestId = require_request_id();
   $batchId = optional_batch_id();

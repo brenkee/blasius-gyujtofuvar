@@ -1,6 +1,7 @@
 /* global L */
 (function(){
   const EP = window.APP_BOOTSTRAP?.endpoints || {};
+  const CSRF_TOKEN = window.APP_BOOTSTRAP?.csrfToken || null;
   const state = {
     cfg: null,
     items: [],                 // {id,label,address,city,note,lat,lon,round,weight,volume,_pendingRound}
@@ -18,7 +19,9 @@
     conflictNotified: new Set(),
     conflictOverlay: null,
     markerOverlapCounts: new Map(),
-    displayIndexById: new Map()
+    displayIndexById: new Map(),
+    user: window.APP_BOOTSTRAP?.user || null,
+    csrfToken: CSRF_TOKEN
   };
 
   const history = [];
@@ -65,6 +68,9 @@
     }
     if (state.clientId) {
       headers.set('X-Client-ID', state.clientId);
+    }
+    if (CSRF_TOKEN && !headers.has('X-CSRF-Token')) {
+      headers.set('X-CSRF-Token', CSRF_TOKEN);
     }
     return headers;
   }

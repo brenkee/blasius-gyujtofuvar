@@ -343,6 +343,28 @@ $CFG_DEFAULT = [
       ["min_age_hours" => 720, "period_hours" => 168]
     ],
     "strategy" => "interval_csv"
+  ],
+  "auth" => [
+    "session" => [
+      "name" => "GFSESSID",
+      "lifetime" => 60 * 60 * 12,
+      "path" => "/",
+      "secure" => false,
+      "httponly" => true,
+      "samesite" => "Lax"
+    ],
+    "login" => [
+      "title" => "Belépés",
+      "subtitle" => "Jelentkezz be a rendszerbe",
+      "logo" => null,
+      "background" => "#0f172a",
+      "background_image" => null,
+      "card_background" => "#ffffff",
+      "accent" => "#2563eb",
+      "text" => "#111827",
+      "muted" => "#6b7280",
+      "footer" => null
+    ]
   ]
 ];
 
