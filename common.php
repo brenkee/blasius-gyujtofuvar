@@ -3,6 +3,7 @@
 
 $CONFIG_FILE = __DIR__ . '/config.json';
 $CFG_DEFAULT = [
+  "base_url" => '/',
   "app" => [
     "title" => "Gyűjtőfuvar – címkezelő",
     "auto_sort_by_round" => true,
@@ -343,6 +344,28 @@ $CFG_DEFAULT = [
       ["min_age_hours" => 720, "period_hours" => 168]
     ],
     "strategy" => "interval_csv"
+  ],
+  "auth" => [
+    "session" => [
+      "name" => "GFSESSID",
+      "lifetime" => 60 * 60 * 12,
+      "path" => "/",
+      "secure" => false,
+      "httponly" => true,
+      "samesite" => "Lax"
+    ],
+    "login" => [
+      "title" => "Belépés",
+      "subtitle" => "Jelentkezz be a rendszerbe",
+      "logo" => null,
+      "background" => "#0f172a",
+      "background_image" => null,
+      "card_background" => "#ffffff",
+      "accent" => "#2563eb",
+      "text" => "#111827",
+      "muted" => "#6b7280",
+      "footer" => null
+    ]
   ]
 ];
 
@@ -351,6 +374,24 @@ if (is_file($CONFIG_FILE)) {
   $raw = file_get_contents($CONFIG_FILE);
   $json = json_decode($raw, true);
   if (is_array($json)) $CFG = array_replace_recursive($CFG_DEFAULT, $json);
+}
+if (!isset($CFG['base_url'])) {
+  $CFG['base_url'] = '/';
+}
+
+function app_base_url(): string {
+  global $CFG;
+  $config = is_array($CFG) ? $CFG : [];
+  $base = rtrim((string)($config['base_url'] ?? '/'), '/') . '/';
+  return $base === '' ? '/' : $base;
+}
+
+function app_url(string $path = ''): string {
+  $base = app_base_url();
+  if ($path === '' || $path === '/') {
+    return $base;
+  }
+  return $base . ltrim($path, '/');
 }
 if (empty($CFG['rounds'])) {
   $CFG['rounds'] = [
