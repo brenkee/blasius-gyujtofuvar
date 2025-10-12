@@ -70,7 +70,27 @@
                 22.897
             ]
         ],
-        "max_bounds_pad": 0.6
+        "max_bounds_pad": 0.6,
+        "min_zoom": 6,
+        "max_zoom": 14,
+        "overlay": {
+            "enabled": true,
+            "inner_bounds": [
+                [
+                    45.737,
+                    16.113
+                ],
+                [
+                    48.585,
+                    22.897
+                ]
+            ],
+            "style": {
+                "fill_color": "#0f172a",
+                "fill_opacity": 0.7,
+                "stroke": false
+            }
+        }
     },
     "geocode": {
         "countrycodes": "hu",

@@ -1163,6 +1163,7 @@
   // ======= MAP
   const map = L.map('map',{zoomControl:true, preferCanvas:true});
   const markerLayer = L.featureGroup().addTo(map);
+  let mapOverlayLayer = null;
   let markerOverlapRefreshTimer = null;
   function updatePinCount(){ if (pinCountEl) pinCountEl.textContent = markerLayer.getLayers().length.toString(); }
 
@@ -1260,6 +1261,97 @@
     const metersPerPixel = metersPerPixelAtCenter();
     if (!Number.isFinite(metersPerPixel) || metersPerPixel <= 0) return 0;
     return ratio * metersPerPixel;
+  }
+
+  function clamp01(val, fallback = 0){
+    const num = Number(val);
+    if (!Number.isFinite(num)) return fallback;
+    if (num < 0) return 0;
+    if (num > 1) return 1;
+    return num;
+  }
+
+  function parseLatLngPair(raw){
+    if (!Array.isArray(raw) || raw.length < 2) return null;
+    const lat = Number(raw[0]);
+    const lon = Number(raw[1]);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    return [lat, lon];
+  }
+
+  function buildRingFromBounds(bounds){
+    if (!Array.isArray(bounds) || bounds.length < 2) return null;
+    const sw = parseLatLngPair(bounds[0]);
+    const ne = parseLatLngPair(bounds[1]);
+    if (!sw || !ne) return null;
+    const south = Math.min(sw[0], ne[0]);
+    const west = Math.min(sw[1], ne[1]);
+    const north = Math.max(sw[0], ne[0]);
+    const east = Math.max(sw[1], ne[1]);
+    return [
+      [north, west],
+      [north, east],
+      [south, east],
+      [south, west]
+    ];
+  }
+
+  function buildRingFromPolygon(rawPolygon){
+    if (!Array.isArray(rawPolygon)) return null;
+    const ring = rawPolygon
+      .map(parseLatLngPair)
+      .filter(coords => Array.isArray(coords));
+    return ring.length >= 3 ? ring : null;
+  }
+
+  function applyMapOverlay(){
+    if (mapOverlayLayer) {
+      map.removeLayer(mapOverlayLayer);
+      mapOverlayLayer = null;
+    }
+    const overlayCfg = cfg('map.overlay', null);
+    if (!overlayCfg || overlayCfg.enabled === false) return;
+
+    let innerRing = null;
+    if (Array.isArray(overlayCfg.inner_polygon)) {
+      innerRing = buildRingFromPolygon(overlayCfg.inner_polygon);
+    }
+    if (!innerRing && Array.isArray(overlayCfg.inner_bounds)) {
+      innerRing = buildRingFromBounds(overlayCfg.inner_bounds);
+    }
+    if (!innerRing) {
+      innerRing = buildRingFromBounds(cfg('map.fit_bounds', null));
+    }
+    if (!innerRing) return;
+
+    const outerRing = [
+      [90, -180],
+      [90, 180],
+      [-90, 180],
+      [-90, -180]
+    ];
+
+    const style = overlayCfg.style || {};
+    const fillColor = style.fillColor ?? style.fill_color ?? '#0f172a';
+    const fillOpacity = clamp01(style.fillOpacity ?? style.fill_opacity ?? 0.65, 0.65);
+    const strokeEnabled = style.stroke ?? style.outline ?? false;
+    const outlineColor = style.color ?? '#0f172a';
+    const outlineWeightRaw = style.weight ?? style.strokeWidth ?? 0;
+    const outlineWeight = Number.isFinite(Number(outlineWeightRaw)) ? Number(outlineWeightRaw) : 0;
+    const outlineOpacity = clamp01(style.opacity ?? style.strokeOpacity ?? 1, 1);
+
+    mapOverlayLayer = L.polygon([outerRing, innerRing], {
+      bubblingMouseEvents: false,
+      interactive: false,
+      stroke: !!strokeEnabled,
+      color: outlineColor,
+      weight: outlineWeight,
+      opacity: outlineOpacity,
+      fill: true,
+      fillColor: fillColor,
+      fillOpacity: fillOpacity,
+      fillRule: 'evenodd'
+    }).addTo(map);
   }
 
   function openMarkerPopup(mk, featureKey){
@@ -3793,8 +3885,21 @@
       applyPanelSticky();
       updateUndoButton();
 
+      const minZoom = cfgNumber('map.min_zoom', null);
+      if (Number.isFinite(minZoom)) {
+        map.setMinZoom(minZoom);
+      }
+      const maxZoom = cfgNumber('map.max_zoom', null);
+      if (Number.isFinite(maxZoom)) {
+        map.setMaxZoom(maxZoom);
+      }
+
       // tile layer
-      L.tileLayer(state.cfg.map.tiles.url,{maxZoom:19, attribution:state.cfg.map.tiles.attribution}).addTo(map);
+      const tileMaxZoom = cfgNumber('map.tiles.max_zoom', Number.isFinite(maxZoom) ? maxZoom : 19) || 19;
+      L.tileLayer(state.cfg.map.tiles.url,{
+        maxZoom: tileMaxZoom,
+        attribution: state.cfg.map.tiles.attribution
+      }).addTo(map);
       if (state.cfg.map.fit_bounds) {
         const b = L.latLngBounds(state.cfg.map.fit_bounds);
         map.fitBounds(b.pad(0.15));
@@ -3802,6 +3907,8 @@
         map.setMaxBounds(b.pad(pad));
         map.on('drag', ()=> map.panInsideBounds(map.options.maxBounds,{animate:false}));
       }
+
+      applyMapOverlay();
 
       // rounds
       ROUND_MAP = new Map(state.cfg.rounds.map(r=>[Number(r.id), r]));
