@@ -2840,10 +2840,30 @@
     status.style.fontWeight = '600';
     status.style.color = '#1d4ed8';
     status.setAttribute('role', 'status');
+    const statusDefaultStyles = {
+      color: '#1d4ed8',
+      background: 'rgba(37,99,235,0.08)',
+      borderColor: 'rgba(37,99,235,0.3)',
+      fontSize: '12px'
+    };
+    const statusEmptyStyles = {
+      color: '#b91c1c',
+      background: 'rgba(248,113,113,0.12)',
+      borderColor: '#fca5a5',
+      fontSize: '14px'
+    };
     if (panelTopEl) {
       panelTopEl.appendChild(status);
     } else {
       parent.insertBefore(status, groupsEl);
+    }
+
+    function applyStatusStyleSet(styleSet){
+      if (!styleSet) return;
+      if (styleSet.color) status.style.color = styleSet.color;
+      if (styleSet.background) status.style.background = styleSet.background;
+      if (styleSet.borderColor) status.style.borderColor = styleSet.borderColor;
+      if (styleSet.fontSize) status.style.fontSize = styleSet.fontSize;
     }
 
     function updateIndicator(active, visibleCount){
@@ -2853,23 +2873,29 @@
         status.style.display = '';
         const tpl = text('quick_search.filtered_notice', 'Szűrt találatok: {count}');
         const emptyTpl = text('quick_search.filtered_empty', 'Nincs találat a megadott szűrőre.');
-        status.textContent = visibleCount > 0 ? format(tpl, {count: visibleCount}) : emptyTpl;
+        if (visibleCount > 0) {
+          status.textContent = format(tpl, {count: visibleCount});
+          applyStatusStyleSet(statusDefaultStyles);
+        } else {
+          status.textContent = emptyTpl;
+          applyStatusStyleSet(statusEmptyStyles);
+        }
       } else {
         inp.style.borderColor = '#d1d5db';
         inp.style.boxShadow = 'none';
         status.style.display = 'none';
         status.textContent = '';
+        applyStatusStyleSet(statusDefaultStyles);
       }
     }
 
     function applyFilter(){
       const q = (state.filterText || '').trim().toLowerCase();
-      // sorok
-      const rows = groupsEl.querySelectorAll('.row');
-      rows.forEach(row=>{
-        const id = row.dataset.rowId;
-        const it = state.items.find(x=>x.id===id);
-        if (!it){ row.style.display=''; return; }
+      const matchCache = new Map();
+      function matchesFilter(it){
+        if (!it) return false;
+        const cacheKey = it.id ?? it;
+        if (matchCache.has(cacheKey)) return matchCache.get(cacheKey);
         const parts = [];
         getFieldDefs().forEach(field => {
           const val = it[field.id];
@@ -2882,7 +2908,19 @@
         parts.push(it.city || '');
         const hay = parts.join(' ').toLowerCase();
         const match = !q || hay.includes(q);
+        matchCache.set(cacheKey, match);
+        return match;
+      }
+      let visibleCount = 0;
+      // sorok
+      const rows = groupsEl.querySelectorAll('.row');
+      rows.forEach(row=>{
+        const id = row.dataset.rowId;
+        const it = state.items.find(x=>x.id===id);
+        if (!it){ row.style.display=''; return; }
+        const match = matchesFilter(it);
         row.style.display = match ? '' : 'none';
+        if (match) visibleCount++;
       });
       // körök: ha egy körben nincs látható sor → rejt
       groupsEl.querySelectorAll('.group').forEach(g=>{
@@ -2890,7 +2928,24 @@
         const anyVisible = Array.from(body.children).some(ch => ch.classList.contains('row') && ch.style.display!=='none');
         g.style.display = anyVisible ? '' : 'none';
       });
-      const visibleCount = Array.from(groupsEl.querySelectorAll('.row')).filter(row => row.style.display !== 'none').length;
+      let markerLayerChanged = false;
+      state.items.forEach(it => {
+        const mk = state.markersById.get(it.id);
+        if (!mk) return;
+        const match = matchesFilter(it);
+        const hasLayer = markerLayer.hasLayer(mk);
+        if (match && !hasLayer) {
+          markerLayer.addLayer(mk);
+          markerLayerChanged = true;
+        } else if (!match && hasLayer) {
+          markerLayer.removeLayer(mk);
+          markerLayerChanged = true;
+        }
+      });
+      if (markerLayerChanged) {
+        updatePinCount();
+        requestMarkerOverlapRefresh();
+      }
       updateIndicator(!!q, visibleCount);
     }
 
