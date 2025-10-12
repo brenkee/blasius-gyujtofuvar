@@ -7,3 +7,4 @@ fuvar_export.csv
 fuvar_state.lock
 fuvar_revision.json
 fuvar_changes.log
+fuvar_presence.json

@@ -18,7 +18,9 @@
     conflictNotified: new Set(),
     conflictOverlay: null,
     markerOverlapCounts: new Map(),
-    displayIndexById: new Map()
+    displayIndexById: new Map(),
+    presenceTimer: null,
+    presenceVisibilityHandler: null
   };
 
   const history = [];
@@ -265,6 +267,93 @@
     };
   })();
 
+  const presenceIndicator = (function(){
+    let container = null;
+    let iconEl = null;
+    let textEl = null;
+    let currentCfg = null;
+
+    function ensureElements(){
+      if (container) return;
+      container = document.createElement('div');
+      container.id = 'presenceIndicator';
+      container.className = 'presence-indicator presence-indicator--hidden';
+      iconEl = document.createElement('span');
+      iconEl.className = 'presence-indicator__icon';
+      textEl = document.createElement('span');
+      textEl.className = 'presence-indicator__text';
+      container.appendChild(iconEl);
+      container.appendChild(textEl);
+      document.body.appendChild(container);
+    }
+
+    function cssPropName(name){
+      return String(name).replace(/_/g, '-').replace(/([A-Z])/g, '-$1').toLowerCase();
+    }
+
+    function applyStyles(styles){
+      ensureElements();
+      if (!styles || typeof styles !== 'object') return;
+      Object.entries(styles).forEach(([key, value])=>{
+        if (value == null) return;
+        const cssKey = cssPropName(key);
+        const strVal = typeof value === 'number' ? `${value}` : String(value);
+        container.style.setProperty(cssKey, strVal);
+      });
+    }
+
+    function ensureConfigured(cfg){
+      ensureElements();
+      currentCfg = cfg && typeof cfg === 'object' ? cfg : {};
+      const icon = typeof currentCfg.icon === 'string' && currentCfg.icon.trim() !== ''
+        ? currentCfg.icon
+        : '👥';
+      iconEl.textContent = icon;
+      applyStyles(currentCfg.position);
+      applyStyles(currentCfg.style);
+    }
+
+    function formatMessage(count){
+      const textCfg = currentCfg && typeof currentCfg.text === 'object' ? currentCfg.text : {};
+      if (count === 1) {
+        const tpl = typeof textCfg.singular === 'string' && textCfg.singular.trim() !== ''
+          ? textCfg.singular
+          : 'Még 1 felhasználó aktív';
+        return tpl.replace('{count}', '1');
+      }
+      const tpl = typeof textCfg.plural === 'string' && textCfg.plural.trim() !== ''
+        ? textCfg.plural
+        : 'Még {count} felhasználó aktív';
+      return tpl.replace('{count}', String(count));
+    }
+
+    return {
+      configure(cfg){
+        ensureConfigured(cfg);
+      },
+      update(count, cfgOverride){
+        if (cfgOverride) {
+          ensureConfigured(cfgOverride);
+        } else {
+          ensureElements();
+          if (!currentCfg) ensureConfigured(null);
+        }
+        if (!container) return;
+        if (count > 0) {
+          textEl.textContent = formatMessage(count);
+          container.classList.remove('presence-indicator--hidden');
+        } else {
+          this.hide();
+        }
+      },
+      hide(){
+        ensureElements();
+        if (textEl) textEl.textContent = '';
+        if (container) container.classList.add('presence-indicator--hidden');
+      }
+    };
+  })();
+
   async function ensureClientId(){
     if (state.clientId) return state.clientId;
     const resp = await fetchJSON(EP.session);
@@ -295,6 +384,73 @@
       state.changeWatcher.clientId = state.clientId;
       state.changeWatcher.setBaseline(state.baselineRevision);
     }
+  }
+
+  function initPresenceWatcher(){
+    if (state.presenceTimer) {
+      clearTimeout(state.presenceTimer);
+      state.presenceTimer = null;
+    }
+    if (state.presenceVisibilityHandler) {
+      document.removeEventListener('visibilitychange', state.presenceVisibilityHandler);
+      state.presenceVisibilityHandler = null;
+    }
+    if (!cfg('presence.enabled', false) || !EP.presence || !state.clientId) {
+      presenceIndicator.hide();
+      return;
+    }
+    const presenceCfg = cfg('presence', {});
+    presenceIndicator.configure(presenceCfg);
+    let heartbeatSec = Number(cfg('presence.heartbeat_interval_sec', 20));
+    if (!Number.isFinite(heartbeatSec) || heartbeatSec <= 0) {
+      heartbeatSec = 20;
+    }
+    const intervalMs = Math.max(5000, Math.round(heartbeatSec * 1000));
+    let inFlight = false;
+
+    const send = async ()=>{
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const payload = await fetchJSON(EP.presence, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({visibility: document.visibilityState || 'visible'})
+        });
+        if (payload && payload.enabled !== false && payload.ok !== false) {
+          const rawCount = Number(payload.active_count);
+          const count = Number.isFinite(rawCount) ? Math.max(0, Math.round(rawCount)) : 0;
+          presenceIndicator.update(count);
+        } else {
+          presenceIndicator.hide();
+        }
+      } catch (err) {
+        console.warn('Presence ping failed', err);
+        presenceIndicator.hide();
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    const schedule = ()=>{
+      state.presenceTimer = setTimeout(async ()=>{
+        await send();
+        schedule();
+      }, intervalMs);
+    };
+
+    send();
+    schedule();
+
+    const visHandler = ()=>{
+      if (document.visibilityState === 'visible') {
+        send();
+      } else {
+        presenceIndicator.hide();
+      }
+    };
+    document.addEventListener('visibilitychange', visHandler);
+    state.presenceVisibilityHandler = visHandler;
   }
 
   function closeConflictOverlay(){
@@ -3823,6 +3979,7 @@
       }
 
       await ensureClientId();
+      initPresenceWatcher();
       // load data
       await loadAll();
       initChangeWatcher();

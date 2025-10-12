@@ -167,6 +167,36 @@ if ($action === 'cfg') {
   if (!is_array($saveStatusCfg)) {
     $saveStatusCfg = [];
   }
+  $presenceCfgRaw = isset($CFG['presence']) && is_array($CFG['presence']) ? $CFG['presence'] : [];
+  $presenceTextRaw = isset($presenceCfgRaw['text']) && is_array($presenceCfgRaw['text']) ? $presenceCfgRaw['text'] : [];
+  $presenceCfg = [
+    'enabled' => !empty($presenceCfgRaw['enabled']),
+    'heartbeat_interval_sec' => isset($presenceCfgRaw['heartbeat_interval_sec']) ? (int)$presenceCfgRaw['heartbeat_interval_sec'] : 20,
+    'timeout_sec' => isset($presenceCfgRaw['timeout_sec']) ? (int)$presenceCfgRaw['timeout_sec'] : 75,
+    'icon' => isset($presenceCfgRaw['icon']) ? (string)$presenceCfgRaw['icon'] : '👥',
+    'text' => [
+      'singular' => isset($presenceTextRaw['singular']) ? (string)$presenceTextRaw['singular'] : 'Még 1 felhasználó aktív',
+      'plural' => isset($presenceTextRaw['plural']) ? (string)$presenceTextRaw['plural'] : 'Még {count} felhasználó aktív'
+    ],
+    'position' => [],
+    'style' => []
+  ];
+  if (isset($presenceCfgRaw['position']) && is_array($presenceCfgRaw['position'])) {
+    foreach ($presenceCfgRaw['position'] as $key => $value) {
+      if (!is_string($key)) continue;
+      if (is_scalar($value)) {
+        $presenceCfg['position'][$key] = (string)$value;
+      }
+    }
+  }
+  if (isset($presenceCfgRaw['style']) && is_array($presenceCfgRaw['style'])) {
+    foreach ($presenceCfgRaw['style'] as $key => $value) {
+      if (!is_string($key)) continue;
+      if (is_scalar($value)) {
+        $presenceCfg['style'][$key] = (string)$value;
+      }
+    }
+  }
   $JS_CFG = [
     "app" => [
       "title" => $CFG['app']['title'],
@@ -211,9 +241,104 @@ if ($action === 'cfg') {
     "text" => $CFG['text'] ?? [],
     "items" => $CFG['items'] ?? [],
     "export" => $CFG['export'] ?? [],
-    "print" => $CFG['print'] ?? []
+    "print" => $CFG['print'] ?? [],
+    "presence" => $presenceCfg
   ];
   echo json_encode($JS_CFG, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+  exit;
+}
+
+if ($action === 'presence') {
+  $jsonHeader();
+  if (empty($CFG['presence']['enabled'])) {
+    echo json_encode(['ok' => false, 'enabled' => false, 'active_count' => 0, 'total_count' => 0], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+  $actorId = require_actor_id();
+  global $PRESENCE_FILE;
+  $timeoutRaw = $CFG['presence']['timeout_sec'] ?? 75;
+  $timeoutSec = is_numeric($timeoutRaw) ? (int)$timeoutRaw : 75;
+  if ($timeoutSec < 10) {
+    $timeoutSec = 10;
+  }
+  $now = time();
+  $cutoff = $now - $timeoutSec;
+  $visibility = null;
+  $bodyRaw = file_get_contents('php://input');
+  if (is_string($bodyRaw) && $bodyRaw !== '') {
+    $payload = json_decode($bodyRaw, true);
+    if (is_array($payload) && isset($payload['visibility']) && is_string($payload['visibility'])) {
+      $visibility = substr($payload['visibility'], 0, 12);
+    }
+  }
+
+  $entries = [];
+  $total = 0;
+  $others = 0;
+  $error = null;
+
+  $fh = @fopen($PRESENCE_FILE, 'c+');
+  if ($fh === false) {
+    $error = 'presence_file_unavailable';
+  } else {
+    if (!flock($fh, LOCK_EX)) {
+      $error = 'presence_lock_failed';
+      fclose($fh);
+      $fh = null;
+    } else {
+      try {
+        rewind($fh);
+        $storedRaw = stream_get_contents($fh);
+        if (is_string($storedRaw) && $storedRaw !== '') {
+          $decoded = json_decode($storedRaw, true);
+          if (is_array($decoded)) {
+            foreach ($decoded as $cid => $info) {
+              $normalized = normalized_actor_id($cid);
+              if (!$normalized) {
+                continue;
+              }
+              $lastSeen = isset($info['last_seen']) ? (int)$info['last_seen'] : 0;
+              if ($lastSeen < $cutoff) {
+                continue;
+              }
+              $entry = ['last_seen' => $lastSeen];
+              if (isset($info['visibility']) && is_string($info['visibility'])) {
+                $entry['visibility'] = substr($info['visibility'], 0, 12);
+              }
+              $entries[$normalized] = $entry;
+            }
+          }
+        }
+        $entries[$actorId] = ['last_seen' => $now];
+        if ($visibility !== null) {
+          $entries[$actorId]['visibility'] = $visibility;
+        }
+        $total = count($entries);
+        $others = $total > 0 ? max(0, $total - 1) : 0;
+        rewind($fh);
+        ftruncate($fh, 0);
+        fwrite($fh, json_encode($entries, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+        fflush($fh);
+      } catch (Throwable $e) {
+        $error = 'presence_update_failed';
+      }
+      flock($fh, LOCK_UN);
+      fclose($fh);
+    }
+  }
+
+  $response = [
+    'ok' => $error === null,
+    'enabled' => true,
+    'active_count' => $others,
+    'total_count' => $total,
+    'timeout_sec' => $timeoutSec
+  ];
+  if ($error !== null) {
+    $response['ok'] = false;
+    $response['error'] = $error;
+  }
+  echo json_encode($response, JSON_UNESCAPED_UNICODE);
   exit;
 }
 

@@ -47,7 +47,8 @@ $CFG_DEFAULT = [
     "archive_file" => "fuvar_archive.log",
     "revision_file" => "fuvar_revision.json",
     "change_log_file" => "fuvar_changes.log",
-    "lock_file" => "fuvar_state.lock"
+    "lock_file" => "fuvar_state.lock",
+    "presence_file" => "fuvar_presence.json"
   ],
   "map" => [
     "tiles" => [
@@ -61,6 +62,30 @@ $CFG_DEFAULT = [
     "countrycodes" => "hu",
     "language" => "hu",
     "user_agent" => "fuvarszervezo-internal/1.5 (+contact@example.com)"
+  ],
+  "presence" => [
+    "enabled" => true,
+    "heartbeat_interval_sec" => 20,
+    "timeout_sec" => 75,
+    "icon" => "👥",
+    "text" => [
+      "singular" => "Még 1 felhasználó aktív",
+      "plural" => "Még {count} felhasználó aktív"
+    ],
+    "position" => [
+      "bottom" => "16px",
+      "right" => "16px"
+    ],
+    "style" => [
+      "background" => "rgba(15, 23, 42, 0.9)",
+      "color" => "#ffffff",
+      "padding" => "8px 12px",
+      "borderRadius" => "9999px",
+      "fontSize" => "0.9rem",
+      "fontWeight" => "600",
+      "boxShadow" => "0 10px 25px rgba(15, 23, 42, 0.3)",
+      "gap" => "0.5rem"
+    ]
   ],
   "ui" => [
     "panel_min_px" => 330,
@@ -387,6 +412,7 @@ $ARCHIVE_FILE    = __DIR__ . '/' . ($CFG['files']['archive_file'] ?? 'fuvar_arch
 $REVISION_FILE   = __DIR__ . '/' . ($CFG['files']['revision_file'] ?? 'fuvar_revision.json');
 $CHANGE_LOG_FILE = __DIR__ . '/' . ($CFG['files']['change_log_file'] ?? 'fuvar_changes.log');
 $STATE_LOCK_FILE = __DIR__ . '/' . ($CFG['files']['lock_file'] ?? 'fuvar_state.lock');
+$PRESENCE_FILE   = __DIR__ . '/' . ($CFG['files']['presence_file'] ?? 'fuvar_presence.json');
 
 /**
  * Biztonságos backup: létezés-ellenőrzés és mtime használat védetten.

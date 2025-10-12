@@ -26,6 +26,7 @@
       deleteRound: 'api.php?action=delete_round',
       downloadArchive: 'api.php?action=download_archive',
       printAll: 'print.php',
+      presence: 'api.php?action=presence',
       printRound: (rid)=>'print.php?round='+encodeURIComponent(rid)
     }
   };

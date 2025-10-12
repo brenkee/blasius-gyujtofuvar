@@ -77,6 +77,30 @@
         "language": "hu",
         "user_agent": "fuvarszervezo-internal/1.4 (+contact@example.com)"
     },
+    "presence": {
+        "enabled": true,
+        "heartbeat_interval_sec": 20,
+        "timeout_sec": 75,
+        "icon": "👥",
+        "text": {
+            "singular": "Még 1 felhasználó aktív",
+            "plural": "Még {count} felhasználó aktív"
+        },
+        "position": {
+            "bottom": "18px",
+            "right": "18px"
+        },
+        "style": {
+            "background": "rgba(15, 23, 42, 0.92)",
+            "color": "#ffffff",
+            "padding": "8px 12px",
+            "borderRadius": "9999px",
+            "fontSize": "0.9rem",
+            "fontWeight": "600",
+            "boxShadow": "0 10px 25px rgba(15, 23, 42, 0.35)",
+            "gap": "0.5rem"
+        }
+    },
     "ui": {
         "panel_min_px": 330,
         "panel_pref_vw": 36,
