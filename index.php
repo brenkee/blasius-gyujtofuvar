@@ -33,6 +33,13 @@
 <script defer src="public/app.js"></script>
 </head>
 <body>
+<?php if (!empty($DATA_INIT_ERROR)): ?>
+<div class="init-error-banner">
+  <strong>Adatbázis inicializációs hiba</strong>
+  <p><?= htmlspecialchars($DATA_INIT_ERROR) ?></p>
+  <p><code>php scripts/init-db.php</code> futtatásával megpróbálhatod manuálisan létrehozni az adatbázist.</p>
+</div>
+<?php endif; ?>
 <div class="app">
   <aside class="panel">
     <div id="panelTop" class="panel-top">

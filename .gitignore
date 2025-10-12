@@ -1,9 +1,10 @@
 /backups
 fuvar_archive.log
 fuvar_data.json
-fuvar_data.json
-fuvar_data.json
 fuvar_export.csv
 fuvar_state.lock
 fuvar_revision.json
 fuvar_changes.log
+data/*.db
+data/*.db-shm
+data/*.db-wal

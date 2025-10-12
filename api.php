@@ -3,6 +3,17 @@ require __DIR__ . '/common.php';
 
 header('X-Content-Type-Options: nosniff');
 
+if (!empty($DATA_INIT_ERROR)) {
+  header('Content-Type: application/json; charset=utf-8');
+  http_response_code(503);
+  echo json_encode([
+    'ok' => false,
+    'error' => 'db_init_failed',
+    'message' => $DATA_INIT_ERROR
+  ], JSON_UNESCAPED_UNICODE);
+  exit;
+}
+
 $action = $_GET['action'] ?? null;
 if (!$action) { http_response_code(400); echo 'Missing action'; exit; }
 

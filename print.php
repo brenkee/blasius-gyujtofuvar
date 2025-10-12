@@ -1,6 +1,15 @@
 <?php
 require __DIR__ . '/common.php';
 
+$initError = $DATA_INIT_ERROR ?? null;
+if (!empty($initError)) {
+  header('Content-Type: text/plain; charset=utf-8');
+  http_response_code(503);
+  echo "Adatbázis inicializációs hiba: " . $initError . "\n";
+  echo "Futtasd a 'php scripts/init-db.php' parancsot a létrehozáshoz.";
+  exit;
+}
+
 $roundFilter = isset($_GET['round']) ? (int)$_GET['round'] : null;
 
 $itemsCfg = $CFG['items'] ?? [];
