@@ -11,7 +11,7 @@ Ez a projekt egy fájlalapú gyűjtőfuvar-tervező eszköz, amely mostantól gl
    ```
 3. Nyisd meg a böngészőben a `http://localhost:8000/index.php` címet.
 
-A háttér a `fuvar_data.json` fájlban tárolja az adatokat. A revíziókezeléshez további fájlok jönnek létre:
+A háttér a `data/app.db` SQLite-adatbázisban tárolja az adatokat. Az adatbázist a `scripts/init-db.php` script hozza létre és frissíti, amelyet az alkalmazás induláskor automatikusan meghív, ha a fájl hiányzik. A revíziókezeléshez további fájlok jönnek létre:
 
 - `fuvar_revision.json` – az aktuális globális revíziószám.
 - `fuvar_changes.log` – JSONL formátumú változásnapló.
@@ -40,7 +40,7 @@ Ezek a fájlok a `config.json`-ban a `files` szekcióban átnevezhetők.
 A sikeres írások során a szerver:
 
 1. Zárolja a teljes adatállományt (`fuvar_state.lock`).
-2. Elmenti az új adatokat (`fuvar_data.json`).
+2. Elmenti az új adatokat (`fuvar_data.sqlite`).
 3. Növeli a globális revíziót (`fuvar_revision.json`).
 4. Naplózza az esemény(eke)t a `fuvar_changes.log` fájlba.
 

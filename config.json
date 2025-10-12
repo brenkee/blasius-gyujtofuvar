@@ -38,7 +38,7 @@
         "round_planned_time": false
     },
     "files": {
-        "data_file": "fuvar_data.json",
+        "data_file": "data/app.db",
         "export_file": "fuvar_export.csv",
         "export_download_name": "fuvar_export.csv",
         "archive_file": "fuvar_archive.log"

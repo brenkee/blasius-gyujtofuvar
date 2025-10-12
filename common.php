@@ -40,8 +40,8 @@ $CFG_DEFAULT = [
     "round_planned_date" => true,
     "round_planned_time" => true
   ],
-  "files" => [
-    "data_file" => "fuvar_data.json",
+    "files" => [
+    "data_file" => "data/app.db",
     "export_file" => "fuvar_export.csv",
     "export_download_name" => "fuvar_export.csv",
     "archive_file" => "fuvar_archive.log",
@@ -380,13 +380,16 @@ foreach ($CFG['rounds'] as $r) {
 }
 sort($ROUND_IDS);
 
-$DATA_FILE       = __DIR__ . '/' . ($CFG['files']['data_file'] ?? 'fuvar_data.json');
+$DATA_FILE       = __DIR__ . '/' . ($CFG['files']['data_file'] ?? 'data/app.db');
 $EXPORT_FILE     = __DIR__ . '/' . ($CFG['files']['export_file'] ?? 'fuvar_export.txt');
 $EXPORT_NAME     = (string)($CFG['files']['export_download_name'] ?? 'fuvar_export.txt');
 $ARCHIVE_FILE    = __DIR__ . '/' . ($CFG['files']['archive_file'] ?? 'fuvar_archive.log');
 $REVISION_FILE   = __DIR__ . '/' . ($CFG['files']['revision_file'] ?? 'fuvar_revision.json');
 $CHANGE_LOG_FILE = __DIR__ . '/' . ($CFG['files']['change_log_file'] ?? 'fuvar_changes.log');
 $STATE_LOCK_FILE = __DIR__ . '/' . ($CFG['files']['lock_file'] ?? 'fuvar_state.lock');
+
+$DATA_BOOTSTRAP_INFO = [];
+$DATA_INIT_ERROR = null;
 
 /**
  * Biztonságos backup: létezés-ellenőrzés és mtime használat védetten.
@@ -868,7 +871,194 @@ function normalize_items(array $items) {
   return $normalized;
 }
 
-function data_store_read($file) {
+function data_store_is_sqlite($file) {
+  $extension = strtolower((string)pathinfo((string)$file, PATHINFO_EXTENSION));
+  return in_array($extension, ['sqlite', 'sqlite3', 'db'], true);
+}
+
+function data_store_sqlite_is_empty(PDO $pdo) {
+  $count = (int)$pdo->query('SELECT COUNT(*) AS c FROM items')->fetchColumn();
+  if ($count > 0) {
+    return false;
+  }
+  $count = (int)$pdo->query('SELECT COUNT(*) AS c FROM round_meta')->fetchColumn();
+  return $count === 0;
+}
+
+function data_store_sqlite_open($file) {
+  $dir = dirname($file);
+  if (!is_dir($dir)) {
+    @mkdir($dir, 0775, true);
+  }
+  global $DATA_BOOTSTRAP_INFO, $DATA_INIT_ERROR;
+  if (!empty($DATA_INIT_ERROR)) {
+    throw new RuntimeException($DATA_INIT_ERROR);
+  }
+  $bootstrap = $DATA_BOOTSTRAP_INFO[$file] ?? null;
+  $isNew = is_array($bootstrap) ? !empty($bootstrap['created']) : !is_file($file);
+  $pdo = new PDO('sqlite:' . $file);
+  $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+  $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+  $pdo->setAttribute(PDO::ATTR_TIMEOUT, 5);
+  $pdo->exec('PRAGMA foreign_keys = ON');
+  $pdo->exec('PRAGMA journal_mode = WAL');
+  $pdo->exec('PRAGMA synchronous = NORMAL');
+  return [$pdo, $isNew];
+}
+
+function data_store_sqlite_guess_legacy_json($file) {
+  $candidates = [];
+  $ext = pathinfo($file, PATHINFO_EXTENSION);
+  if ($ext) {
+    $candidates[] = preg_replace('/\.(sqlite3?|db)$/i', '.json', $file);
+  }
+  $candidates[] = dirname($file) . '/fuvar_data.json';
+  foreach ($candidates as $candidate) {
+    if (is_string($candidate) && $candidate !== '' && is_file($candidate)) {
+      return $candidate;
+    }
+  }
+  return null;
+}
+
+function data_store_sqlite_import_legacy(PDO $pdo, $dbPath) {
+  if (!data_store_sqlite_is_empty($pdo)) {
+    return;
+  }
+  $legacy = data_store_sqlite_guess_legacy_json($dbPath);
+  if (!$legacy) {
+    return;
+  }
+  [$items, $roundMeta] = data_store_read_json($legacy);
+  if (empty($items) && empty($roundMeta)) {
+    return;
+  }
+  data_store_write_sqlite_conn($pdo, $items, $roundMeta);
+}
+
+function data_store_read_sqlite($file) {
+  try {
+    [$pdo, $isNew] = data_store_sqlite_open($file);
+  } catch (Throwable $e) {
+    error_log('SQLite megnyitási hiba: ' . $e->getMessage());
+    return [[], []];
+  }
+
+  global $DATA_BOOTSTRAP_INFO;
+  $bootstrap = $DATA_BOOTSTRAP_INFO[$file] ?? null;
+  $shouldImportLegacy = false;
+  if (is_array($bootstrap)) {
+    $shouldImportLegacy = !empty($bootstrap['created']) && empty($bootstrap['seeded']);
+  } else {
+    $shouldImportLegacy = $isNew;
+  }
+
+  if ($shouldImportLegacy) {
+    try {
+      data_store_sqlite_import_legacy($pdo, $file);
+    } catch (Throwable $e) {
+      error_log('Legacy JSON import sikertelen: ' . $e->getMessage());
+    }
+  }
+
+  try {
+    $items = [];
+    $stmt = $pdo->query('SELECT data FROM items ORDER BY position ASC, id ASC');
+    if ($stmt) {
+      foreach ($stmt as $row) {
+        if (!is_array($row)) continue;
+        $payload = $row['data'] ?? null;
+        if (!is_string($payload)) continue;
+        $decoded = json_decode($payload, true);
+        if (is_array($decoded)) {
+          $items[] = $decoded;
+        }
+      }
+    }
+    $roundMetaRaw = [];
+    $stmt = $pdo->query('SELECT round_id, data FROM round_meta');
+    if ($stmt) {
+      foreach ($stmt as $row) {
+        if (!is_array($row)) continue;
+        $rid = isset($row['round_id']) ? (string)$row['round_id'] : '';
+        if ($rid === '') continue;
+        $payload = $row['data'] ?? null;
+        if (!is_string($payload)) continue;
+        $decoded = json_decode($payload, true);
+        if (is_array($decoded)) {
+          $roundMetaRaw[$rid] = $decoded;
+        }
+      }
+    }
+    $items = normalize_items($items);
+    $roundMeta = normalize_round_meta($roundMetaRaw);
+    return [$items, $roundMeta];
+  } catch (Throwable $e) {
+    error_log('SQLite olvasási hiba: ' . $e->getMessage());
+    return [[], []];
+  }
+}
+
+function data_store_write_sqlite_conn(PDO $pdo, array $items, array $roundMeta) {
+  $normalizedItems = normalize_items($items);
+  $normalizedMeta = normalize_round_meta($roundMeta);
+
+  $pdo->beginTransaction();
+  $pdo->exec('DELETE FROM items');
+  $pdo->exec('DELETE FROM round_meta');
+
+  if (!empty($normalizedItems)) {
+    $insertItem = $pdo->prepare('INSERT INTO items (id, position, data) VALUES (:id, :position, :data)');
+    foreach (array_values($normalizedItems) as $position => $item) {
+      $id = isset($item['id']) ? (string)$item['id'] : '';
+      if ($id === '') {
+        throw new RuntimeException('Hiányzó azonosító az egyik elemnél.');
+      }
+      $json = json_encode($item, JSON_UNESCAPED_UNICODE);
+      if ($json === false) {
+        throw new RuntimeException('JSON kódolási hiba elem írásakor.');
+      }
+      $insertItem->execute([
+        ':id' => $id,
+        ':position' => (int)$position,
+        ':data' => $json
+      ]);
+    }
+  }
+
+  if (!empty($normalizedMeta)) {
+    $insertMeta = $pdo->prepare('INSERT INTO round_meta (round_id, data) VALUES (:round_id, :data)');
+    foreach ($normalizedMeta as $roundId => $meta) {
+      $roundKey = (string)$roundId;
+      if ($roundKey === '') {
+        continue;
+      }
+      $json = json_encode($meta, JSON_UNESCAPED_UNICODE);
+      if ($json === false) {
+        throw new RuntimeException('JSON kódolási hiba kör meta írásakor.');
+      }
+      $insertMeta->execute([
+        ':round_id' => $roundKey,
+        ':data' => $json
+      ]);
+    }
+  }
+
+  $pdo->commit();
+  return true;
+}
+
+function data_store_write_sqlite($file, $items, $roundMeta) {
+  try {
+    [$pdo] = data_store_sqlite_open($file);
+    return data_store_write_sqlite_conn($pdo, is_array($items) ? $items : [], $roundMeta);
+  } catch (Throwable $e) {
+    error_log('SQLite írási hiba: ' . $e->getMessage());
+    return false;
+  }
+}
+
+function data_store_read_json($file) {
   $items = [];
   $roundMeta = [];
   if (!is_file($file)) {
@@ -893,7 +1083,7 @@ function data_store_read($file) {
   return [$items, $roundMeta];
 }
 
-function data_store_write($file, $items, $roundMeta) {
+function data_store_write_json($file, $items, $roundMeta) {
   $normalizedItems = normalize_items(is_array($items) ? $items : []);
   $normalizedMeta = normalize_round_meta($roundMeta);
   $payload = [
@@ -901,6 +1091,20 @@ function data_store_write($file, $items, $roundMeta) {
     'round_meta' => !empty($normalizedMeta) ? $normalizedMeta : (object)[]
   ];
   return file_put_contents($file, json_encode($payload, JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT));
+}
+
+function data_store_read($file) {
+  if (data_store_is_sqlite($file)) {
+    return data_store_read_sqlite($file);
+  }
+  return data_store_read_json($file);
+}
+
+function data_store_write($file, $items, $roundMeta) {
+  if (data_store_is_sqlite($file)) {
+    return data_store_write_sqlite($file, $items, $roundMeta);
+  }
+  return data_store_write_json($file, $items, $roundMeta);
 }
 
 function state_lock(callable $callback) {
@@ -1143,3 +1347,45 @@ function read_change_log_entries() {
   fclose($fh);
   return $entries;
 }
+
+function bootstrap_data_store_if_needed() {
+  global $DATA_FILE, $DATA_BOOTSTRAP_INFO, $DATA_INIT_ERROR;
+
+  if (!data_store_is_sqlite($DATA_FILE)) {
+    return;
+  }
+
+  $script = __DIR__ . '/scripts/init-db.php';
+  if (!is_file($script)) {
+    $DATA_INIT_ERROR = 'Hiányzik az adatbázis inicializáló script. Futtasd a "php scripts/init-db.php" parancsot a létrehozáshoz.';
+    return;
+  }
+
+  require_once $script;
+  if (!function_exists('init_app_database')) {
+    $DATA_INIT_ERROR = 'A scripts/init-db.php nem tartalmaz init_app_database függvényt.';
+    return;
+  }
+
+  $seedPreference = null;
+  $legacyJson = data_store_sqlite_guess_legacy_json($DATA_FILE);
+  if ($legacyJson) {
+    $seedPreference = false;
+  }
+
+  try {
+    $result = init_app_database([
+      'base_dir' => __DIR__,
+      'db_path' => $DATA_FILE,
+      'seed' => $seedPreference,
+    ]);
+    if (is_array($result)) {
+      $DATA_BOOTSTRAP_INFO[$DATA_FILE] = $result;
+    }
+  } catch (Throwable $e) {
+    $DATA_INIT_ERROR = 'Az adatbázis inicializálása nem sikerült. Próbáld meg futtatni a "php scripts/init-db.php" parancsot. Részletek: ' . $e->getMessage();
+    error_log('Adatbázis inicializációs hiba: ' . $e->getMessage());
+  }
+}
+
+bootstrap_data_store_if_needed();
