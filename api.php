@@ -146,6 +146,9 @@ if ($action === 'cfg') {
       'text_color' => isset($markerOverlapRaw['text_color']) ? (string)$markerOverlapRaw['text_color'] : null,
       'font_family' => isset($markerOverlapRaw['font_family']) ? (string)$markerOverlapRaw['font_family'] : null,
       'font_weight' => isset($markerOverlapRaw['font_weight']) ? (string)$markerOverlapRaw['font_weight'] : null,
+      'distance_threshold_meters' => isset($markerOverlapRaw['distance_threshold_meters'])
+        ? (float)$markerOverlapRaw['distance_threshold_meters']
+        : null,
     ],
     'focus_ring' => [
       'radius' => isset($markerFocusRingRaw['radius']) ? (float)$markerFocusRingRaw['radius'] : null,
