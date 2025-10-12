@@ -1175,7 +1175,8 @@
       if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
       coordsList.push({id: it.id, lat, lon});
     });
-    const thresholdMeters = Math.max(0, cfgNumber('ui.marker.overlap_badge.distance_threshold_meters', 0) || 0);
+    const thresholdRatio = Math.max(0, cfgNumber('ui.marker.overlap_badge.distance_threshold_ratio', 0) || 0);
+    const thresholdMeters = zoomScaledThreshold(thresholdRatio);
     if (thresholdMeters <= 0) {
       const coords = new Map();
       coordsList.forEach(entry => {
@@ -1230,6 +1231,35 @@
       markerOverlapRefreshTimer = null;
       refreshMarkerOverlapIndicators();
     }, 0);
+  }
+
+  map.on('zoom', requestMarkerOverlapRefresh);
+  map.on('zoomend', requestMarkerOverlapRefresh);
+  map.whenReady(requestMarkerOverlapRefresh);
+
+  function metersPerPixelAtCenter(){
+    if (!map || typeof map.getSize !== 'function') return 0;
+    const size = map.getSize();
+    if (!size || size.x <= 0 || size.y <= 0) return 0;
+    const centerPoint = L.point(size.x / 2, size.y / 2);
+    const onePixelPoint = L.point(centerPoint.x + 1, centerPoint.y);
+    const centerLatLng = map.containerPointToLatLng(centerPoint);
+    const onePixelLatLng = map.containerPointToLatLng(onePixelPoint);
+    if (!centerLatLng || !onePixelLatLng) return 0;
+    const meters = haversineKm(
+      centerLatLng.lat,
+      centerLatLng.lng,
+      onePixelLatLng.lat,
+      onePixelLatLng.lng
+    ) * 1000;
+    return Number.isFinite(meters) && meters > 0 ? meters : 0;
+  }
+
+  function zoomScaledThreshold(ratio){
+    if (!Number.isFinite(ratio) || ratio <= 0) return 0;
+    const metersPerPixel = metersPerPixelAtCenter();
+    if (!Number.isFinite(metersPerPixel) || metersPerPixel <= 0) return 0;
+    return ratio * metersPerPixel;
   }
 
   function openMarkerPopup(mk, featureKey){
