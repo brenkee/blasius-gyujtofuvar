@@ -2,9 +2,12 @@
 require __DIR__ . '/common.php';
 require __DIR__ . '/auth_lib.php';
 
+$config = $CFG;
+$base = rtrim(($config['base_url'] ?? '/'), '/') . '/';
+
 $PRINT_USER = auth_require_login();
 if (auth_user_must_change_password($PRINT_USER)) {
-  header('Location: /admin.php?force=profile');
+  header('Location: ' . $base . 'admin.php?force=profile');
   exit;
 }
 

@@ -13,6 +13,19 @@
   const cancelEditBtn = document.getElementById('cancelEdit');
   const logoutForm = document.getElementById('logoutForm');
 
+  const baseCandidate = typeof bootstrap.baseUrl === 'string' && bootstrap.baseUrl ? bootstrap.baseUrl : '/';
+  const baseUrl = baseCandidate.endsWith('/') ? baseCandidate : baseCandidate + '/';
+
+  function withBase(path) {
+    if (!path) {
+      return baseUrl;
+    }
+    if (/^https?:\/\//i.test(path)) {
+      return path;
+    }
+    return baseUrl + path.replace(/^\/+/,'');
+  }
+
   const state = {
     users: [],
     editingId: null,
@@ -41,7 +54,8 @@
         headers.set('Content-Type', 'application/json');
       }
     }
-    return fetch(url, Object.assign({}, options, { headers, credentials: 'same-origin' }))
+    const finalUrl = withBase(url);
+    return fetch(finalUrl, Object.assign({}, options, { headers, credentials: 'same-origin' }))
       .then(async (res)=>{
         let data = null;
         try { data = await res.json(); } catch (err) { data = null; }

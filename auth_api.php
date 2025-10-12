@@ -5,6 +5,8 @@ header('Content-Type: application/json; charset=utf-8');
 
 $action = isset($_GET['action']) ? (string)$_GET['action'] : '';
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+$config = $CFG;
+$base = rtrim(($config['base_url'] ?? '/'), '/') . '/';
 
 switch ($action) {
     case 'me':
@@ -20,7 +22,7 @@ switch ($action) {
         require_method(['POST']);
         auth_require_csrf_from_request();
         auth_logout();
-        echo json_encode(['ok' => true, 'redirect' => '/login.php'], JSON_UNESCAPED_UNICODE);
+        echo json_encode(['ok' => true, 'redirect' => $base . 'login.php'], JSON_UNESCAPED_UNICODE);
         break;
 
     case 'users':

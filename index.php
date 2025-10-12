@@ -2,9 +2,12 @@
 require __DIR__ . '/common.php';
 require __DIR__ . '/auth_lib.php';
 
+$config = $CFG;
+$base = rtrim(($config['base_url'] ?? '/'), '/') . '/';
+
 $CURRENT_USER = auth_require_login();
 if (auth_user_must_change_password($CURRENT_USER)) {
-    header('Location: /admin.php?force=profile');
+    header('Location: ' . $base . 'admin.php?force=profile');
     exit;
 }
 $CSRF_TOKEN = auth_generate_csrf_token();
@@ -19,26 +22,27 @@ $IS_EDITOR = auth_user_has_role($CURRENT_USER, AUTH_ROLE_EDITOR);
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title><?= htmlspecialchars($CFG['app']['title']) ?></title>
-<link rel="icon" type="image/png" href="favicon.png" />
+<link rel="icon" type="image/png" href="<?= htmlspecialchars($base . 'favicon.png', ENT_QUOTES) ?>" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-<link rel="stylesheet" href="public/styles.css">
+<link rel="stylesheet" href="<?= htmlspecialchars($base . 'public/styles.css', ENT_QUOTES) ?>">
 <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin></script>
 <script>
   window.APP_BOOTSTRAP = {
+    baseUrl: <?= json_encode($base, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>,
     endpoints: {
-      cfg: 'api.php?action=cfg',
-      load: 'api.php?action=load',
-      save: 'api.php?action=save',
-      session: 'api.php?action=session',
-      revision: 'api.php?action=revision',
-      changes: 'api.php?action=changes',
-      geocode: 'api.php?action=geocode',
-      importCsv: 'api.php?action=import_csv',
-      exportAll: 'api.php?action=export',
-      deleteRound: 'api.php?action=delete_round',
-      downloadArchive: 'api.php?action=download_archive',
-      printAll: 'print.php',
-      printRound: (rid)=>'print.php?round='+encodeURIComponent(rid)
+      cfg: <?= json_encode($base . 'api.php?action=cfg', JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>,
+      load: <?= json_encode($base . 'api.php?action=load', JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>,
+      save: <?= json_encode($base . 'api.php?action=save', JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>,
+      session: <?= json_encode($base . 'api.php?action=session', JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>,
+      revision: <?= json_encode($base . 'api.php?action=revision', JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>,
+      changes: <?= json_encode($base . 'api.php?action=changes', JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>,
+      geocode: <?= json_encode($base . 'api.php?action=geocode', JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>,
+      importCsv: <?= json_encode($base . 'api.php?action=import_csv', JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>,
+      exportAll: <?= json_encode($base . 'api.php?action=export', JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>,
+      deleteRound: <?= json_encode($base . 'api.php?action=delete_round', JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>,
+      downloadArchive: <?= json_encode($base . 'api.php?action=download_archive', JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>,
+      printAll: <?= json_encode($base . 'print.php', JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>,
+      printRound: (rid)=><?= json_encode($base . 'print.php', JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?> + '?round='+encodeURIComponent(rid)
     },
     user: {
       id: <?= json_encode($CURRENT_USER['id'], JSON_UNESCAPED_UNICODE) ?>,
@@ -49,7 +53,7 @@ $IS_EDITOR = auth_user_has_role($CURRENT_USER, AUTH_ROLE_EDITOR);
     csrfToken: <?= json_encode($CSRF_TOKEN, JSON_UNESCAPED_UNICODE) ?>
   };
 </script>
-<script defer src="public/app.js"></script>
+<script defer src="<?= htmlspecialchars($base . 'public/app.js', ENT_QUOTES) ?>"></script>
 </head>
 <body>
 <?php if (!empty($DATA_INIT_ERROR)): ?>
@@ -165,9 +169,9 @@ $IS_EDITOR = auth_user_has_role($CURRENT_USER, AUTH_ROLE_EDITOR);
                 </button>
               <?php endif; ?>
               <?php if ($IS_ADMIN): ?>
-                <a class="toolbar-menu-link" href="admin.php">Admin felület</a>
+                <a class="toolbar-menu-link" href="<?= htmlspecialchars($base . 'admin.php', ENT_QUOTES) ?>">Admin felület</a>
               <?php endif; ?>
-              <form method="post" action="logout.php" class="toolbar-logout">
+              <form method="post" action="<?= htmlspecialchars($base . 'logout.php', ENT_QUOTES) ?>" class="toolbar-logout">
                 <input type="hidden" name="_csrf" value="<?= htmlspecialchars($CSRF_TOKEN, ENT_QUOTES) ?>" />
                 <button type="submit">Kijelentkezés</button>
               </form>

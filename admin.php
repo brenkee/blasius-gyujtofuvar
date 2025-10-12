@@ -1,6 +1,9 @@
 <?php
 require_once __DIR__ . '/auth_lib.php';
 
+$config = $CFG;
+$base = rtrim(($config['base_url'] ?? '/'), '/') . '/';
+
 $currentUser = auth_require_admin();
 $csrfToken = auth_generate_csrf_token();
 $mustChange = auth_user_must_change_password($currentUser);
@@ -13,16 +16,17 @@ $forceProfile = $mustChange || isset($_GET['force']);
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Felhasználókezelés – <?= htmlspecialchars($CFG['app']['title']) ?></title>
     <meta name="robots" content="noindex,nofollow" />
-    <link rel="icon" type="image/png" href="favicon.png" />
-    <link rel="stylesheet" href="public/admin.css" />
+    <link rel="icon" type="image/png" href="<?= htmlspecialchars($base . 'favicon.png', ENT_QUOTES) ?>" />
+    <link rel="stylesheet" href="<?= htmlspecialchars($base . 'public/admin.css', ENT_QUOTES) ?>" />
     <script>
         window.ADMIN_BOOTSTRAP = {
             csrfToken: <?= json_encode($csrfToken, JSON_UNESCAPED_UNICODE) ?>,
             me: <?= json_encode($currentUser, JSON_UNESCAPED_UNICODE) ?>,
-            mustChange: <?= $mustChange ? 'true' : 'false' ?>
+            mustChange: <?= $mustChange ? 'true' : 'false' ?>,
+            baseUrl: <?= json_encode($base, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>
         };
     </script>
-    <script defer src="public/admin.js"></script>
+    <script defer src="<?= htmlspecialchars($base . 'public/admin.js', ENT_QUOTES) ?>"></script>
 </head>
 <body class="admin-body" data-csrf="<?= htmlspecialchars($csrfToken, ENT_QUOTES) ?>" data-force-profile="<?= $forceProfile ? '1' : '0' ?>">
     <header class="admin-header">
@@ -32,8 +36,8 @@ $forceProfile = $mustChange || isset($_GET['force']);
         </div>
         <nav class="admin-nav">
             <span class="admin-user">Bejelentkezve: <strong><?= htmlspecialchars($currentUser['username']) ?></strong> (<?= htmlspecialchars($currentUser['role']) ?>)</span>
-            <a class="admin-link" href="/">Vissza az alkalmazáshoz</a>
-            <form method="post" action="logout.php" id="logoutForm">
+            <a class="admin-link" href="<?= htmlspecialchars($base, ENT_QUOTES) ?>">Vissza az alkalmazáshoz</a>
+            <form method="post" action="<?= htmlspecialchars($base . 'logout.php', ENT_QUOTES) ?>" id="logoutForm">
                 <input type="hidden" name="_csrf" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES) ?>" />
                 <button type="submit">Kijelentkezés</button>
             </form>

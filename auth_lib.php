@@ -228,12 +228,13 @@ function auth_require_login(bool $redirect = true): ?array
     }
 
     if ($redirect) {
-        $target = '/login.php';
+        $loginUrl = app_url('login.php');
         $uri = $_SERVER['REQUEST_URI'] ?? '';
         if ($uri !== '' && strpos($uri, 'login.php') === false) {
-            $target .= '?redirect=' . urlencode($uri);
+            $redirectTarget = auth_normalize_redirect($uri);
+            $loginUrl .= '?redirect=' . urlencode($redirectTarget);
         }
-        header('Location: ' . $target, true, 302);
+        header('Location: ' . $loginUrl, true, 302);
         exit;
     }
 
@@ -578,8 +579,16 @@ function auth_normalize_redirect(?string $target): string
     if (preg_match('/^https?:/i', $target)) {
         return '/';
     }
+    $base = app_base_url();
+    $baseTrimmed = rtrim($base, '/');
+    if ($baseTrimmed !== '' && strpos($target, $baseTrimmed) === 0) {
+        $target = substr($target, strlen($baseTrimmed));
+    }
+    if ($target === false || $target === '') {
+        return '/';
+    }
     if ($target[0] !== '/') {
-        return '/' . $target;
+        $target = '/' . ltrim($target, '/');
     }
     return $target;
 }

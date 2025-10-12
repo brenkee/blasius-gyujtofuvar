@@ -6,9 +6,12 @@ $redirectInput = $_REQUEST['redirect'] ?? '';
 $redirectTarget = auth_normalize_redirect(is_string($redirectInput) ? $redirectInput : '');
 $errors = [];
 $statusMessage = null;
+$config = $CFG;
+$base = rtrim(($config['base_url'] ?? '/'), '/') . '/';
 
 if ($currentUser && !auth_user_must_change_password($currentUser)) {
-    header('Location: ' . ($redirectTarget !== '/' ? $redirectTarget : '/'), true, 302);
+    $redirectUrl = $redirectTarget === '/' ? $base : $base . ltrim($redirectTarget, '/');
+    header('Location: ' . $redirectUrl, true, 302);
     exit;
 }
 
@@ -23,10 +26,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $user = auth_login($username, $password);
             $redirectFinal = auth_normalize_redirect($_POST['redirect'] ?? $redirectTarget);
             if (auth_user_must_change_password($user)) {
-                header('Location: /admin.php?force=profile', true, 302);
+                header('Location: ' . $base . 'admin.php?force=profile', true, 302);
                 exit;
             }
-            header('Location: ' . ($redirectFinal !== '/' ? $redirectFinal : '/'), true, 302);
+            $redirectUrl = $redirectFinal === '/' ? $base : $base . ltrim($redirectFinal, '/');
+            header('Location: ' . $redirectUrl, true, 302);
             exit;
         } catch (RuntimeException $e) {
             if ($e->getMessage() === 'too_many_attempts') {
@@ -51,6 +55,10 @@ $accentColor = (string)($loginCfg['accent'] ?? '#2563eb');
 $textColor = (string)($loginCfg['text'] ?? '#111827');
 $mutedColor = (string)($loginCfg['muted'] ?? '#6b7280');
 
+if ($backgroundImage !== '' && !preg_match('/^https?:\/\//i', $backgroundImage)) {
+    $backgroundImage = $base . ltrim($backgroundImage, '/');
+}
+
 $bodyStyles = [
     '--auth-bg:' . htmlspecialchars($backgroundColor, ENT_QUOTES),
     '--auth-card-bg:' . htmlspecialchars($cardColor, ENT_QUOTES),
@@ -61,6 +69,14 @@ $bodyStyles = [
 if ($backgroundImage !== '') {
     $bodyStyles[] = '--auth-bg-image:url(' . htmlspecialchars($backgroundImage, ENT_QUOTES) . ')';
 }
+$logoUrl = $logoPath;
+if ($logoUrl !== '' && !preg_match('/^https?:\/\//i', $logoUrl)) {
+    $logoUrl = $base . ltrim($logoUrl, '/');
+}
+$faviconUrl = $base . 'favicon.png';
+$authCssUrl = $base . 'public/auth.css';
+$homeUrl = $base;
+$loginAction = $base . 'login.php';
 $bodyStyleAttr = implode(';', $bodyStyles);
 ?>
 <!doctype html>
@@ -70,14 +86,14 @@ $bodyStyleAttr = implode(';', $bodyStyles);
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title><?= htmlspecialchars($brandTitle) ?></title>
     <meta name="robots" content="noindex,nofollow" />
-    <link rel="icon" type="image/png" href="favicon.png" />
-    <link rel="stylesheet" href="public/auth.css" />
+    <link rel="icon" type="image/png" href="<?= htmlspecialchars($faviconUrl, ENT_QUOTES) ?>" />
+    <link rel="stylesheet" href="<?= htmlspecialchars($authCssUrl, ENT_QUOTES) ?>" />
 </head>
 <body class="auth-body" style="<?= $bodyStyleAttr ?>">
     <div class="auth-card">
         <div class="auth-header">
             <?php if ($logoPath !== ''): ?>
-                <img src="<?= htmlspecialchars($logoPath) ?>" alt="Logó" class="auth-logo" />
+                <img src="<?= htmlspecialchars($logoUrl) ?>" alt="Logó" class="auth-logo" />
             <?php endif; ?>
             <h1><?= htmlspecialchars($brandTitle) ?></h1>
             <p><?= htmlspecialchars($brandSubtitle) ?></p>
@@ -93,7 +109,7 @@ $bodyStyleAttr = implode(';', $bodyStyles);
                 <p><?= htmlspecialchars($statusMessage) ?></p>
             </div>
         <?php endif; ?>
-        <form method="post" class="auth-form" autocomplete="on">
+        <form method="post" class="auth-form" autocomplete="on" action="<?= htmlspecialchars($loginAction, ENT_QUOTES) ?>">
             <input type="hidden" name="_csrf" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES) ?>" />
             <input type="hidden" name="redirect" value="<?= htmlspecialchars($redirectTarget, ENT_QUOTES) ?>" />
             <label class="auth-field">
@@ -107,7 +123,7 @@ $bodyStyleAttr = implode(';', $bodyStyles);
             <button type="submit" class="auth-submit">Belépés</button>
         </form>
         <div class="auth-footer">
-            <a href="/">Vissza a főoldalra</a>
+            <a href="<?= htmlspecialchars($homeUrl, ENT_QUOTES) ?>">Vissza a főoldalra</a>
             <?php if ($brandFooter !== ''): ?>
                 <span><?= htmlspecialchars($brandFooter) ?></span>
             <?php endif; ?>
