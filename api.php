@@ -228,6 +228,48 @@ if ($action === 'cfg') {
   exit;
 }
 
+if ($action === 'config_get') {
+  $jsonHeader();
+  echo json_encode(['ok' => true, 'config' => $CFG], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  exit;
+}
+
+if ($action === 'config_save') {
+  if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    http_response_code(405);
+    header('Allow: POST');
+    $jsonHeader();
+    echo json_encode(['ok' => false, 'error' => 'method_not_allowed'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+  $raw = file_get_contents('php://input');
+  $payload = json_decode($raw, true);
+  if (!is_array($payload)) {
+    $jsonHeader();
+    http_response_code(400);
+    echo json_encode(['ok' => false, 'error' => 'invalid_payload'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+  $encoded = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+  if ($encoded === false) {
+    $jsonHeader();
+    http_response_code(500);
+    echo json_encode(['ok' => false, 'error' => 'encode_failed'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+  $encoded .= "\n";
+  $writeOk = @file_put_contents($CONFIG_FILE, $encoded, LOCK_EX);
+  if ($writeOk === false) {
+    $jsonHeader();
+    http_response_code(500);
+    echo json_encode(['ok' => false, 'error' => 'write_failed'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+  $jsonHeader();
+  echo json_encode(['ok' => true, 'config' => $payload], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  exit;
+}
+
 if ($action === 'session') {
   $jsonHeader();
   echo json_encode(['ok' => true, 'client_id' => generate_client_id()], JSON_UNESCAPED_UNICODE);

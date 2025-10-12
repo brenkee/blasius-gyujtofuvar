@@ -30,7 +30,22 @@
   const pinCountEl = document.getElementById('pinCount');
   const themeToggle = document.getElementById('themeToggle');
   const panelTopEl = document.getElementById('panelTop');
+  const settingsBtn = document.getElementById('settingsBtn');
+  const settingsView = document.getElementById('settingsView');
+  const settingsContent = document.getElementById('settingsContent');
+  const settingsStatus = document.getElementById('settingsStatus');
+  const settingsBackBtn = document.getElementById('settingsBackBtn');
+  const settingsCancelBtn = document.getElementById('settingsCancelBtn');
+  const settingsSaveBtn = document.getElementById('settingsSaveBtn');
+  const appRoot = document.querySelector('.app');
   let quickSearchClearBtn = null;
+
+  const settingsState = {
+    original: null,
+    working: null,
+    dirty: false,
+    loading: false
+  };
 
   const flashTimers = new WeakMap();
 
@@ -1680,6 +1695,491 @@
     }, 1600);
     flashTimers.set(el, timer);
   }
+
+  // ======= SETTINGS PANEL =======
+
+  function initSettingsUI(){
+    if (!settingsView || !settingsContent) return;
+    if (settingsBtn) {
+      settingsBtn.addEventListener('click', ()=>{ openSettingsView(); });
+    }
+    if (settingsBackBtn) {
+      settingsBackBtn.addEventListener('click', ()=>{ handleSettingsBack(); });
+    }
+    if (settingsCancelBtn) {
+      settingsCancelBtn.addEventListener('click', ()=>{ handleSettingsCancel(); });
+    }
+    if (settingsSaveBtn) {
+      settingsSaveBtn.addEventListener('click', ()=>{ saveSettingsConfig(); });
+    }
+  }
+
+  async function openSettingsView(){
+    if (!settingsView) return;
+    if (appRoot) appRoot.setAttribute('hidden', 'hidden');
+    settingsView.hidden = false;
+    document.body.classList.add('settings-open');
+    window.scrollTo(0, 0);
+    if (!settingsState.original && !settingsState.loading) {
+      await loadSettingsConfig();
+    } else {
+      renderSettings();
+      updateSettingsButtons();
+    }
+  }
+
+  function closeSettingsView(){
+    if (settingsView) settingsView.hidden = true;
+    if (appRoot) appRoot.removeAttribute('hidden');
+    document.body.classList.remove('settings-open');
+  }
+
+  function handleSettingsBack(){
+    if (settingsState.loading) return;
+    if (settingsState.dirty) {
+      const confirmLeave = window.confirm('Nem mentett módosítások vannak. Biztosan bezárod a beállításokat?');
+      if (!confirmLeave) return;
+      settingsState.working = deepClone(settingsState.original);
+      settingsState.dirty = false;
+    }
+    closeSettingsView();
+    renderSettings();
+    updateSettingsButtons();
+    setSettingsStatus('');
+  }
+
+  function handleSettingsCancel(){
+    if (settingsState.loading || !settingsState.dirty) return;
+    const confirmReset = window.confirm('Biztosan elveted a módosításokat?');
+    if (!confirmReset) return;
+    settingsState.working = deepClone(settingsState.original);
+    settingsState.dirty = false;
+    renderSettings();
+    updateSettingsButtons();
+    setSettingsStatus('Változtatások visszavonva.');
+  }
+
+  async function loadSettingsConfig(force = false){
+    if (!settingsView || settingsState.loading) return;
+    if (settingsState.original && !force) {
+      renderSettings();
+      updateSettingsButtons();
+      return;
+    }
+    settingsState.loading = true;
+    setSettingsStatus('Betöltés…');
+    renderSettings();
+    updateSettingsButtons();
+    try {
+      try { await ensureClientId(); } catch(_) {}
+      const resp = await fetchJSON(EP.configGet, {cache:'no-store'});
+      if (!resp || resp.ok === false || typeof resp.config !== 'object') {
+        throw new Error(resp?.error || 'config_load_failed');
+      }
+      const config = resp.config;
+      settingsState.original = deepClone(config);
+      settingsState.working = deepClone(config);
+      settingsState.dirty = false;
+      renderSettings();
+      updateSettingsButtons();
+      setSettingsStatus('Beállítások betöltve.', 'success');
+    } catch (err) {
+      console.error('settings load failed', err);
+      settingsState.original = null;
+      settingsState.working = null;
+      renderSettings();
+      setSettingsStatus('Nem sikerült betölteni a beállításokat.', 'error');
+    } finally {
+      settingsState.loading = false;
+      updateSettingsButtons();
+    }
+  }
+
+  async function saveSettingsConfig(){
+    if (!settingsState.working || settingsState.loading) return;
+    settingsState.loading = true;
+    updateSettingsButtons();
+    setSettingsStatus('Mentés folyamatban…');
+    try {
+      try { await ensureClientId(); } catch(_) {}
+      const resp = await fetchJSON(EP.configSave, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(settingsState.working)
+      });
+      if (!resp || resp.ok === false) {
+        throw new Error(resp?.error || 'config_save_failed');
+      }
+      const newConfig = (resp.config && typeof resp.config === 'object') ? resp.config : settingsState.working;
+      settingsState.original = deepClone(newConfig);
+      settingsState.working = deepClone(newConfig);
+      settingsState.dirty = false;
+      renderSettings();
+      setSettingsStatus('Beállítások elmentve. A változtatások az oldal frissítése után lépnek életbe.', 'success');
+    } catch (err) {
+      console.error('settings save failed', err);
+      settingsState.dirty = true;
+      setSettingsStatus('Nem sikerült elmenteni a beállításokat.', 'error');
+    } finally {
+      settingsState.loading = false;
+      updateSettingsButtons();
+    }
+  }
+
+  function renderSettings(){
+    if (!settingsContent) return;
+    settingsContent.innerHTML = '';
+    if (settingsState.loading && !settingsState.working) {
+      const loadingEl = document.createElement('p');
+      loadingEl.className = 'settings-placeholder';
+      loadingEl.textContent = 'Betöltés…';
+      settingsContent.appendChild(loadingEl);
+      return;
+    }
+    if (!settingsState.working) {
+      const emptyEl = document.createElement('p');
+      emptyEl.className = 'settings-placeholder';
+      emptyEl.textContent = 'Nem érhető el konfiguráció.';
+      settingsContent.appendChild(emptyEl);
+      return;
+    }
+    Object.keys(settingsState.working).forEach(key => {
+      const section = renderNode(key, settingsState.working[key], [key], 0);
+      if (section) settingsContent.appendChild(section);
+    });
+  }
+
+  function renderNode(key, value, path, level){
+    if (Array.isArray(value)) {
+      return renderArraySection(key, value, path, level);
+    }
+    if (value && typeof value === 'object') {
+      return renderObjectSection(key, value, path, level);
+    }
+    return renderScalarField(key, value, path);
+  }
+
+  function renderObjectSection(key, value, path, level){
+    const wrapper = document.createElement(level === 0 ? 'section' : 'div');
+    wrapper.className = level === 0 ? 'settings-section' : 'settings-group';
+    if (key != null) {
+      const headingLevel = Math.min(2 + level, 6);
+      const heading = document.createElement(`h${headingLevel}`);
+      heading.textContent = prettifyKey(key);
+      wrapper.appendChild(heading);
+    }
+    const content = document.createElement('div');
+    content.className = 'settings-section-content';
+    Object.keys(value || {}).forEach(childKey => {
+      const childNode = renderNode(childKey, value[childKey], path.concat(childKey), level + 1);
+      if (childNode) content.appendChild(childNode);
+    });
+    wrapper.appendChild(content);
+    return wrapper;
+  }
+
+  function renderArraySection(key, value, path, level){
+    const wrapper = document.createElement(level === 0 ? 'section' : 'div');
+    wrapper.className = level === 0 ? 'settings-section' : 'settings-group';
+    if (key != null) {
+      const headingLevel = Math.min(2 + level, 6);
+      const heading = document.createElement(`h${headingLevel}`);
+      heading.textContent = prettifyKey(key);
+      wrapper.appendChild(heading);
+    }
+    const list = document.createElement('div');
+    list.className = 'settings-array';
+    (Array.isArray(value) ? value : []).forEach((item, index) => {
+      const itemWrap = document.createElement('div');
+      itemWrap.className = 'settings-array-item';
+      const header = document.createElement('div');
+      header.className = 'settings-array-item-header';
+      const title = document.createElement('h4');
+      const fallbackTitle = `Elem ${index + 1}`;
+      if (key === 'rounds' && item && typeof item === 'object' && item.label) {
+        title.textContent = item.label;
+      } else if (item && typeof item === 'object' && Object.prototype.hasOwnProperty.call(item, 'id')) {
+        title.textContent = `${prettifyKey(key)} ${item.id}`;
+      } else {
+        title.textContent = fallbackTitle;
+      }
+      header.appendChild(title);
+      if (key === 'rounds') {
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'settings-array-item-remove';
+        removeBtn.textContent = 'Törlés';
+        removeBtn.addEventListener('click', ()=>{
+          if (!window.confirm('Biztosan törlöd ezt a kört?')) return;
+          const arrRef = getAtPath(settingsState.working, path);
+          if (!Array.isArray(arrRef)) return;
+          arrRef.splice(index, 1);
+          markSettingsDirty();
+          renderSettings();
+        });
+        header.appendChild(removeBtn);
+      }
+      itemWrap.appendChild(header);
+      const body = document.createElement('div');
+      body.className = 'settings-array-item-body';
+      if (item && typeof item === 'object' && !Array.isArray(item)) {
+        Object.keys(item).forEach(childKey => {
+          const childNode = renderNode(childKey, item[childKey], path.concat(index, childKey), level + 1);
+          if (childNode) {
+            if (key === 'rounds' && childKey === 'label') {
+              const inputEl = childNode.querySelector('input, textarea');
+              if (inputEl) {
+                inputEl.addEventListener('input', ()=>{
+                  title.textContent = inputEl.value.trim() || fallbackTitle;
+                });
+              }
+            }
+            body.appendChild(childNode);
+          }
+        });
+      } else {
+        const valueNode = renderScalarField(`${index + 1}. érték`, item, path.concat(index));
+        if (valueNode) body.appendChild(valueNode);
+      }
+      itemWrap.appendChild(body);
+      list.appendChild(itemWrap);
+    });
+    wrapper.appendChild(list);
+    if (key === 'rounds') {
+      const addBtn = document.createElement('button');
+      addBtn.type = 'button';
+      addBtn.className = 'settings-add-btn';
+      addBtn.textContent = 'Új kör hozzáadása';
+      addBtn.addEventListener('click', ()=>{
+        const arrRef = getAtPath(settingsState.working, path);
+        if (!Array.isArray(arrRef)) return;
+        const ids = arrRef.map(entry => Number(entry?.id)).filter(num => Number.isFinite(num));
+        const nextId = ids.length ? Math.max(...ids) + 1 : arrRef.length;
+        const defaultLabel = nextId === 0 ? '0. kör' : `${nextId}. kör`;
+        arrRef.push({id: nextId, label: defaultLabel, color: '#2563eb'});
+        markSettingsDirty();
+        renderSettings();
+      });
+      wrapper.appendChild(addBtn);
+    }
+    return wrapper;
+  }
+
+  function renderScalarField(key, value, path){
+    const field = document.createElement('div');
+    field.className = 'settings-field';
+    const id = pathToId(path);
+    const labelEl = document.createElement('label');
+    labelEl.className = 'settings-label';
+    const labelText = prettifyKey(key != null ? key : path[path.length - 1]);
+    labelEl.textContent = labelText;
+    labelEl.setAttribute('for', id);
+    field.appendChild(labelEl);
+    const control = document.createElement('div');
+    control.className = 'settings-control';
+    if (typeof value === 'boolean') {
+      const toggleLabel = document.createElement('label');
+      toggleLabel.className = 'switch';
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.id = id;
+      input.checked = Boolean(value);
+      input.dataset.path = JSON.stringify(path);
+      input.addEventListener('change', event => {
+        const newVal = !!event.target.checked;
+        if (setAtPath(settingsState.working, path, newVal)) {
+          markSettingsDirty();
+        }
+      });
+      const slider = document.createElement('span');
+      slider.className = 'slider';
+      toggleLabel.appendChild(input);
+      toggleLabel.appendChild(slider);
+      control.appendChild(toggleLabel);
+      field.appendChild(control);
+      return field;
+    }
+    if (typeof value === 'number') {
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.id = id;
+      input.value = Number.isFinite(value) ? String(value) : '';
+      input.step = Number.isInteger(value) ? '1' : 'any';
+      input.dataset.path = JSON.stringify(path);
+      input.addEventListener('input', event => {
+        const raw = event.target.value;
+        if (raw === '') {
+          if (setAtPath(settingsState.working, path, null)) markSettingsDirty();
+          return;
+        }
+        const parsed = Number(raw);
+        if (!Number.isFinite(parsed)) return;
+        if (setAtPath(settingsState.working, path, parsed)) {
+          markSettingsDirty();
+        }
+      });
+      control.appendChild(input);
+      field.appendChild(control);
+      return field;
+    }
+    const stringValue = value == null ? '' : String(value);
+    const isColor = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(stringValue.trim());
+    if (isColor) {
+      const colorWrap = document.createElement('div');
+      colorWrap.className = 'settings-color-control';
+      const colorInput = document.createElement('input');
+      colorInput.type = 'color';
+      colorInput.id = id;
+      colorInput.value = stringValue.trim();
+      const textInput = document.createElement('input');
+      textInput.type = 'text';
+      textInput.value = stringValue;
+      textInput.dataset.path = JSON.stringify(path);
+      colorInput.addEventListener('input', event => {
+        const newVal = event.target.value;
+        textInput.value = newVal;
+        if (setAtPath(settingsState.working, path, newVal)) {
+          markSettingsDirty();
+        }
+      });
+      textInput.addEventListener('input', event => {
+        const newVal = event.target.value;
+        if (/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(newVal.trim())) {
+          colorInput.value = newVal.trim();
+        }
+        if (setAtPath(settingsState.working, path, newVal)) {
+          markSettingsDirty();
+        }
+      });
+      colorWrap.appendChild(colorInput);
+      colorWrap.appendChild(textInput);
+      control.appendChild(colorWrap);
+      field.appendChild(control);
+      return field;
+    }
+    const multiline = stringValue.includes('\n');
+    if (multiline || stringValue.length > 120) {
+      const textarea = document.createElement('textarea');
+      textarea.id = id;
+      textarea.value = stringValue;
+      textarea.dataset.path = JSON.stringify(path);
+      textarea.addEventListener('input', event => {
+        if (setAtPath(settingsState.working, path, event.target.value)) {
+          markSettingsDirty();
+        }
+      });
+      control.appendChild(textarea);
+      field.appendChild(control);
+      return field;
+    }
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.id = id;
+    input.value = stringValue;
+    input.dataset.path = JSON.stringify(path);
+    input.addEventListener('input', event => {
+      if (setAtPath(settingsState.working, path, event.target.value)) {
+        markSettingsDirty();
+      }
+    });
+    control.appendChild(input);
+    field.appendChild(control);
+    return field;
+  }
+
+  function markSettingsDirty(){
+    if (!settingsState.dirty) {
+      settingsState.dirty = true;
+    }
+    updateSettingsButtons();
+    setSettingsStatus('Változtatások mentésre várnak.');
+  }
+
+  function updateSettingsButtons(){
+    const disableActions = !settingsState.dirty || settingsState.loading;
+    if (settingsSaveBtn) settingsSaveBtn.disabled = disableActions;
+    if (settingsCancelBtn) settingsCancelBtn.disabled = !settingsState.dirty || settingsState.loading;
+    if (settingsBackBtn) settingsBackBtn.disabled = settingsState.loading;
+  }
+
+  function setSettingsStatus(message, type){
+    if (!settingsStatus) return;
+    settingsStatus.textContent = message || '';
+    if (type) {
+      settingsStatus.dataset.type = type;
+    } else {
+      delete settingsStatus.dataset.type;
+    }
+  }
+
+  function deepClone(value){
+    if (Array.isArray(value)) {
+      return value.map(item => deepClone(item));
+    }
+    if (value && typeof value === 'object') {
+      const out = {};
+      Object.keys(value).forEach(key => {
+        out[key] = deepClone(value[key]);
+      });
+      return out;
+    }
+    return value;
+  }
+
+  function getAtPath(target, path){
+    if (!target || !Array.isArray(path)) return undefined;
+    let cursor = target;
+    for (const key of path) {
+      if (cursor == null) return undefined;
+      cursor = cursor[key];
+    }
+    return cursor;
+  }
+
+  function setAtPath(target, path, newValue){
+    if (!target || !Array.isArray(path) || !path.length) return false;
+    let cursor = target;
+    for (let i = 0; i < path.length - 1; i += 1) {
+      const key = path[i];
+      if (cursor[key] == null || typeof cursor[key] !== 'object') {
+        cursor[key] = typeof path[i + 1] === 'number' ? [] : {};
+      }
+      cursor = cursor[key];
+    }
+    const lastKey = path[path.length - 1];
+    const prev = cursor[lastKey];
+    if (valuesEqual(prev, newValue)) return false;
+    cursor[lastKey] = newValue;
+    return true;
+  }
+
+  function valuesEqual(a, b){
+    if (a === b) return true;
+    if (typeof a === 'number' && typeof b === 'number' && Number.isNaN(a) && Number.isNaN(b)) return true;
+    if (typeof a !== 'object' || a === null || typeof b !== 'object' || b === null) return false;
+    try {
+      return JSON.stringify(a) === JSON.stringify(b);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function pathToId(path){
+    return 'cfg_' + path.map(part => String(part).replace(/[^a-z0-9]+/gi, '_')).join('_');
+  }
+
+  function prettifyKey(key){
+    if (key == null) return '';
+    if (typeof key === 'number') return `#${key + 1}`;
+    const str = String(key);
+    const base = str.replace(/[_-]+/g, ' ').trim();
+    if (base.length === 0) return str;
+    if (base.toLowerCase() === 'id') return 'ID';
+    if (base.toLowerCase() === 'url') return 'URL';
+    return base.replace(/\b\w/g, ch => ch.toUpperCase());
+  }
+
+  initSettingsUI();
 
   // ======= BACKEND
   async function fetchJSON(url, opts){
