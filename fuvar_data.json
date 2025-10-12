@@ -2,12 +2,12 @@
     "items": [
         {
             "id": "row_bn5ebbbdx5s",
-            "city": "",
-            "lat": null,
-            "lon": null,
+            "city": "Dunaújváros",
+            "lat": 46.9649048,
+            "lon": 18.9405047,
             "round": 0,
-            "label": "",
-            "address": "",
+            "label": "teszt",
+            "address": "Dunaújváros",
             "note": "",
             "deadline": "",
             "weight": null,
@@ -780,6 +780,19 @@
             "custom_order": "",
             "planned_date": "",
             "sort_mode": ""
+        },
+        {
+            "id": "row_iez85dnovq",
+            "city": "",
+            "lat": null,
+            "lon": null,
+            "round": 0,
+            "label": "",
+            "address": "",
+            "note": "",
+            "deadline": "",
+            "weight": null,
+            "volume": null
         }
     ],
     "round_meta": {
