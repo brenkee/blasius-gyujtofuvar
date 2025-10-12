@@ -1,6 +1,7 @@
 /* global L */
 (function(){
   const EP = window.APP_BOOTSTRAP?.endpoints || {};
+  const CSRF_TOKEN = window.APP_BOOTSTRAP?.csrfToken || null;
   const state = {
     cfg: null,
     items: [],                 // {id,label,address,city,note,lat,lon,round,weight,volume,_pendingRound}
@@ -18,7 +19,9 @@
     conflictNotified: new Set(),
     conflictOverlay: null,
     markerOverlapCounts: new Map(),
-    displayIndexById: new Map()
+    displayIndexById: new Map(),
+    user: window.APP_BOOTSTRAP?.user || null,
+    csrfToken: CSRF_TOKEN
   };
 
   const history = [];
@@ -65,6 +68,9 @@
     }
     if (state.clientId) {
       headers.set('X-Client-ID', state.clientId);
+    }
+    if (CSRF_TOKEN && !headers.has('X-CSRF-Token')) {
+      headers.set('X-CSRF-Token', CSRF_TOKEN);
     }
     return headers;
   }
@@ -1234,6 +1240,55 @@
   map.on('zoom', requestMarkerOverlapRefresh);
   map.on('zoomend', requestMarkerOverlapRefresh);
   map.whenReady(requestMarkerOverlapRefresh);
+
+  let mapTilesInitialized = false;
+  function applyMapTilesFromConfig(){
+    if (!state.cfg || mapTilesInitialized) return;
+    const tiles = state.cfg.map?.tiles || {};
+    const url = typeof tiles.url === 'string' && tiles.url ? tiles.url : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+    const attribution = typeof tiles.attribution === 'string' ? tiles.attribution : '';
+    L.tileLayer(url, {maxZoom: 19, attribution}).addTo(map);
+    mapTilesInitialized = true;
+    if (state.cfg.map?.fit_bounds) {
+      const raw = state.cfg.map.fit_bounds;
+      try {
+        const bounds = Array.isArray(raw) ? L.latLngBounds(raw) : null;
+        if (bounds && bounds.isValid()) {
+          map.fitBounds(bounds.pad(0.15));
+          const pad = cfg('map.max_bounds_pad', 0.6) || 0.6;
+          map.setMaxBounds(bounds.pad(pad));
+          map.on('drag', ()=> map.panInsideBounds(map.options.maxBounds,{animate:false}));
+        }
+      } catch (err) {
+        console.warn('fit_bounds parse error', err);
+      }
+    }
+  }
+
+  function applyOriginFromConfig(){
+    const originCoords = cfg('routing.origin_coordinates', null);
+    if (originCoords && Number.isFinite(originCoords.lat) && Number.isFinite(originCoords.lon)) {
+      state.ORIGIN = {lat: Number(originCoords.lat), lon: Number(originCoords.lon)};
+    }
+  }
+
+  function prefetchOriginCoordinates(){
+    if (!cfg('routing.geocode_origin_on_start', true)) return;
+    const originName = cfg('routing.origin', 'Maglód');
+    if (!originName) return;
+    (async ()=>{
+      try{
+        const r = await fetch(EP.geocode + '&' + new URLSearchParams({q: originName}), {cache:'force-cache'});
+        if (!r.ok) return;
+        const j = await r.json();
+        if (j && Number.isFinite(j.lat) && Number.isFinite(j.lon)) {
+          state.ORIGIN = {lat: Number(j.lat), lon: Number(j.lon)};
+        }
+      }catch(err){
+        console.warn('origin geocode failed', err);
+      }
+    })();
+  }
 
   function metersPerPixelAtCenter(){
     if (!map || typeof map.getSize !== 'function') return 0;
@@ -3039,12 +3094,50 @@
 
       const btnDelete = groupEl.querySelector('.grp-del');
       if (btnDelete) btnDelete.addEventListener('click', async ()=>{
+        if (btnDelete.dataset.loading === '1') return;
         const name = (ROUND_MAP.get(rid)?.label) || String(rid);
         const msgTpl = cfg('text.messages.delete_round_confirm', 'Biztosan törlöd a(z) "{name}" kör összes címét?');
         if (!confirm(format(msgTpl, {name}))) return;
+
+        pushSnapshot();
+        const snapshot = {
+          items: JSON.parse(JSON.stringify(state.items)),
+          roundMeta: JSON.parse(JSON.stringify(normalizedRoundMeta()))
+        };
+
+        const removedIds = state.items.filter(it => (+it.round||0)===rid).map(it=>it.id);
+        if (!removedIds.length) {
+          alert(cfg('text.messages.delete_round_error', 'A kör törlése nem sikerült.'));
+          return;
+        }
+
+        const removeLocally = ()=>{
+          state.items = state.items.filter(it => (+it.round||0)!==rid);
+          clearRoundMeta(rid);
+          removedIds.forEach(id=>{
+            const mk = state.markersById.get(id);
+            if (!mk) return;
+            markerLayer.removeLayer(mk);
+            state.markersById.delete(id);
+          });
+          updatePinCount();
+          requestMarkerOverlapRefresh();
+          ensureBlankRowInDefaultRound();
+        };
+
+        const revertLocally = ()=>{
+          applyLoadedData({
+            items: Array.isArray(snapshot.items) ? snapshot.items : [],
+            round_meta: snapshot.roundMeta || {}
+          });
+          renderEverything();
+        };
+
         try{
-          pushSnapshot();
-          const removedIds = state.items.filter(it => (+it.round||0)===rid).map(it=>it.id);
+          btnDelete.dataset.loading = '1';
+          removeLocally();
+          renderEverything();
+
           const headers = buildHeaders({'Content-Type':'application/json'});
           const requestId = makeRequestId();
           headers.set('X-Request-ID', requestId);
@@ -3066,19 +3159,15 @@
             changeNotice.hide();
           }
 
-          state.items = state.items.filter(it => (+it.round||0)!==rid);
-          clearRoundMeta(rid);
-          removedIds.forEach(id=>{
-            const mk = state.markersById.get(id);
-            if (mk){ markerLayer.removeLayer(mk); state.markersById.delete(id); updatePinCount(); requestMarkerOverlapRefresh(); }
-          });
-
-          ensureBlankRowInDefaultRound();
-          await saveAll();
-          renderEverything();
           const successTpl = cfg('text.messages.delete_round_success', 'Kör törölve. Tételek: {count}.');
           alert(format(successTpl, {count: j?.deleted ?? removedIds.length}));
-        }catch(e){ console.error(e); alert(cfg('text.messages.delete_round_error', 'A kör törlése nem sikerült.')); }
+        }catch(e){
+          console.error(e);
+          revertLocally();
+          alert(cfg('text.messages.delete_round_error', 'A kör törlése nem sikerült.'));
+        } finally {
+          delete btnDelete.dataset.loading;
+        }
       });
 
       const btnNav = groupEl.querySelector('.grp-nav');
@@ -3823,6 +3912,8 @@
     autoSortItems();
     renderGroups();
     state.items.forEach((it,idx)=>{ if (it.lat!=null&&it.lon!=null) upsertMarker(it, idx); });
+    updatePinCount();
+    requestMarkerOverlapRefresh();
     const b = markerLayer.getBounds(); if (b.isValid()) map.fitBounds(b.pad(0.2));
     updateUndoButton();
   }
@@ -3830,53 +3921,31 @@
   (async function start(){
     try{
       loadCollapsePrefs();
-      await loadCfg();
-      applyThemeVariables();
-      applyPanelSizes();
-      applyPanelSticky();
-      updateUndoButton();
+      const cfgPromise = (async ()=>{
+        await loadCfg();
+        applyThemeVariables();
+        applyPanelSizes();
+        applyPanelSticky();
+        updateUndoButton();
+        const rounds = Array.isArray(state.cfg.rounds) ? state.cfg.rounds : [];
+        ROUND_MAP = new Map(rounds.map(r=>[Number(r.id), r]));
+        applyMapTilesFromConfig();
+        applyOriginFromConfig();
+      })();
+      const dataPromise = loadAll();
+      const clientPromise = ensureClientId();
 
-      // tile layer
-      L.tileLayer(state.cfg.map.tiles.url,{maxZoom:19, attribution:state.cfg.map.tiles.attribution}).addTo(map);
-      if (state.cfg.map.fit_bounds) {
-        const b = L.latLngBounds(state.cfg.map.fit_bounds);
-        map.fitBounds(b.pad(0.15));
-        const pad = cfg('map.max_bounds_pad', 0.6) || 0.6;
-        map.setMaxBounds(b.pad(pad));
-        map.on('drag', ()=> map.panInsideBounds(map.options.maxBounds,{animate:false}));
-      }
+      await Promise.all([cfgPromise, dataPromise, clientPromise]);
 
-      // rounds
-      ROUND_MAP = new Map(state.cfg.rounds.map(r=>[Number(r.id), r]));
-
-      // origin geocode cache
-      const originCoords = cfg('routing.origin_coordinates', null);
-      if (originCoords && Number.isFinite(originCoords.lat) && Number.isFinite(originCoords.lon)) {
-        state.ORIGIN = {lat: Number(originCoords.lat), lon: Number(originCoords.lon)};
-      }
-      if (cfg('routing.geocode_origin_on_start', true)) {
-        const originName = cfg('routing.origin', 'Maglód');
-        try{
-          const r = await fetch(EP.geocode + '&' + new URLSearchParams({q:originName}), {cache:'force-cache'});
-          if (r.ok){
-            const j = await r.json();
-            if (j && j.lat && j.lon){ state.ORIGIN = {lat:j.lat, lon:j.lon}; }
-          }
-        }catch(e){}
-      }
-
-      await ensureClientId();
-      // load data
-      await loadAll();
       initChangeWatcher();
 
-      // mindig legyen üres sor a 0-s körben
       if (!Array.isArray(state.items) || state.items.length===0){
         state.items = [];
       }
       ensureBlankRowInDefaultRound();
 
       renderEverything();
+      prefetchOriginCoordinates();
     }catch(e){
       console.error(e);
       alert(text('messages.load_error', 'Betöltési hiba: kérlek frissítsd az oldalt.'));

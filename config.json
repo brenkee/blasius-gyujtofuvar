@@ -1,9 +1,28 @@
 {
+    "base_url": "/github/blasius/blasius-gyujtofuvar/",
     "app": {
         "title": "BLASIUS - Gyűjtőfuvar szervező",
         "auto_sort_by_round": true,
         "round_zero_at_bottom": false,
         "default_collapsed": false
+    },
+    "auth": {
+        "session": {
+            "secure": false,
+            "samesite": "Lax"
+        },
+        "login": {
+            "title": "BLASIUS - Gyűjtőfuvar belépés",
+            "subtitle": "Lépj be a diszpécser felületre",
+            "logo": "favicon.png",
+            "background": "#0f172a",
+            "background_image": null,
+            "card_background": "#ffffff",
+            "accent": "#2563eb",
+            "text": "#111827",
+            "muted": "#6b7280",
+            "footer": "© 2024 Blasius Logistics"
+        }
     },
     "history": {
         "undo_enabled": true,

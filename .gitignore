@@ -5,6 +5,8 @@ fuvar_export.csv
 fuvar_state.lock
 fuvar_revision.json
 fuvar_changes.log
+fuvar_changes.state
 data/*.db
 data/*.db-shm
 data/*.db-wal
+data/security/

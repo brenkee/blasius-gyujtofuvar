@@ -3,6 +3,7 @@
 
 $CONFIG_FILE = __DIR__ . '/config.json';
 $CFG_DEFAULT = [
+  "base_url" => '/',
   "app" => [
     "title" => "Gyűjtőfuvar – címkezelő",
     "auto_sort_by_round" => true,
@@ -343,6 +344,28 @@ $CFG_DEFAULT = [
       ["min_age_hours" => 720, "period_hours" => 168]
     ],
     "strategy" => "interval_csv"
+  ],
+  "auth" => [
+    "session" => [
+      "name" => "GFSESSID",
+      "lifetime" => 60 * 60 * 12,
+      "path" => "/",
+      "secure" => false,
+      "httponly" => true,
+      "samesite" => "Lax"
+    ],
+    "login" => [
+      "title" => "Belépés",
+      "subtitle" => "Jelentkezz be a rendszerbe",
+      "logo" => null,
+      "background" => "#0f172a",
+      "background_image" => null,
+      "card_background" => "#ffffff",
+      "accent" => "#2563eb",
+      "text" => "#111827",
+      "muted" => "#6b7280",
+      "footer" => null
+    ]
   ]
 ];
 
@@ -352,6 +375,85 @@ if (is_file($CONFIG_FILE)) {
   $json = json_decode($raw, true);
   if (is_array($json)) $CFG = array_replace_recursive($CFG_DEFAULT, $json);
 }
+if (!isset($CFG['base_url'])) {
+  $CFG['base_url'] = '/';
+}
+
+function app_base_url(): string {
+  global $CFG;
+  $config = is_array($CFG) ? $CFG : [];
+  $base = rtrim((string)($config['base_url'] ?? '/'), '/') . '/';
+  return $base === '' ? '/' : $base;
+}
+
+function app_url(string $path = ''): string {
+  $base = app_base_url();
+  if ($path === '' || $path === '/') {
+    return $base;
+  }
+  return $base . ltrim($path, '/');
+}
+
+/**
+ * Determine whether asynchronous background processing is supported.
+ */
+function async_supported(): bool {
+  return PHP_SAPI !== 'cli' && PHP_SAPI !== 'phpdbg';
+}
+
+/**
+ * Enqueue a callback for deferred execution. CLI environments run the callback immediately.
+ *
+ * @param callable $task
+ */
+function async_enqueue(callable $task): void {
+  if (!async_supported()) {
+    try {
+      $task();
+    } catch (Throwable $e) {
+      error_log('Async task execution failed: ' . $e->getMessage());
+    }
+    return;
+  }
+
+  if (!isset($GLOBALS['__ASYNC_QUEUE__']) || !is_array($GLOBALS['__ASYNC_QUEUE__'])) {
+    $GLOBALS['__ASYNC_QUEUE__'] = [];
+  }
+
+  $GLOBALS['__ASYNC_QUEUE__'][] = $task;
+}
+
+/**
+ * Flush the asynchronous queue (used automatically at request shutdown).
+ */
+function async_run_queue(): void {
+  if (!isset($GLOBALS['__ASYNC_QUEUE__']) || !is_array($GLOBALS['__ASYNC_QUEUE__'])) {
+    return;
+  }
+
+  $queue = $GLOBALS['__ASYNC_QUEUE__'];
+  $GLOBALS['__ASYNC_QUEUE__'] = [];
+
+  if (async_supported() && function_exists('fastcgi_finish_request')) {
+    @fastcgi_finish_request();
+  }
+
+  foreach ($queue as $task) {
+    if (!is_callable($task)) {
+      continue;
+    }
+    try {
+      $task();
+    } catch (Throwable $e) {
+      error_log('Async task execution failed: ' . $e->getMessage());
+    }
+  }
+}
+
+if (async_supported()) {
+  register_shutdown_function('async_run_queue');
+}
+
 if (empty($CFG['rounds'])) {
   $CFG['rounds'] = [
     ["id"=>0,"label"=>"Alap (0)","color"=>"#9aa0a6"],
@@ -386,6 +488,7 @@ $EXPORT_NAME     = (string)($CFG['files']['export_download_name'] ?? 'fuvar_expo
 $ARCHIVE_FILE    = __DIR__ . '/' . ($CFG['files']['archive_file'] ?? 'fuvar_archive.log');
 $REVISION_FILE   = __DIR__ . '/' . ($CFG['files']['revision_file'] ?? 'fuvar_revision.json');
 $CHANGE_LOG_FILE = __DIR__ . '/' . ($CFG['files']['change_log_file'] ?? 'fuvar_changes.log');
+$CHANGE_LOG_STATE_FILE = __DIR__ . '/' . ($CFG['files']['change_log_state_file'] ?? 'fuvar_changes.state');
 $STATE_LOCK_FILE = __DIR__ . '/' . ($CFG['files']['lock_file'] ?? 'fuvar_state.lock');
 
 $DATA_BOOTSTRAP_INFO = [];
@@ -737,6 +840,12 @@ function backup_now($cfg, $dataFile) {
   }
 }
 
+function schedule_backup(array $cfg, string $dataFile): void {
+  async_enqueue(function () use ($cfg, $dataFile) {
+    backup_now($cfg, $dataFile);
+  });
+}
+
 function stream_file_download($path, $downloadName, $contentType='text/plain; charset=utf-8') {
   if (!is_file($path)) {
     header('Content-Type: '.$contentType);
@@ -963,7 +1072,7 @@ function data_store_read_sqlite($file) {
 
   try {
     $items = [];
-    $stmt = $pdo->query('SELECT data FROM items ORDER BY position ASC, id ASC');
+    $stmt = $pdo->query('SELECT data FROM items ORDER BY round_value ASC, position ASC, id ASC');
     if ($stmt) {
       foreach ($stmt as $row) {
         if (!is_array($row)) continue;
@@ -1008,7 +1117,7 @@ function data_store_write_sqlite_conn(PDO $pdo, array $items, array $roundMeta) 
   $pdo->exec('DELETE FROM round_meta');
 
   if (!empty($normalizedItems)) {
-    $insertItem = $pdo->prepare('INSERT INTO items (id, position, data) VALUES (:id, :position, :data)');
+    $insertItem = $pdo->prepare('INSERT INTO items (id, round_value, position, data) VALUES (:id, :round_value, :position, :data)');
     foreach (array_values($normalizedItems) as $position => $item) {
       $id = isset($item['id']) ? (string)$item['id'] : '';
       if ($id === '') {
@@ -1020,6 +1129,7 @@ function data_store_write_sqlite_conn(PDO $pdo, array $items, array $roundMeta) 
       }
       $insertItem->execute([
         ':id' => $id,
+        ':round_value' => (int)($item['round'] ?? 0),
         ':position' => (int)$position,
         ':data' => $json
       ]);
@@ -1107,6 +1217,135 @@ function data_store_write($file, $items, $roundMeta) {
   return data_store_write_json($file, $items, $roundMeta);
 }
 
+function delete_round_from_store(int $roundId, string $actorId, string $requestId, ?string $batchId = null): array {
+  global $DATA_FILE;
+
+  $rid = (int)$roundId;
+  $roundKey = (string)$rid;
+
+  return state_lock(function () use ($rid, $roundKey, $actorId, $requestId, $batchId) {
+    global $DATA_FILE;
+
+    $removed = [];
+    $roundMetaBefore = [];
+    $changesMade = false;
+
+    if (data_store_is_sqlite($DATA_FILE)) {
+      [$pdo] = data_store_sqlite_open($DATA_FILE);
+      $pdo->beginTransaction();
+      try {
+        $fetchItems = $pdo->prepare('SELECT data FROM items WHERE round_value = :round ORDER BY position ASC');
+        $fetchItems->execute([':round' => $rid]);
+        foreach ($fetchItems as $row) {
+          if (!is_array($row)) { continue; }
+          $payload = $row['data'] ?? null;
+          if (!is_string($payload)) { continue; }
+          $decoded = json_decode($payload, true);
+          if (is_array($decoded)) {
+            $removed[] = $decoded;
+          }
+        }
+
+        $metaStmt = $pdo->prepare('SELECT data FROM round_meta WHERE round_id = :round');
+        $metaStmt->execute([':round' => $roundKey]);
+        $metaRaw = $metaStmt->fetchColumn();
+        $metaExisted = $metaRaw !== false && $metaRaw !== null;
+        if ($metaExisted && is_string($metaRaw)) {
+          $decoded = json_decode($metaRaw, true);
+          if (is_array($decoded)) {
+            $roundMetaBefore = $decoded;
+          }
+        }
+
+        $deletedCount = count($removed);
+        $metaRemoved = $metaExisted;
+        $changesMade = $deletedCount > 0 || $metaRemoved;
+
+        if ($changesMade) {
+          $deleteItems = $pdo->prepare('DELETE FROM items WHERE round_value = :round');
+          $deleteItems->execute([':round' => $rid]);
+          $deleteMeta = $pdo->prepare('DELETE FROM round_meta WHERE round_id = :round');
+          $deleteMeta->execute([':round' => $roundKey]);
+        }
+
+        $pdo->commit();
+      } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+      }
+    } else {
+      [$items, $roundMeta] = data_store_read($DATA_FILE);
+      $items = is_array($items) ? $items : [];
+      $roundMeta = is_array($roundMeta) ? $roundMeta : [];
+
+      $kept = [];
+      foreach ($items as $item) {
+        if (!is_array($item)) { continue; }
+        if ((int)($item['round'] ?? 0) === $rid) {
+          $removed[] = $item;
+        } else {
+          $kept[] = $item;
+        }
+      }
+
+      $metaExisted = array_key_exists($roundKey, $roundMeta);
+      if ($metaExisted && is_array($roundMeta[$roundKey] ?? null)) {
+        $roundMetaBefore = $roundMeta[$roundKey];
+      }
+
+      $deletedCount = count($removed);
+      $changesMade = $deletedCount > 0 || $metaExisted;
+
+      if ($changesMade) {
+        unset($roundMeta[$roundKey]);
+        data_store_write($DATA_FILE, $kept, $roundMeta);
+      }
+    }
+
+    if (!$changesMade) {
+      return [
+        'rev' => read_current_revision(),
+        'deleted_count' => 0,
+        'removed_items' => [],
+        'round_meta_before' => $roundMetaBefore,
+        'changes_made' => false,
+      ];
+    }
+
+    $deletedCount = count($removed);
+    $currentRev = read_current_revision();
+    $newRev = $currentRev + 1;
+    write_revision_locked($newRev);
+
+    $events = [
+      [
+        'entity' => 'round',
+        'entity_id' => $rid,
+        'action' => 'deleted',
+        'meta' => [
+          'round' => $rid,
+          'deleted_count' => $deletedCount,
+          'before_meta' => $roundMetaBefore,
+          'source_action' => 'delete_round'
+        ]
+      ]
+    ];
+
+    append_change_events($newRev, $actorId, $requestId, $batchId, $events, [
+      'round' => $rid,
+      'deleted_count' => $deletedCount
+    ]);
+
+    return [
+      'rev' => $newRev,
+      'deleted_count' => $deletedCount,
+      'removed_items' => $removed,
+      'round_meta_before' => $roundMetaBefore,
+      'changes_made' => true,
+    ];
+  });
+}
+
 function state_lock(callable $callback) {
   global $STATE_LOCK_FILE;
   $fh = fopen($STATE_LOCK_FILE, 'c+');
@@ -1153,36 +1392,68 @@ function write_revision_locked($rev) {
   file_put_contents($REVISION_FILE, $payload, LOCK_EX);
 }
 
-function append_change_log_locked(array $entry) {
-  global $CHANGE_LOG_FILE;
+function change_log_default_state(): array {
+  return [
+    'lines_since_prune' => 0,
+    'last_prune_ts' => 0,
+  ];
+}
 
-  if (!isset($entry['ts'])) {
-    $entry['ts'] = gmdate('c');
+function change_log_read_state(): array {
+  global $CHANGE_LOG_STATE_FILE;
+  if (!is_file($CHANGE_LOG_STATE_FILE)) {
+    return change_log_default_state();
   }
+  $raw = @file_get_contents($CHANGE_LOG_STATE_FILE);
+  if ($raw === false) {
+    return change_log_default_state();
+  }
+  $decoded = json_decode($raw, true);
+  if (!is_array($decoded)) {
+    return change_log_default_state();
+  }
+  return array_merge(change_log_default_state(), $decoded);
+}
 
-  $maxAgeSeconds = 86400; // 1 day
-  $cutoff = time() - $maxAgeSeconds;
-  $newLine = json_encode($entry, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+function change_log_write_state(array $state): void {
+  global $CHANGE_LOG_STATE_FILE;
+  $payload = json_encode($state, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+  if ($payload === false) {
+    return;
+  }
+  @file_put_contents($CHANGE_LOG_STATE_FILE, $payload, LOCK_EX);
+}
+
+function prune_change_log_file(int $maxAgeSeconds = 86400, int $maxEntries = 2000): bool {
+  global $CHANGE_LOG_FILE;
+  if (!is_file($CHANGE_LOG_FILE)) {
+    return true;
+  }
 
   $fh = @fopen($CHANGE_LOG_FILE, 'c+');
   if (!$fh) {
-    file_put_contents($CHANGE_LOG_FILE, $newLine . "\n", FILE_APPEND | LOCK_EX);
-    return;
+    return false;
   }
 
   $retained = [];
+  $cutoff = $maxAgeSeconds > 0 ? (time() - $maxAgeSeconds) : null;
+
   if (flock($fh, LOCK_EX)) {
     rewind($fh);
     while (($line = fgets($fh)) !== false) {
       $line = trim($line);
-      if ($line === '') continue;
+      if ($line === '') {
+        continue;
+      }
 
       $keep = true;
-      $decoded = json_decode($line, true);
-      if (is_array($decoded) && isset($decoded['ts'])) {
-        $ts = strtotime((string)$decoded['ts']);
-        if ($ts !== false && $ts < $cutoff) {
-          $keep = false;
+      if ($cutoff !== null) {
+        $decoded = json_decode($line, true);
+        if (is_array($decoded) && isset($decoded['ts'])) {
+          $ts = strtotime((string)$decoded['ts']);
+          if ($ts !== false && $ts < $cutoff) {
+            $keep = false;
+          }
         }
       }
 
@@ -1191,19 +1462,109 @@ function append_change_log_locked(array $entry) {
       }
     }
 
-    $retained[] = $newLine;
+    if ($maxEntries > 0 && count($retained) > $maxEntries) {
+      $retained = array_slice($retained, -$maxEntries);
+    }
 
+    $payload = $retained ? implode("\n", $retained) . "\n" : '';
     ftruncate($fh, 0);
     rewind($fh);
-    fwrite($fh, implode("\n", $retained) . "\n");
+    if ($payload !== '') {
+      fwrite($fh, $payload);
+    }
     fflush($fh);
     flock($fh, LOCK_UN);
-  } else {
-    // Fallback if we could not acquire the lock.
-    file_put_contents($CHANGE_LOG_FILE, $newLine . "\n", FILE_APPEND | LOCK_EX);
+    fclose($fh);
+    return true;
   }
 
   fclose($fh);
+  return false;
+}
+
+function prune_change_log_if_needed(): void {
+  $state = change_log_read_state();
+  $state['lines_since_prune'] = (int)($state['lines_since_prune'] ?? 0) + 1;
+  $lastPrune = (int)($state['last_prune_ts'] ?? 0);
+  $now = time();
+  $shouldPrune = false;
+
+  if ($state['lines_since_prune'] >= 50) {
+    $shouldPrune = true;
+  } elseif ($lastPrune === 0 || ($now - $lastPrune) >= 600) {
+    $shouldPrune = true;
+  }
+
+  if ($shouldPrune) {
+    if (prune_change_log_file(86400, 2000)) {
+      $state['lines_since_prune'] = 0;
+      $state['last_prune_ts'] = $now;
+    }
+  }
+
+  change_log_write_state($state);
+}
+
+function append_change_log_locked(array $entry): void {
+  global $CHANGE_LOG_FILE;
+
+  if (!isset($entry['ts'])) {
+    $entry['ts'] = gmdate('c');
+  }
+
+  $newLine = json_encode($entry, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+  if ($newLine === false) {
+    return;
+  }
+
+  file_put_contents($CHANGE_LOG_FILE, $newLine . "\n", FILE_APPEND | LOCK_EX);
+  prune_change_log_if_needed();
+}
+
+function append_change_events($rev, $actorId, $requestId, $batchId, array $events, array $meta = []) {
+  if (empty($events)) {
+    return;
+  }
+
+  $payloads = [];
+  foreach ($events as $event) {
+    if (!is_array($event)) {
+      continue;
+    }
+    $log = [
+      'rev' => $rev,
+      'entity' => $event['entity'] ?? 'dataset',
+      'entity_id' => $event['entity_id'] ?? null,
+      'action' => $event['action'] ?? 'updated',
+      'ts' => gmdate('c'),
+      'actor_id' => $actorId,
+      'request_id' => $requestId,
+    ];
+    if ($batchId) {
+      $log['batch_id'] = $batchId;
+    }
+    $metaPayload = [];
+    if (isset($event['meta']) && is_array($event['meta'])) {
+      $metaPayload = $event['meta'];
+    }
+    if (!empty($meta)) {
+      $metaPayload = array_merge($metaPayload, $meta);
+    }
+    if (!empty($metaPayload)) {
+      $log['meta'] = $metaPayload;
+    }
+    $payloads[] = $log;
+  }
+
+  if (empty($payloads)) {
+    return;
+  }
+
+  async_enqueue(function () use ($payloads) {
+    foreach ($payloads as $log) {
+      append_change_log_locked($log);
+    }
+  });
 }
 
 function normalized_actor_id($raw) {

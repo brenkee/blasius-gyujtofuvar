@@ -19,6 +19,18 @@ A háttér a `data/app.db` SQLite-adatbázisban tárolja az adatokat. Az adatbá
 
 Ezek a fájlok a `config.json`-ban a `files` szekcióban átnevezhetők.
 
+## Biztonság és bejelentkezés
+
+- Az alkalmazás session alapú hitelesítést használ, a böngésző automatikusan mentheti a hitelesítő adatokat.
+- Az alapértelmezett admin fiók: **admin / admin**. Az első sikeres belépés után a rendszer kötelezővé teszi az azonnali jelszócserét.
+- A `config.json` `auth` szekciójában teljesen testreszabható a belépési oldal (logó, háttér, színek, feliratok).
+- Szerepkörök:
+  - `admin`: teljes hozzáférés + felhasználókezelés.
+  - `editor`: adatok módosítása és megtekintése.
+  - `viewer`: csak megtekintés.
+- A hamburger menüben csak az admin szerepkör számára jelenik meg az „Admin felület”, ahol felhasználók hozhatók létre/módosíthatók, illetve a saját profil is frissíthető.
+- Minden módosító API-hívás CSRF védelemmel, rátélimiteléssel és jogosultság-ellenőrzéssel rendelkezik.
+
 ## API végpontok
 
 | Végpont | Metódus | Leírás |
