@@ -986,7 +986,13 @@
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
-      const config = await response.json();
+      const payload = await response.json();
+      const config = payload && typeof payload === 'object' && payload.config && typeof payload.config === 'object'
+        ? payload.config
+        : payload;
+      if (!config || typeof config !== 'object') {
+        throw new Error('invalid_config_payload');
+      }
       settingsState.original = deepClone(config);
       settingsState.working = deepClone(config);
       settingsState.dirty = false;
@@ -1016,7 +1022,13 @@
         const text = await response.text();
         throw new Error(text || `HTTP ${response.status}`);
       }
-      const newConfig = await response.json();
+      const payload = await response.json();
+      const newConfig = payload && typeof payload === 'object' && payload.config && typeof payload.config === 'object'
+        ? payload.config
+        : payload;
+      if (!newConfig || typeof newConfig !== 'object') {
+        throw new Error('invalid_config_payload');
+      }
       settingsState.original = deepClone(newConfig);
       settingsState.working = deepClone(newConfig);
       settingsState.dirty = false;
