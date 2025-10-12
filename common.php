@@ -393,6 +393,67 @@ function app_url(string $path = ''): string {
   }
   return $base . ltrim($path, '/');
 }
+
+/**
+ * Determine whether asynchronous background processing is supported.
+ */
+function async_supported(): bool {
+  return PHP_SAPI !== 'cli' && PHP_SAPI !== 'phpdbg';
+}
+
+/**
+ * Enqueue a callback for deferred execution. CLI environments run the callback immediately.
+ *
+ * @param callable $task
+ */
+function async_enqueue(callable $task): void {
+  if (!async_supported()) {
+    try {
+      $task();
+    } catch (Throwable $e) {
+      error_log('Async task execution failed: ' . $e->getMessage());
+    }
+    return;
+  }
+
+  if (!isset($GLOBALS['__ASYNC_QUEUE__']) || !is_array($GLOBALS['__ASYNC_QUEUE__'])) {
+    $GLOBALS['__ASYNC_QUEUE__'] = [];
+  }
+
+  $GLOBALS['__ASYNC_QUEUE__'][] = $task;
+}
+
+/**
+ * Flush the asynchronous queue (used automatically at request shutdown).
+ */
+function async_run_queue(): void {
+  if (!isset($GLOBALS['__ASYNC_QUEUE__']) || !is_array($GLOBALS['__ASYNC_QUEUE__'])) {
+    return;
+  }
+
+  $queue = $GLOBALS['__ASYNC_QUEUE__'];
+  $GLOBALS['__ASYNC_QUEUE__'] = [];
+
+  if (async_supported() && function_exists('fastcgi_finish_request')) {
+    @fastcgi_finish_request();
+  }
+
+  foreach ($queue as $task) {
+    if (!is_callable($task)) {
+      continue;
+    }
+    try {
+      $task();
+    } catch (Throwable $e) {
+      error_log('Async task execution failed: ' . $e->getMessage());
+    }
+  }
+}
+
+if (async_supported()) {
+  register_shutdown_function('async_run_queue');
+}
+
 if (empty($CFG['rounds'])) {
   $CFG['rounds'] = [
     ["id"=>0,"label"=>"Alap (0)","color"=>"#9aa0a6"],
@@ -778,6 +839,12 @@ function backup_now($cfg, $dataFile) {
   }
 }
 
+function schedule_backup(array $cfg, string $dataFile): void {
+  async_enqueue(function () use ($cfg, $dataFile) {
+    backup_now($cfg, $dataFile);
+  });
+}
+
 function stream_file_download($path, $downloadName, $contentType='text/plain; charset=utf-8') {
   if (!is_file($path)) {
     header('Content-Type: '.$contentType);
@@ -1004,7 +1071,7 @@ function data_store_read_sqlite($file) {
 
   try {
     $items = [];
-    $stmt = $pdo->query('SELECT data FROM items ORDER BY position ASC, id ASC');
+    $stmt = $pdo->query('SELECT data FROM items ORDER BY round_value ASC, position ASC, id ASC');
     if ($stmt) {
       foreach ($stmt as $row) {
         if (!is_array($row)) continue;
@@ -1049,7 +1116,7 @@ function data_store_write_sqlite_conn(PDO $pdo, array $items, array $roundMeta) 
   $pdo->exec('DELETE FROM round_meta');
 
   if (!empty($normalizedItems)) {
-    $insertItem = $pdo->prepare('INSERT INTO items (id, position, data) VALUES (:id, :position, :data)');
+    $insertItem = $pdo->prepare('INSERT INTO items (id, round_value, position, data) VALUES (:id, :round_value, :position, :data)');
     foreach (array_values($normalizedItems) as $position => $item) {
       $id = isset($item['id']) ? (string)$item['id'] : '';
       if ($id === '') {
@@ -1061,6 +1128,7 @@ function data_store_write_sqlite_conn(PDO $pdo, array $items, array $roundMeta) 
       }
       $insertItem->execute([
         ':id' => $id,
+        ':round_value' => (int)($item['round'] ?? 0),
         ':position' => (int)$position,
         ':data' => $json
       ]);
@@ -1146,6 +1214,135 @@ function data_store_write($file, $items, $roundMeta) {
     return data_store_write_sqlite($file, $items, $roundMeta);
   }
   return data_store_write_json($file, $items, $roundMeta);
+}
+
+function delete_round_from_store(int $roundId, string $actorId, string $requestId, ?string $batchId = null): array {
+  global $DATA_FILE;
+
+  $rid = (int)$roundId;
+  $roundKey = (string)$rid;
+
+  return state_lock(function () use ($rid, $roundKey, $actorId, $requestId, $batchId) {
+    global $DATA_FILE;
+
+    $removed = [];
+    $roundMetaBefore = [];
+    $changesMade = false;
+
+    if (data_store_is_sqlite($DATA_FILE)) {
+      [$pdo] = data_store_sqlite_open($DATA_FILE);
+      $pdo->beginTransaction();
+      try {
+        $fetchItems = $pdo->prepare('SELECT data FROM items WHERE round_value = :round ORDER BY position ASC');
+        $fetchItems->execute([':round' => $rid]);
+        foreach ($fetchItems as $row) {
+          if (!is_array($row)) { continue; }
+          $payload = $row['data'] ?? null;
+          if (!is_string($payload)) { continue; }
+          $decoded = json_decode($payload, true);
+          if (is_array($decoded)) {
+            $removed[] = $decoded;
+          }
+        }
+
+        $metaStmt = $pdo->prepare('SELECT data FROM round_meta WHERE round_id = :round');
+        $metaStmt->execute([':round' => $roundKey]);
+        $metaRaw = $metaStmt->fetchColumn();
+        $metaExisted = $metaRaw !== false && $metaRaw !== null;
+        if ($metaExisted && is_string($metaRaw)) {
+          $decoded = json_decode($metaRaw, true);
+          if (is_array($decoded)) {
+            $roundMetaBefore = $decoded;
+          }
+        }
+
+        $deletedCount = count($removed);
+        $metaRemoved = $metaExisted;
+        $changesMade = $deletedCount > 0 || $metaRemoved;
+
+        if ($changesMade) {
+          $deleteItems = $pdo->prepare('DELETE FROM items WHERE round_value = :round');
+          $deleteItems->execute([':round' => $rid]);
+          $deleteMeta = $pdo->prepare('DELETE FROM round_meta WHERE round_id = :round');
+          $deleteMeta->execute([':round' => $roundKey]);
+        }
+
+        $pdo->commit();
+      } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+      }
+    } else {
+      [$items, $roundMeta] = data_store_read($DATA_FILE);
+      $items = is_array($items) ? $items : [];
+      $roundMeta = is_array($roundMeta) ? $roundMeta : [];
+
+      $kept = [];
+      foreach ($items as $item) {
+        if (!is_array($item)) { continue; }
+        if ((int)($item['round'] ?? 0) === $rid) {
+          $removed[] = $item;
+        } else {
+          $kept[] = $item;
+        }
+      }
+
+      $metaExisted = array_key_exists($roundKey, $roundMeta);
+      if ($metaExisted && is_array($roundMeta[$roundKey] ?? null)) {
+        $roundMetaBefore = $roundMeta[$roundKey];
+      }
+
+      $deletedCount = count($removed);
+      $changesMade = $deletedCount > 0 || $metaExisted;
+
+      if ($changesMade) {
+        unset($roundMeta[$roundKey]);
+        data_store_write($DATA_FILE, $kept, $roundMeta);
+      }
+    }
+
+    if (!$changesMade) {
+      return [
+        'rev' => read_current_revision(),
+        'deleted_count' => 0,
+        'removed_items' => [],
+        'round_meta_before' => $roundMetaBefore,
+        'changes_made' => false,
+      ];
+    }
+
+    $deletedCount = count($removed);
+    $currentRev = read_current_revision();
+    $newRev = $currentRev + 1;
+    write_revision_locked($newRev);
+
+    $events = [
+      [
+        'entity' => 'round',
+        'entity_id' => $rid,
+        'action' => 'deleted',
+        'meta' => [
+          'round' => $rid,
+          'deleted_count' => $deletedCount,
+          'before_meta' => $roundMetaBefore,
+          'source_action' => 'delete_round'
+        ]
+      ]
+    ];
+
+    append_change_events($newRev, $actorId, $requestId, $batchId, $events, [
+      'round' => $rid,
+      'deleted_count' => $deletedCount
+    ]);
+
+    return [
+      'rev' => $newRev,
+      'deleted_count' => $deletedCount,
+      'removed_items' => $removed,
+      'round_meta_before' => $roundMetaBefore,
+      'changes_made' => true,
+    ];
+  });
 }
 
 function state_lock(callable $callback) {
@@ -1245,6 +1442,52 @@ function append_change_log_locked(array $entry) {
   }
 
   fclose($fh);
+}
+
+function append_change_events($rev, $actorId, $requestId, $batchId, array $events, array $meta = []) {
+  if (empty($events)) {
+    return;
+  }
+
+  $payloads = [];
+  foreach ($events as $event) {
+    if (!is_array($event)) {
+      continue;
+    }
+    $log = [
+      'rev' => $rev,
+      'entity' => $event['entity'] ?? 'dataset',
+      'entity_id' => $event['entity_id'] ?? null,
+      'action' => $event['action'] ?? 'updated',
+      'ts' => gmdate('c'),
+      'actor_id' => $actorId,
+      'request_id' => $requestId,
+    ];
+    if ($batchId) {
+      $log['batch_id'] = $batchId;
+    }
+    $metaPayload = [];
+    if (isset($event['meta']) && is_array($event['meta'])) {
+      $metaPayload = $event['meta'];
+    }
+    if (!empty($meta)) {
+      $metaPayload = array_merge($metaPayload, $meta);
+    }
+    if (!empty($metaPayload)) {
+      $log['meta'] = $metaPayload;
+    }
+    $payloads[] = $log;
+  }
+
+  if (empty($payloads)) {
+    return;
+  }
+
+  async_enqueue(function () use ($payloads) {
+    foreach ($payloads as $log) {
+      append_change_log_locked($log);
+    }
+  });
 }
 
 function normalized_actor_id($raw) {

@@ -76,6 +76,12 @@ function init_app_database(array $options = []): array {
                 if ($name === '' || isset($applied[$name])) {
                     continue;
                 }
+                if ($name === '0003_items_round_index.sql' && table_has_column($pdo, 'items', 'round_value')) {
+                    $ins = $pdo->prepare('INSERT OR IGNORE INTO schema_migrations (migration) VALUES (:migration)');
+                    $ins->execute([':migration' => $name]);
+                    $executedMigrations[] = $name;
+                    continue;
+                }
                 $pdo->beginTransaction();
                 try {
                     execute_sql_file($pdo, (string)$file);
@@ -156,6 +162,35 @@ function database_is_empty(PDO $pdo): bool {
         }
     }
     return true;
+}
+
+/**
+ * Check whether a table already contains the requested column.
+ */
+function table_has_column(PDO $pdo, string $table, string $column): bool
+{
+    $table = trim($table);
+    $column = trim($column);
+    if ($table === '' || $column === '') {
+        return false;
+    }
+
+    $stmt = $pdo->query('PRAGMA table_info(' . str_replace("'", "''", $table) . ')');
+    if ($stmt === false) {
+        return false;
+    }
+
+    foreach ($stmt as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+        $name = (string)($row['name'] ?? '');
+        if (strcasecmp($name, $column) === 0) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /**

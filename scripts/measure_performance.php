@@ -248,27 +248,28 @@ function measure_delete_round_flows(): array
             'round' => $round,
             'deleted_count' => count($items) - count($kept),
         ]);
-        backup_now($CFG, $DATA_FILE);
+        schedule_backup($CFG, $DATA_FILE);
         commit_dataset_update_measure($kept, $metaCopy, $actor, 'req_save_base_' . uniqid(), null, 'save', ['scope' => 'full_save']);
-        backup_now($CFG, $DATA_FILE);
+        schedule_backup($CFG, $DATA_FILE);
         $baseline = microtime(true) - $baselineStart;
 
         commit_dataset_update_measure($items, $roundMeta, $actor, 'req_restore_' . uniqid(), null, 'restore', []);
-        backup_now($CFG, $DATA_FILE);
+        schedule_backup($CFG, $DATA_FILE);
 
         $optimizedStart = microtime(true);
-        commit_dataset_update_measure($kept, $metaCopy, $actor, 'req_del_opt_' . uniqid(), null, 'delete_round', [
-            'round' => $round,
-            'deleted_count' => count($items) - count($kept),
-        ]);
-        backup_now($CFG, $DATA_FILE);
+        $optimizedResult = delete_round_from_store($round, $actor, 'req_del_opt_' . uniqid(), null);
+        schedule_backup($CFG, $DATA_FILE);
         $optimized = microtime(true) - $optimizedStart;
+
+        commit_dataset_update_measure($items, $roundMeta, $actor, 'req_restore_opt_' . uniqid(), null, 'restore', []);
+        schedule_backup($CFG, $DATA_FILE);
 
         return [
             'round' => $round,
             'removed' => count($items) - count($kept),
             'baseline' => $baseline,
             'optimized' => $optimized,
+            'optimized_deleted' => (int)($optimizedResult['deleted_count'] ?? 0),
         ];
     });
 }
@@ -277,11 +278,12 @@ if (PHP_SAPI === 'cli' && realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE
     try {
         $result = measure_delete_round_flows();
         printf(
-            "baseline_delete_plus_save=%.4f\noptimized_delete=%.4f\nround=%d\nremoved_items=%d\n",
+            "baseline_delete_plus_save=%.4f\noptimized_delete=%.4f\nround=%d\nremoved_items=%d\noptimized_deleted=%d\n",
             $result['baseline'],
             $result['optimized'],
             $result['round'],
-            $result['removed']
+            $result['removed'],
+            $result['optimized_deleted']
         );
     } catch (Throwable $e) {
         fwrite(STDERR, 'Mérés nem sikerült: ' . $e->getMessage() . PHP_EOL);

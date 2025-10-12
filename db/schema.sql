@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 
 CREATE TABLE IF NOT EXISTS items (
   id TEXT PRIMARY KEY,
+  round_value INTEGER NOT NULL DEFAULT 0,
   position INTEGER NOT NULL,
   data TEXT NOT NULL
 );
@@ -20,6 +21,8 @@ CREATE TABLE IF NOT EXISTS round_meta (
 );
 
 CREATE INDEX IF NOT EXISTS idx_items_position ON items(position);
+CREATE INDEX IF NOT EXISTS idx_items_round_value ON items(round_value);
+CREATE INDEX IF NOT EXISTS idx_items_round_position ON items(round_value, position);
 
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

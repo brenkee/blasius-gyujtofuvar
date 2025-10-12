@@ -86,31 +86,6 @@ function optional_batch_id() {
   return normalized_batch_id($_SERVER['HTTP_X_BATCH_ID'] ?? '');
 }
 
-function append_change_events($rev, $actorId, $requestId, $batchId, array $events, array $meta = []) {
-  foreach ($events as $event) {
-    $log = [
-      'rev' => $rev,
-      'entity' => $event['entity'] ?? 'dataset',
-      'entity_id' => $event['entity_id'] ?? null,
-      'action' => $event['action'] ?? 'updated',
-      'ts' => gmdate('c'),
-      'actor_id' => $actorId,
-      'request_id' => $requestId,
-    ];
-    if ($batchId) {
-      $log['batch_id'] = $batchId;
-    }
-    $metaPayload = $event['meta'] ?? [];
-    if (!empty($meta)) {
-      $metaPayload = array_merge($metaPayload, $meta);
-    }
-    if (!empty($metaPayload)) {
-      $log['meta'] = $metaPayload;
-    }
-    append_change_log_locked($log);
-  }
-}
-
 function commit_dataset_update(array $newItems, array $newRoundMeta, $actorId, $requestId, $batchId, $action, array $actionMeta = []) {
   global $DATA_FILE;
   return state_lock(function() use ($DATA_FILE, $newItems, $newRoundMeta, $actorId, $requestId, $batchId, $action, $actionMeta) {
@@ -369,7 +344,7 @@ if ($action === 'save') {
     echo json_encode(['ok' => false, 'error' => 'write_failed'], JSON_UNESCAPED_UNICODE);
     exit;
   }
-  backup_now($CFG, $DATA_FILE);
+  schedule_backup($CFG, $DATA_FILE);
   echo json_encode(['ok' => true, 'rev' => $result['rev'] ?? null]);
   exit;
 }
@@ -773,7 +748,7 @@ if ($action === 'import_csv') {
     $iid = isset($item['id']) ? trim((string)$item['id']) : '';
     if ($iid !== '') { $importedIds[] = $iid; }
   }
-  backup_now($CFG, $DATA_FILE);
+  schedule_backup($CFG, $DATA_FILE);
   echo json_encode([
     'ok' => true,
     'items' => $finalItems,
@@ -814,29 +789,41 @@ if ($action === 'delete_round') {
     return trim($formatted . ($unit ? ' '.$unit : ''));
   };
 
-  [$items, $roundMeta] = data_store_read($DATA_FILE);
-  $kept = []; $removed = [];
-  foreach ($items as $it) {
-    if ((int)($it['round'] ?? 0) === $rid) $removed[] = $it; else $kept[] = $it;
+  try {
+    $result = delete_round_from_store($rid, $actorId, $requestId, $batchId);
+  } catch (Throwable $e) {
+    echo json_encode(['ok' => false, 'error' => 'delete_failed'], JSON_UNESCAPED_UNICODE);
+    exit;
   }
+
+  $deletedCount = (int)($result['deleted_count'] ?? 0);
+  $removedItems = is_array($result['removed_items'] ?? null) ? $result['removed_items'] : [];
+  $roundMetaBefore = is_array($result['round_meta_before'] ?? null) ? $result['round_meta_before'] : [];
+  $changesMade = !empty($result['changes_made'] ?? false) || $deletedCount > 0 || !empty($roundMetaBefore);
+  $rev = $result['rev'] ?? null;
+
   $archiveLines = [];
-  if (count($removed) > 0) {
+  if ($changesMade && (!empty($removedItems) || !empty($roundMetaBefore))) {
     $dt = date('Y-m-d H:i:s');
     $roundLabel = $ROUND_MAP[$rid]['label'] ?? (string)$rid;
 
     $totalParts = [];
-    foreach ($metricsCfg as $metric){
-      $id = $metric['id'] ?? null; if (!$id) continue;
+    foreach ($metricsCfg as $metric) {
+      $id = $metric['id'] ?? null;
+      if (!$id) { continue; }
       $sum = 0.0;
-      foreach ($removed as $t){ if (isset($t[$id]) && is_numeric($t[$id])) $sum += (float)$t[$id]; }
+      foreach ($removedItems as $t) {
+        if (isset($t[$id]) && is_numeric($t[$id])) {
+          $sum += (float)$t[$id];
+        }
+      }
       $totalParts[] = $formatMetric($metric, $sum, 'group');
     }
     $summary = $totalParts ? str_replace('{parts}', implode($sumSeparator, $totalParts), $sumTemplate) : '';
     $headerLine = "[$dt] TÖRÖLT KÖR: $rid – $roundLabel";
     $plannedLabel = $CFG['text']['round']['planned_date_label'] ?? 'Tervezett dátum';
-    $plannedKey = (string)$rid;
-    if (isset($roundMeta[$plannedKey]['planned_date'])) {
-      $plannedValue = trim((string)$roundMeta[$plannedKey]['planned_date']);
+    if (isset($roundMetaBefore['planned_date'])) {
+      $plannedValue = trim((string)$roundMetaBefore['planned_date']);
       if ($plannedValue !== '') {
         $headerLine .= '  | ' . $plannedLabel . ': ' . $plannedValue;
       }
@@ -845,39 +832,41 @@ if ($action === 'delete_round') {
       $headerLine .= '  | ' . $summary;
     }
     $archiveLines[] = $headerLine;
-    foreach ($removed as $t) {
+
+    foreach ($removedItems as $t) {
+      if (!is_array($t)) { continue; }
       $parts = [];
       foreach ([$labelFieldId, $addressFieldId, $noteFieldId] as $k) {
-        if (!$k) continue;
-        $v = trim((string)($t[$k] ?? '')); if ($v!=='') $parts[] = $v;
+        if (!$k) { continue; }
+        $v = trim((string)($t[$k] ?? ''));
+        if ($v !== '') { $parts[] = $v; }
       }
-      foreach ($metricsCfg as $metric){
-        $id = $metric['id'] ?? null; if (!$id) continue;
-        if (isset($t[$id]) && $t[$id] !== '') $parts[] = $formatMetric($metric, $t[$id], 'row');
+      foreach ($metricsCfg as $metric) {
+        $id = $metric['id'] ?? null;
+        if (!$id) { continue; }
+        if (isset($t[$id]) && $t[$id] !== '') {
+          $parts[] = $formatMetric($metric, $t[$id], 'row');
+        }
       }
-      $archiveLines[] = "- " . (count($parts)? implode(' | ', $parts) : '—');
+      $archiveLines[] = '- ' . (count($parts) ? implode(' | ', $parts) : '—');
     }
-    $archiveLines[] = "";
-  }
-  if (isset($roundMeta[(string)$rid])) {
-    unset($roundMeta[(string)$rid]);
-  }
-
-  try {
-    $result = commit_dataset_update($kept, $roundMeta, $actorId, $requestId, $batchId, 'delete_round', [
-      'round' => $rid,
-      'deleted_count' => count($removed)
-    ]);
-  } catch (Throwable $e) {
-    echo json_encode(['ok' => false, 'error' => 'delete_failed'], JSON_UNESCAPED_UNICODE);
-    exit;
+    $archiveLines[] = '';
   }
 
   if (!empty($archiveLines)) {
-    @file_put_contents($ARCHIVE_FILE, implode(PHP_EOL,$archiveLines).PHP_EOL, FILE_APPEND|LOCK_EX);
+    global $ARCHIVE_FILE;
+    $payload = implode(PHP_EOL, $archiveLines) . PHP_EOL;
+    $target = $ARCHIVE_FILE;
+    async_enqueue(function () use ($target, $payload) {
+      @file_put_contents($target, $payload, FILE_APPEND | LOCK_EX);
+    });
   }
-  backup_now($CFG, $DATA_FILE);
-  echo json_encode(['ok'=>true,'deleted'=>count($removed),'rev'=>$result['rev'] ?? null]);
+
+  if ($changesMade) {
+    schedule_backup($CFG, $DATA_FILE);
+  }
+
+  echo json_encode(['ok' => true, 'deleted' => $deletedCount, 'rev' => $rev], JSON_UNESCAPED_UNICODE);
   exit;
 }
 
