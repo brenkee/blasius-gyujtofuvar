@@ -1085,9 +1085,7 @@
     if (!quickSearchClearBtn) return;
     const root = document.documentElement;
     const dark = root.classList.contains('dark');
-    quickSearchClearBtn.style.background = dark ? '#1f2937' : '#f3f4f6';
-    quickSearchClearBtn.style.color = dark ? '#f8fafc' : '#111827';
-    quickSearchClearBtn.style.borderColor = dark ? '#475569' : '#d1d5db';
+    quickSearchClearBtn.dataset.theme = dark ? 'dark' : 'light';
   }
 
   // ======= UNDO
@@ -2789,33 +2787,52 @@
     if (document.getElementById('quickSearchWrap')) return;
     const wrap = document.createElement('div');
     wrap.id = 'quickSearchWrap';
-    wrap.style.display = 'flex';
-    wrap.style.gap = '6px';
-    wrap.style.alignItems = 'center';
-    wrap.style.margin = '8px 8px 4px 8px';
+    wrap.className = 'quick-search-wrapper';
+
+    const form = document.createElement('form');
+    form.className = 'quick-search-form';
+    form.addEventListener('submit', event => event.preventDefault());
+
+    const label = document.createElement('label');
+    label.className = 'quick-search-label';
+    label.setAttribute('for', 'quickSearch');
 
     const inp = document.createElement('input');
     inp.id = 'quickSearch';
     inp.type = 'search';
+    inp.className = 'quick-search-input';
     inp.placeholder = text('quick_search.placeholder', 'Keresés…');
-    inp.style.width = '100%';
-    inp.style.padding = '6px 8px';
-    inp.style.border = '1px solid #d1d5db';
-    inp.style.borderRadius = '8px';
-    inp.style.transition = 'border-color .2s ease, box-shadow .2s ease';
     inp.autocomplete = 'off';
 
-    const clearBtn = document.createElement('button');
-    clearBtn.textContent = text('quick_search.clear_label', '✕');
-    clearBtn.title = text('quick_search.clear_title', 'Szűrés törlése');
-    clearBtn.style.padding = '6px 10px';
-    clearBtn.style.border = '1px solid #d1d5db';
-    clearBtn.style.borderRadius = '8px';
-    clearBtn.style.background = '#f3f4f6';
-    clearBtn.style.cursor = 'pointer';
+    const fancyBg = document.createElement('div');
+    fancyBg.className = 'quick-search-fancy-bg';
 
-    wrap.appendChild(inp);
-    wrap.appendChild(clearBtn);
+    const icon = document.createElement('div');
+    icon.className = 'quick-search-icon';
+    icon.innerHTML = `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M21.53 20.47l-3.66-3.66C19.195 15.24 20 13.214 20 11c0-4.97-4.03-9-9-9s-9 4.03-9 9 4.03 9 9 9c2.215 0 4.24-.804 5.808-2.13l3.66 3.66c.147.146.34.22.53.22s.385-.073.53-.22c.295-.293.295-.767.002-1.06zM3.5 11c0-4.135 3.365-7.5 7.5-7.5s7.5 3.365 7.5 7.5-3.365 7.5-7.5 7.5-7.5-3.365-7.5-7.5z"></path>
+      </svg>
+    `;
+
+    const clearBtn = document.createElement('button');
+    clearBtn.type = 'button';
+    clearBtn.className = 'quick-search-close';
+    clearBtn.title = text('quick_search.clear_title', 'Szűrés törlése');
+    clearBtn.setAttribute('aria-label', text('quick_search.clear_title', 'Szűrés törlése'));
+    clearBtn.innerHTML = `
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+      </svg>
+    `;
+
+    label.appendChild(inp);
+    label.appendChild(fancyBg);
+    label.appendChild(icon);
+    label.appendChild(clearBtn);
+
+    form.appendChild(label);
+    wrap.appendChild(form);
 
     quickSearchClearBtn = clearBtn;
     applyQuickSearchClearStyles();
@@ -2830,62 +2847,30 @@
 
     const status = document.createElement('div');
     status.id = 'quickSearchStatus';
-    status.style.display = 'none';
-    status.style.margin = '0 8px 8px 8px';
-    status.style.padding = '6px 8px';
-    status.style.borderRadius = '8px';
-    status.style.border = '1px solid rgba(37,99,235,0.3)';
-    status.style.background = 'rgba(37,99,235,0.08)';
-    status.style.fontSize = '12px';
-    status.style.fontWeight = '600';
-    status.style.color = '#1d4ed8';
+    status.className = 'quick-search-status';
     status.setAttribute('role', 'status');
-    const statusDefaultStyles = {
-      color: '#1d4ed8',
-      background: 'rgba(37,99,235,0.08)',
-      borderColor: 'rgba(37,99,235,0.3)',
-      fontSize: '12px'
-    };
-    const statusEmptyStyles = {
-      color: '#b91c1c',
-      background: 'rgba(248,113,113,0.12)',
-      borderColor: '#fca5a5',
-      fontSize: '14px'
-    };
     if (panelTopEl) {
       panelTopEl.appendChild(status);
     } else {
       parent.insertBefore(status, groupsEl);
     }
 
-    function applyStatusStyleSet(styleSet){
-      if (!styleSet) return;
-      if (styleSet.color) status.style.color = styleSet.color;
-      if (styleSet.background) status.style.background = styleSet.background;
-      if (styleSet.borderColor) status.style.borderColor = styleSet.borderColor;
-      if (styleSet.fontSize) status.style.fontSize = styleSet.fontSize;
-    }
+    const updateValueState = ()=>{
+      wrap.classList.toggle('has-value', inp.value.trim().length > 0);
+    };
 
     function updateIndicator(active, visibleCount){
-      if (active){
-        inp.style.borderColor = '#2563eb';
-        inp.style.boxShadow = '0 0 0 2px rgba(37,99,235,0.2)';
-        status.style.display = '';
+      wrap.classList.toggle('has-filter', active);
+      status.classList.toggle('is-active', active);
+      status.classList.toggle('is-empty', active && visibleCount === 0);
+      if (active) {
         const tpl = text('quick_search.filtered_notice', 'Szűrt találatok: {count}');
         const emptyTpl = text('quick_search.filtered_empty', 'Nincs találat a megadott szűrőre.');
-        if (visibleCount > 0) {
-          status.textContent = format(tpl, {count: visibleCount});
-          applyStatusStyleSet(statusDefaultStyles);
-        } else {
-          status.textContent = emptyTpl;
-          applyStatusStyleSet(statusEmptyStyles);
-        }
+        status.textContent = visibleCount > 0
+          ? format(tpl, {count: visibleCount})
+          : emptyTpl;
       } else {
-        inp.style.borderColor = '#d1d5db';
-        inp.style.boxShadow = 'none';
-        status.style.display = 'none';
         status.textContent = '';
-        applyStatusStyleSet(statusDefaultStyles);
       }
     }
 
@@ -2947,12 +2932,14 @@
         requestMarkerOverlapRefresh();
       }
       updateIndicator(!!q, visibleCount);
+      updateValueState();
     }
 
     inp.addEventListener('input', ()=>{
       state.filterText = inp.value;
       applyFilter();
     });
+    inp.addEventListener('change', updateValueState);
     clearBtn.addEventListener('click', ()=>{
       state.filterText = '';
       inp.value = '';
@@ -2966,6 +2953,7 @@
       applyFilter();
     } else {
       updateIndicator(false, Array.from(groupsEl.querySelectorAll('.row')).length);
+      updateValueState();
     }
   }
 
