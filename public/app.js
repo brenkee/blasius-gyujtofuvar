@@ -47,6 +47,563 @@
     loading: false
   };
 
+  const SETTINGS_LABEL_OVERRIDES = {
+    app: 'Alkalmazás',
+    'app.title': 'Alkalmazás címe',
+    'app.auto_sort_by_round': 'Automatikus rendezés kör szerint',
+    'app.round_zero_at_bottom': 'Nulladik kör a lista alján',
+    'app.default_collapsed': 'Körök induláskor összezárva',
+    history: 'Előzmények',
+    'history.undo_enabled': 'Visszavonás engedélyezése',
+    'history.max_steps': 'Visszavonási lépések száma',
+    features: 'Funkciók',
+    'features.toolbar': 'Eszköztár',
+    'features.group_actions': 'Csoport műveletek',
+    files: 'Fájlok',
+    'files.data_file': 'Adatbázis fájl',
+    'files.export_file': 'Export fájl neve',
+    'files.export_download_name': 'Letöltési fájlnév',
+    'files.archive_file': 'Archív fájl',
+    backup: 'Biztonsági mentés',
+    'backup.enabled': 'Biztonsági mentés engedélyezve',
+    'backup.dir': 'Mentési könyvtár',
+    'backup.min_interval_minutes': 'Minimum időköz (perc)',
+    'backup.retention_policy': 'Megőrzési szabályok',
+    'backup.retention_policy.*': 'Megőrzési szabály',
+    'backup.retention_policy.*.min_age_hours': 'Minimum kor (óra)',
+    'backup.retention_policy.*.period_hours': 'Mentési gyakoriság (óra)',
+    map: 'Térkép',
+    'map.tiles': 'Csempe beállítások',
+    'map.tiles.url': 'Csempe URL',
+    'map.tiles.attribution': 'Forráshivatkozás',
+    'map.fit_bounds': 'Kezdő nézet határai',
+    'map.fit_bounds.*': 'Koordináta-pár',
+    'map.fit_bounds.*.*': 'Koordináta érték',
+    'map.max_bounds_pad': 'Határpuffer arány',
+    geocode: 'Geokódolás',
+    'geocode.countrycodes': 'Országkódok',
+    'geocode.language': 'Nyelv',
+    'geocode.user_agent': 'Felhasználói ügynök',
+    ui: 'Felhasználói felület',
+    'ui.toolbar': 'Eszköztár megjelenés',
+    'ui.toolbar.menu_icon': 'Menü ikon',
+    'ui.toolbar.menu_icon.width': 'Menü ikon szélessége',
+    'ui.toolbar.menu_icon.height': 'Menü ikon magassága',
+    'ui.toolbar.menu_icon.bar_height': 'Menü ikon csík magassága',
+    'ui.toolbar.menu_icon.color': 'Menü ikon színe',
+    'ui.toolbar.menu_icon.bar_radius': 'Menü ikon csík lekerekítése',
+    'ui.panel_min_px': 'Panel minimum szélesség (px)',
+    'ui.panel_pref_vw': 'Panel preferált szélesség (vw)',
+    'ui.panel_max_px': 'Panel maximum szélesség (px)',
+    'ui.colors': 'Színtémák',
+    'ui.colors.light': 'Világos téma',
+    'ui.colors.dark': 'Sötét téma',
+    'ui.marker': 'Térképes jelölő',
+    'ui.marker.icon_size': 'Ikon méret',
+    'ui.marker.font_size': 'Felirat betűmérete',
+    'ui.marker.font_family': 'Felirat betűcsaládja',
+    'ui.marker.font_weight': 'Felirat betűvastagsága',
+    'ui.marker.auto_contrast': 'Automatikus kontraszt',
+    'ui.marker.default_text_color': 'Alap szövegszín',
+    'ui.marker.view_box_size': 'SVG nézet méret',
+    'ui.marker.icon_path': 'Ikon vektor útvonal',
+    'ui.marker.stroke_color': 'Körvonal színe',
+    'ui.marker.stroke_opacity': 'Körvonal átlátszósága',
+    'ui.marker.stroke_width': 'Körvonal vastagsága',
+    'ui.marker.icon_anchor_x': 'Ikon horgony X',
+    'ui.marker.icon_anchor_y': 'Ikon horgony Y',
+    'ui.marker.popup_anchor_x': 'Felugró horgony X',
+    'ui.marker.popup_anchor_y': 'Felugró horgony Y',
+    'ui.marker.overlap_badge': 'Átfedés jelvény',
+    'ui.marker.overlap_badge.size': 'Jelvény mérete',
+    'ui.marker.overlap_badge.margin_right': 'Jelvény jobb margó',
+    'ui.marker.overlap_badge.offset_y': 'Jelvény függőleges eltolás',
+    'ui.marker.overlap_badge.font_scale': 'Jelvény betű skála',
+    'ui.marker.overlap_badge.corner_radius': 'Jelvény sarok lekerekítés',
+    'ui.marker.overlap_badge.fill': 'Jelvény kitöltés',
+    'ui.marker.overlap_badge.fill_opacity': 'Jelvény kitöltés átlátszóság',
+    rounds: 'Körök',
+    'rounds.*': 'Kör',
+    'rounds.*.id': 'Kör azonosító',
+    'rounds.*.label': 'Kör neve',
+    'rounds.*.color': 'Kör színe',
+    items: 'Tételek',
+    'items.address_field_id': 'Cím mező azonosító',
+    'items.label_field_id': 'Felirat mező azonosító',
+    'items.note_field_id': 'Megjegyzés mező azonosító',
+    'items.fields': 'Tétel mezők',
+    'items.fields.*': 'Mező beállítás',
+    'items.fields.*.id': 'Mező azonosító',
+    'items.fields.*.type': 'Mező típusa',
+    'items.fields.*.label': 'Mező felirata',
+    'items.fields.*.placeholder': 'Mező helykitöltő',
+    'items.fields.*.default': 'Alapértelmezett érték',
+    'items.fields.*.required': 'Kötelező mező',
+    'items.metrics': 'Mérőszámok',
+    'items.metrics.*': 'Mérőszám',
+    'items.metrics.*.id': 'Mérőszám azonosító',
+    'items.metrics.*.type': 'Mérőszám típusa',
+    'items.metrics.*.label': 'Mérőszám felirata',
+    'items.metrics.*.placeholder': 'Mérőszám helykitöltő',
+    'items.metrics.*.step': 'Lépésköz',
+    'items.metrics.*.min': 'Minimum érték',
+    'items.metrics.*.precision': 'Pontosság',
+    'items.metrics.*.unit': 'Mértékegység',
+    'items.metrics.*.row_format': 'Sor formátum',
+    'items.metrics.*.group_format': 'Csoport formátum',
+    'items.round_field': 'Kör mező',
+    'items.round_field.label': 'Kör mező felirata',
+    'items.round_field.placeholder': 'Kör mező helykitöltő',
+    'items.meta_display': 'Meta megjelenítés',
+    'items.meta_display.separator': 'Elválasztó',
+    'items.meta_display.missing_warning': 'Hiány figyelmeztetés',
+    'items.meta_display.missing_warning.enabled': 'Figyelmeztetés engedélyezése',
+    'items.meta_display.missing_warning.text': 'Figyelmeztető jelzés',
+    'items.meta_display.missing_warning.title': 'Figyelmeztetés magyarázata',
+    'items.meta_display.missing_warning.class': 'Figyelmeztetés CSS osztály',
+    'items.deadline_indicator': 'Határidő jelző',
+    'items.deadline_indicator.enabled': 'Határidő jelző engedélyezése',
+    'items.deadline_indicator.field_id': 'Határidő mező azonosító',
+    'items.deadline_indicator.icon_size': 'Ikon méret',
+    'items.deadline_indicator.steps': 'Határidő lépések',
+    'items.deadline_indicator.steps.*': 'Lépés',
+    'items.deadline_indicator.steps.*.min_days': 'Minimum nap',
+    'items.deadline_indicator.steps.*.color': 'Lépés színe',
+    export: 'Export beállítások',
+    'export.include_label': 'Felirat exportálása',
+    'export.include_address': 'Cím exportálása',
+    'export.include_note': 'Megjegyzés exportálása',
+    'export.group_header_template': 'Csoport fejléc sablon',
+    print: 'Nyomtatási beállítások',
+    'print.title_suffix': 'Nyomtatási cím utótag',
+    'print.list_title': 'Lista címe',
+    text: 'Szövegkészlet',
+    'text.toolbar': 'Eszköztár szövegek',
+    'text.badges': 'Jelvény feliratok',
+    'text.actions': 'Gomb feliratok',
+    'text.items': 'Tételek szövegei',
+    'text.round': 'Kör szövegek',
+    'text.group': 'Csoport szövegek',
+    'text.quick_search': 'Gyorskereső szövegek',
+    'text.messages': 'Rendszerüzenetek',
+    'text.import': 'Import szövegek',
+    'text.map': 'Térképes szövegek',
+    'text.save_status': 'Mentés állapot szövegek'
+  };
+
+  const SETTINGS_SEGMENT_OVERRIDES = {
+    app: 'Alkalmazás',
+    history: 'Előzmények',
+    features: 'Funkciók',
+    toolbar: 'Eszköztár',
+    expand_all: 'Összes kinyitása',
+    collapse_all: 'Összes összezárása',
+    import_all: 'Összes importálása',
+    export_all: 'Összes exportálása',
+    print_all: 'Összes nyomtatása',
+    download_archive: 'Archívum letöltése',
+    theme_toggle: 'Téma váltása',
+    undo: 'Visszavonás',
+    quick_search: 'Gyorskereső',
+    marker_popup_on_click: 'Felugró ablak kattintásra',
+    marker_popup_on_focus: 'Felugró ablak fókuszkor',
+    marker_focus_feedback: 'Fókusz visszajelzés',
+    marker_overlap_indicator: 'Átfedés jelző',
+    group_actions: 'Csoport műveletek',
+    group_totals: 'Csoportösszesítők',
+    round_planned_date: 'Tervezett dátum',
+    round_planned_time: 'Tervezett idő',
+    data_file: 'Adatfájl',
+    export_file: 'Export fájl',
+    export_download_name: 'Letöltési fájlnév',
+    archive_file: 'Archív fájl',
+    min_interval_minutes: 'Minimum időköz (perc)',
+    retention_policy: 'Megőrzési szabály',
+    min_age_hours: 'Minimum kor (óra)',
+    period_hours: 'Gyakoriság (óra)',
+    fit_bounds: 'Kezdő nézet határai',
+    max_bounds_pad: 'Határpuffer',
+    countrycodes: 'Országkódok',
+    user_agent: 'Felhasználói ügynök',
+    menu_icon: 'Menü ikon',
+    bar_height: 'Csík magasság',
+    bar_radius: 'Csík lekerekítés',
+    default_text_color: 'Alap szövegszín',
+    view_box_size: 'SVG nézet méret',
+    icon_path: 'Ikon útvonal',
+    stroke_color: 'Körvonal szín',
+    stroke_opacity: 'Körvonal átlátszóság',
+    stroke_width: 'Körvonal vastagság',
+    icon_anchor_x: 'Ikon horgony X',
+    icon_anchor_y: 'Ikon horgony Y',
+    popup_anchor_x: 'Felugró horgony X',
+    popup_anchor_y: 'Felugró horgony Y',
+    overlap_badge: 'Átfedés jelvény',
+    margin_right: 'Jobb margó',
+    offset_y: 'Függőleges eltolás',
+    font_scale: 'Betű skála',
+    corner_radius: 'Sarok lekerekítés',
+    fill_opacity: 'Kitöltés átlátszóság',
+    address_field_id: 'Cím mező azonosító',
+    label_field_id: 'Felirat mező azonosító',
+    note_field_id: 'Megjegyzés mező azonosító',
+    round_field: 'Kör mező',
+    meta_display: 'Meta megjelenítés',
+    missing_warning: 'Hiány figyelmeztetés',
+    field_id: 'Mező azonosító',
+    row_format: 'Sor formátum',
+    group_format: 'Csoport formátum',
+    group_header_template: 'Csoport fejléc sablon',
+    title_suffix: 'Cím utótag',
+    list_title: 'Lista címe',
+    pin_counter_label: 'Pin számláló felirat',
+    pin_counter_title: 'Pin számláló címke',
+    custom_sort_handle_hint: 'Egyedi sorrend súgó',
+    sum_template: 'Összeg sablon',
+    sum_separator: 'Összeg elválasztó',
+    sort_mode_label: 'Rendezés mód felirat',
+    sort_mode_default: 'Alapértelmezett rendezés',
+    sort_mode_custom: 'Egyedi rendezés',
+    sort_mode_custom_hint: 'Egyedi rendezés súgó',
+    planned_date_label: 'Tervezett dátum felirat',
+    planned_date_hint: 'Tervezett dátum súgó',
+    planned_time_label: 'Tervezett idő felirat',
+    planned_time_hint: 'Tervezett idő súgó',
+    quick_search_placeholder: 'Gyorskereső helykitöltő',
+    clear_label: 'Törlés gomb felirat',
+    clear_title: 'Törlés gomb buborék',
+    delete_disabled_hint: 'Törlés tiltás súgó',
+    label_missing: 'Hiányzó felirat',
+    deadline_label: 'Határidő felirat',
+    deadline_missing: 'Hiányzó határidő',
+    deadline_relative_future: 'Határidő – hátralévő idő',
+    deadline_relative_today: 'Határidő – ma',
+    deadline_relative_past: 'Határidő – lejárt',
+    address_required: 'Cím kötelező üzenet',
+    load_error: 'Betöltési hiba',
+    delete_round_confirm: 'Kör törlés megerősítése',
+    delete_round_success: 'Kör törlés siker',
+    delete_round_error: 'Kör törlés hiba',
+    navigation_empty: 'Navigáció – nincs cím',
+    navigation_skip: 'Navigáció kihagyás',
+    geocode_failed: 'Geokódolás sikertelen',
+    geocode_failed_detailed: 'Geokódolás részletes hiba',
+    undo_unavailable: 'Visszavonás nem érhető el',
+    import_success: 'Import siker',
+    import_error: 'Import hiba',
+    import_in_progress: 'Import folyamatban',
+    import_mode_prompt: 'Import mód kérdés',
+    import_mode_replace: 'Import – csere',
+    import_mode_append: 'Import – hozzáfűzés',
+    import_mode_confirm_replace: 'Import csere megerősítés',
+    import_mode_confirm_append: 'Import hozzáfűzés megerősítés',
+    import_geocode_partial: 'Import – részleges geokódolás',
+    import_geocode_partial_detail: 'Import – részleges geokódolás részletei',
+    import_geocode_partial_list_title: 'Import – geokódolás lista címe',
+    import_geocode_use_city: 'Import – település használata',
+    import_geocode_skip_addresses: 'Import – címek kihagyása',
+    import_geocode_copy: 'Import – címek másolása',
+    import_geocode_copy_success: 'Import – másolás siker',
+    import_geocode_copy_error: 'Import – másolás hiba',
+    import_geocode_reset: 'Import – visszaállítás',
+    import_geocode_skip_city: 'Import – település kihagyása',
+    import_city_fallback_progress: 'Import – település alapú folyamat',
+    import_city_fallback_result: 'Import – település alapú eredmény',
+    import_skip_progress: 'Import – kihagyás folyamat',
+    import_skip_result: 'Import – kihagyás eredmény',
+    import_skip_none: 'Import – nincs módosítás',
+    import_skip_error: 'Import – kihagyás hiba',
+    import_reset_progress: 'Import – visszaállítás folyamat',
+    import_reset_success: 'Import – visszaállítás siker',
+    import_reset_error: 'Import – visszaállítás hiba',
+    import_reset_missing: 'Import – hiányzó eredeti adatok',
+    save_status: 'Mentés állapot',
+    quick_search: 'Gyorskereső',
+    planned_date_hint: 'Tervezett dátum súgó',
+    planned_time_hint: 'Tervezett idő súgó'
+  };
+
+  const SETTINGS_WORD_TRANSLATIONS = {
+    accent: 'kiemelő',
+    actions: 'műveletek',
+    address: 'cím',
+    addresses: 'címek',
+    after: 'után',
+    age: 'kor',
+    agent: 'ügynök',
+    all: 'összes',
+    anchor: 'horgony',
+    app: 'alkalmazás',
+    append: 'hozzáfűzés',
+    archive: 'archívum',
+    at: '',
+    attribution: 'forráshivatkozás',
+    auto: 'automatikus',
+    background: 'háttér',
+    backup: 'biztonsági mentés',
+    badge: 'jelvény',
+    badges: 'jelvények',
+    bar: 'csík',
+    bg: 'háttér',
+    border: 'szegély',
+    bottom: 'alul',
+    bounds: 'határok',
+    box: 'doboz',
+    by: '',
+    city: 'település',
+    class: 'osztály',
+    clear: 'törlés',
+    click: 'kattintás',
+    close: 'bezárás',
+    collapse: 'összezárás',
+    collapsed: 'összezárt',
+    color: 'szín',
+    colors: 'színek',
+    confirm: 'megerősítés',
+    contrast: 'kontraszt',
+    coordinates: 'koordináták',
+    copy: 'másolás',
+    corner: 'sarok',
+    counter: 'számláló',
+    countrycodes: 'országkódok',
+    custom: 'egyedi',
+    dark: 'sötét',
+    data: 'adat',
+    date: 'dátum',
+    days: 'nap',
+    deadline: 'határidő',
+    default: 'alapértelmezett',
+    delete: 'törlés',
+    detail: 'részletek',
+    detailed: 'részletes',
+    dir: 'könyvtár',
+    disabled: 'letiltva',
+    display: 'megjelenítés',
+    distance: 'távolság',
+    download: 'letöltés',
+    empty: 'üres',
+    enabled: 'engedélyezve',
+    err: 'hiba',
+    error: 'hiba',
+    expand: 'kinyitás',
+    export: 'export',
+    fade: 'halványítás',
+    failed: 'sikertelen',
+    fallback: 'tartalék',
+    family: 'család',
+    features: 'funkciók',
+    feedback: 'visszajelzés',
+    field: 'mező',
+    fields: 'mezők',
+    file: 'fájl',
+    files: 'fájlok',
+    fill: 'kitöltés',
+    fit: 'illesztés',
+    focus: 'fókusz',
+    font: 'betű',
+    format: 'formátum',
+    future: 'jövő',
+    geocode: 'geokódolás',
+    group: 'csoport',
+    handle: 'fogantyú',
+    header: 'fejléc',
+    height: 'magasság',
+    hide: 'elrejtés',
+    highlight: 'kiemelés',
+    hint: 'súgó',
+    history: 'előzmények',
+    hours: 'óra',
+    icon: 'ikon',
+    id: 'azonosító',
+    import: 'import',
+    include: 'tartalmaz',
+    indicator: 'jelző',
+    initial: 'kezdeti',
+    interval: 'időköz',
+    items: 'tételek',
+    label: 'felirat',
+    language: 'nyelv',
+    lat: 'szélesség (lat)',
+    left: 'bal',
+    lifetime: 'élettartam',
+    light: 'világos',
+    list: 'lista',
+    load: 'betöltés',
+    lon: 'hosszúság (lon)',
+    map: 'térkép',
+    margin: 'margó',
+    marker: 'jelölő',
+    max: 'maximális',
+    menu: 'menü',
+    messages: 'üzenetek',
+    meta: 'meta',
+    metrics: 'mérőszámok',
+    min: 'minimális',
+    minutes: 'perc',
+    missing: 'hiányzó',
+    mode: 'mód',
+    more: 'további',
+    ms: 'ms',
+    muted: 'visszafogott',
+    name: 'név',
+    navigate: 'navigáció',
+    navigation: 'navigáció',
+    none: 'nincs',
+    note: 'megjegyzés',
+    offset: 'eltolás',
+    ok: 'ok',
+    opacity: 'átlátszóság',
+    open: 'megnyitás',
+    origin: 'kiindulási',
+    overlap: 'átfedés',
+    pad: 'párna',
+    padding: 'belső margó',
+    panel: 'panel',
+    partial: 'részleges',
+    past: 'múlt',
+    path: 'útvonal',
+    period: 'időtartam',
+    pin: 'pin',
+    placeholder: 'helykitöltő',
+    planned: 'tervezett',
+    policy: 'szabály',
+    popup: 'felugró',
+    position: 'pozíció',
+    precision: 'pontosság',
+    pref: 'preferált',
+    print: 'nyomtatás',
+    progress: 'folyamat',
+    prompt: 'kérdés',
+    px: 'px',
+    quick: 'gyors',
+    radius: 'sugár',
+    ratio: 'arány',
+    relative: 'relatív',
+    replace: 'csere',
+    required: 'kötelező',
+    reset: 'visszaállítás',
+    result: 'eredmény',
+    retention: 'megőrzés',
+    right: 'jobb',
+    ring: 'gyűrű',
+    round: 'kör',
+    rounds: 'körök',
+    routing: 'útvonaltervezés',
+    row: 'sor',
+    save: 'mentés',
+    scale: 'skála',
+    search: 'keresés',
+    separator: 'elválasztó',
+    size: 'méret',
+    skip: 'kihagyás',
+    sort: 'rendezés',
+    start: 'kezdet',
+    status: 'állapot',
+    step: 'lépés',
+    steps: 'lépések',
+    sticky: 'rögzített',
+    stroke: 'körvonal',
+    style: 'stílus',
+    success: 'siker',
+    suffix: 'utótag',
+    sum: 'összeg',
+    template: 'sablon',
+    text: 'szöveg',
+    theme: 'téma',
+    threshold: 'küszöb',
+    tiles: 'csempék',
+    time: 'idő',
+    title: 'cím',
+    today: 'ma',
+    toggle: 'váltó',
+    top: 'felső',
+    totals: 'összesítők',
+    type: 'típus',
+    ui: 'felület',
+    unavailable: 'nem érhető el',
+    unit: 'mértékegység',
+    url: 'URL',
+    use: 'használat',
+    user: 'felhasználó',
+    view: 'nézet',
+    vw: 'vw',
+    warning: 'figyelmeztetés',
+    waypoints: 'útvonalpontok',
+    weight: 'súly',
+    width: 'szélesség',
+    x: 'X',
+    y: 'Y',
+    zIndex: 'Z-index',
+    zero: 'nulladik'
+  };
+
+  function pathKey(path, wildcard){
+    return path.map(seg => {
+      if (typeof seg === 'number') {
+        return wildcard ? '*' : String(seg);
+      }
+      return String(seg);
+    }).join('.');
+  }
+
+  function translateSegment(segment){
+    if (segment == null) return '';
+    if (typeof segment !== 'string') return String(segment);
+    if (SETTINGS_SEGMENT_OVERRIDES[segment]) {
+      return SETTINGS_SEGMENT_OVERRIDES[segment];
+    }
+    const parts = segment.replace(/-/g, '_').split('_').filter(Boolean);
+    if (!parts.length) {
+      return segment;
+    }
+    const translated = parts.map((part, index) => {
+      const lower = part.toLowerCase();
+      const mapped = SETTINGS_WORD_TRANSLATIONS.hasOwnProperty(lower)
+        ? SETTINGS_WORD_TRANSLATIONS[lower]
+        : part;
+      return mapped;
+    }).filter(Boolean);
+    if (!translated.length) return segment;
+    const joined = translated.join(' ').trim();
+    if (!joined) return segment;
+    return joined.charAt(0).toUpperCase() + joined.slice(1);
+  }
+
+  function getLabelForPath(path, fallback){
+    if (!Array.isArray(path) || path.length === 0) {
+      return typeof fallback === 'string' && fallback ? fallback : '';
+    }
+    const exact = pathKey(path, false);
+    if (SETTINGS_LABEL_OVERRIDES[exact]) {
+      return SETTINGS_LABEL_OVERRIDES[exact];
+    }
+    const wildcard = pathKey(path, true);
+    if (SETTINGS_LABEL_OVERRIDES[wildcard]) {
+      return SETTINGS_LABEL_OVERRIDES[wildcard];
+    }
+    if (path[0] === 'text') {
+      const category = path[1];
+      const categoryLabel = category ? translateSegment(category) : translateSegment('text');
+      const remainder = path.slice(2).map(translateSegment).filter(Boolean);
+      if (remainder.length === 0) {
+        return categoryLabel || translateSegment('text');
+      }
+      return `${categoryLabel} – ${remainder.join(' – ')}`;
+    }
+    const last = path[path.length - 1];
+    if (SETTINGS_SEGMENT_OVERRIDES[last]) {
+      return SETTINGS_SEGMENT_OVERRIDES[last];
+    }
+    if (typeof last === 'string') {
+      const translated = translateSegment(last);
+      if (translated) return translated;
+    }
+    if (typeof fallback === 'string' && fallback.trim()) {
+      return fallback;
+    }
+    return prettifyKey(path[path.length - 1]);
+  }
+
   const flashTimers = new WeakMap();
 
   const collapsePrefs = new Map();
@@ -1865,7 +2422,7 @@
     if (key != null) {
       const headingLevel = Math.min(2 + level, 6);
       const heading = document.createElement(`h${headingLevel}`);
-      heading.textContent = prettifyKey(key);
+      heading.textContent = getLabelForPath(path, prettifyKey(key));
       wrapper.appendChild(heading);
     }
     const content = document.createElement('div');
@@ -1884,7 +2441,7 @@
     if (key != null) {
       const headingLevel = Math.min(2 + level, 6);
       const heading = document.createElement(`h${headingLevel}`);
-      heading.textContent = prettifyKey(key);
+      heading.textContent = getLabelForPath(path, prettifyKey(key));
       wrapper.appendChild(heading);
     }
     const list = document.createElement('div');
@@ -1895,11 +2452,11 @@
       const header = document.createElement('div');
       header.className = 'settings-array-item-header';
       const title = document.createElement('h4');
-      const fallbackTitle = `Elem ${index + 1}`;
+      const fallbackTitle = `${index + 1}. elem`;
       if (key === 'rounds' && item && typeof item === 'object' && item.label) {
         title.textContent = item.label;
       } else if (item && typeof item === 'object' && Object.prototype.hasOwnProperty.call(item, 'id')) {
-        title.textContent = `${prettifyKey(key)} ${item.id}`;
+        title.textContent = `${getLabelForPath(path, prettifyKey(key))} ${item.id}`;
       } else {
         title.textContent = fallbackTitle;
       }
@@ -1938,7 +2495,7 @@
           }
         });
       } else {
-        const valueNode = renderScalarField(`${index + 1}. érték`, item, path.concat(index));
+        const valueNode = renderScalarField(`${index + 1}. elem`, item, path.concat(index), {labelOverride: `${index + 1}. elem`});
         if (valueNode) body.appendChild(valueNode);
       }
       itemWrap.appendChild(body);
@@ -1965,13 +2522,14 @@
     return wrapper;
   }
 
-  function renderScalarField(key, value, path){
+  function renderScalarField(key, value, path, opts = {}){
     const field = document.createElement('div');
     field.className = 'settings-field';
     const id = pathToId(path);
     const labelEl = document.createElement('label');
     labelEl.className = 'settings-label';
-    const labelText = prettifyKey(key != null ? key : path[path.length - 1]);
+    const labelOverride = opts?.labelOverride;
+    const labelText = labelOverride || getLabelForPath(path, key != null ? key : path[path.length - 1]);
     labelEl.textContent = labelText;
     labelEl.setAttribute('for', id);
     field.appendChild(labelEl);
