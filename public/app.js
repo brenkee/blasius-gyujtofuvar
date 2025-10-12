@@ -41,6 +41,60 @@
   const DEFAULT_COLLAPSED = true;
   let collapsePrefsStorageError = false;
 
+  const CLIENT_ID_STORAGE_KEY = 'app_client_id_v1';
+  const CLIENT_ID_COOKIE = 'app_client_id';
+
+  function isValidClientId(id){
+    return typeof id === 'string' && /^[A-Za-z0-9._\-]{3,120}$/.test(id);
+  }
+
+  function readClientIdCookie(){
+    try {
+      const cookies = document.cookie ? document.cookie.split(';') : [];
+      for (const raw of cookies) {
+        const [name, value] = raw.split('=').map(part => part.trim());
+        if (name === CLIENT_ID_COOKIE && value) {
+          const decoded = decodeURIComponent(value);
+          if (isValidClientId(decoded)) {
+            return decoded;
+          }
+        }
+      }
+    } catch (err) {
+      console.debug('cookie read failed', err);
+    }
+    return null;
+  }
+
+  function loadStoredClientId(){
+    try {
+      const stored = window.localStorage?.getItem(CLIENT_ID_STORAGE_KEY);
+      if (isValidClientId(stored)) {
+        return stored;
+      }
+      if (stored != null && window.localStorage) {
+        window.localStorage.removeItem(CLIENT_ID_STORAGE_KEY);
+      }
+    } catch (err) {
+      console.debug('localStorage read failed', err);
+    }
+    return readClientIdCookie();
+  }
+
+  function persistClientId(id){
+    if (!isValidClientId(id)) return;
+    try {
+      window.localStorage?.setItem(CLIENT_ID_STORAGE_KEY, id);
+    } catch (err) {
+      console.debug('localStorage write failed', err);
+    }
+    try {
+      document.cookie = `${CLIENT_ID_COOKIE}=${encodeURIComponent(id)}; path=/; max-age=31536000; SameSite=Lax`;
+    } catch (err) {
+      console.debug('cookie write failed', err);
+    }
+  }
+
   function makeRequestId(){
     if (window.crypto?.randomUUID) {
       return 'req_' + window.crypto.randomUUID().replace(/-/g, '');
@@ -356,16 +410,21 @@
 
   async function ensureClientId(){
     if (state.clientId) return state.clientId;
+    const stored = loadStoredClientId();
+    if (stored) {
+      state.clientId = stored;
+      return state.clientId;
+    }
     const resp = await fetchJSON(EP.session);
-    if (resp && resp.ok && typeof resp.client_id === 'string') {
-      state.clientId = resp.client_id;
-      return state.clientId;
+    const candidate = resp && typeof resp.client_id === 'string' ? resp.client_id : null;
+    if (!candidate) {
+      throw new Error('client_id_missing');
     }
-    if (resp && typeof resp.client_id === 'string') {
-      state.clientId = resp.client_id;
-      return state.clientId;
+    if (isValidClientId(candidate)) {
+      persistClientId(candidate);
     }
-    throw new Error('client_id_missing');
+    state.clientId = candidate;
+    return state.clientId;
   }
 
   function initChangeWatcher(){
