@@ -1252,6 +1252,24 @@
     const yiq=(r*299 + g*587 + b*114)/1000;
     return yiq >= 140 ? '#111' : '#fff';
   }
+
+  function colorWithOpacity(hexColor, opacity){
+    const color = (hexColor || '').toString().trim();
+    const rawOpacity = Number(opacity);
+    const safeOpacity = Number.isFinite(rawOpacity) ? Math.min(Math.max(rawOpacity, 0), 1) : 1;
+    if (!color) return 'rgba(0,0,0,' + safeOpacity + ')';
+    if (!/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(color) || safeOpacity >= 0.999) {
+      return color;
+    }
+    let hex = color.slice(1);
+    if (hex.length === 3) {
+      hex = hex.split('').map(ch => ch + ch).join('');
+    }
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+    return `rgba(${r},${g},${b},${safeOpacity})`;
+  }
   function cfgNumber(path, fallback){
     const raw = cfg(path, undefined);
     if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
@@ -1275,30 +1293,6 @@
     const strokeOpacity = cfgNumber('ui.marker.stroke_opacity', 0.25);
     const strokeWidth = cfgNumber('ui.marker.stroke_width', 1);
     const pathDef = (cfg('ui.marker.icon_path', '') || '').toString().trim() || 'M16 2c6.1 0 11 4.9 11 11 0 7.5-11 17-11 17S5 20.5 5 13c0-6.1 4.9-11 11-11z';
-    let indicator = '';
-    if (overlapCount > 1){
-      const indicatorText = overlapCount > 99 ? '99+' : String(overlapCount);
-      const badgeSize = Math.max(1, cfgNumber('ui.marker.overlap_badge.size', 16));
-      const badgeMargin = Math.max(0, cfgNumber('ui.marker.overlap_badge.margin_right', 1.5));
-      const badgeY = cfgNumber('ui.marker.overlap_badge.offset_y', 2.5);
-      const badgeFontScale = cfgNumber('ui.marker.overlap_badge.font_scale', 0.7);
-      const badgeFontSize = Math.max(6, Math.round(fsz * Math.max(0, badgeFontScale)));
-      const badgeFill = cfg('ui.marker.overlap_badge.fill', '#0f172a') || '#0f172a';
-      const badgeFillOpacity = cfgNumber('ui.marker.overlap_badge.fill_opacity', 0.92);
-      const badgeStroke = cfg('ui.marker.overlap_badge.stroke', '#fff') || '#fff';
-      const badgeStrokeOpacity = cfgNumber('ui.marker.overlap_badge.stroke_opacity', 0.65);
-      const badgeStrokeWidth = cfgNumber('ui.marker.overlap_badge.stroke_width', 0.8);
-      const badgeTextColor = cfg('ui.marker.overlap_badge.text_color', '#fff') || '#fff';
-      const badgeFontFamily = cfg('ui.marker.overlap_badge.font_family', fontFamily) || fontFamily;
-      const badgeFontWeight = cfg('ui.marker.overlap_badge.font_weight', 700) || 700;
-      const badgeCornerRadius = Math.max(0, cfgNumber('ui.marker.overlap_badge.corner_radius', 8));
-      const badgeX = viewBoxSize - badgeSize - badgeMargin;
-      indicator = `
-        <g transform="translate(${badgeX},${badgeY})">
-          <rect width="${badgeSize}" height="${badgeSize}" rx="${badgeCornerRadius}" ry="${badgeCornerRadius}" fill="${badgeFill}" opacity="${badgeFillOpacity}" stroke="${badgeStroke}" stroke-opacity="${badgeStrokeOpacity}" stroke-width="${badgeStrokeWidth}" />
-          <text x="${badgeSize/2}" y="${badgeSize/2}" text-anchor="middle" dominant-baseline="middle" font-size="${badgeFontSize}" font-family="${badgeFontFamily}" font-weight="${badgeFontWeight}" fill="${badgeTextColor}">${indicatorText}</text>
-        </g>`;
-    }
     const textX = viewBoxSize / 2;
     const textY = viewBoxSize / 2;
     const svg = `
@@ -1306,7 +1300,6 @@
       <g fill="none">
         <path d="${pathDef}" fill="${hex}" stroke="${strokeColor}" stroke-opacity="${strokeOpacity}" stroke-width="${strokeWidth}"/>
         <text x="${textX}" y="${textY}" text-anchor="middle" dominant-baseline="middle" font-size="${fsz}" font-family="${fontFamily}" font-weight="${fontWeight}" fill="${textCol}">${n}</text>
-        ${indicator}
       </g>
     </svg>`;
     const defaultAnchorX = Math.round(sz/2);
@@ -1356,8 +1349,45 @@
         if (Number.isFinite(parsed)) popupAnchorY = parsed;
       }
     }
-    return L.icon({
-      iconUrl:'data:image/svg+xml;base64,'+btoa(svg),
+    const wrapperStyles = [`--marker-size:${sz}px`];
+    const overlapHtml = (()=>{
+      if (overlapCount <= 1) return '';
+      const indicatorText = overlapCount > 99 ? '99+' : String(overlapCount);
+      const badgeSize = Math.max(1, cfgNumber('ui.marker.overlap_badge.size', 16));
+      const badgeMargin = Math.max(0, cfgNumber('ui.marker.overlap_badge.margin_right', 1.5));
+      const badgeY = cfgNumber('ui.marker.overlap_badge.offset_y', 2.5);
+      const badgeFontScale = cfgNumber('ui.marker.overlap_badge.font_scale', 0.7);
+      const badgeFontSize = Math.max(6, Math.round(fsz * Math.max(0, badgeFontScale)));
+      const badgeFill = cfg('ui.marker.overlap_badge.fill', '#0f172a') || '#0f172a';
+      const badgeFillOpacity = cfgNumber('ui.marker.overlap_badge.fill_opacity', 0.92);
+      const badgeStroke = cfg('ui.marker.overlap_badge.stroke', '#fff') || '#fff';
+      const badgeStrokeOpacity = cfgNumber('ui.marker.overlap_badge.stroke_opacity', 0.65);
+      const badgeStrokeWidth = cfgNumber('ui.marker.overlap_badge.stroke_width', 0.8);
+      const badgeTextColor = cfg('ui.marker.overlap_badge.text_color', '#fff') || '#fff';
+      const badgeFontFamily = cfg('ui.marker.overlap_badge.font_family', fontFamily) || fontFamily;
+      const badgeFontWeight = cfg('ui.marker.overlap_badge.font_weight', 700) || 700;
+      const badgeCornerRadius = Math.max(0, cfgNumber('ui.marker.overlap_badge.corner_radius', 8));
+      const styleParts = [
+        `--overlap-size:${badgeSize}px`,
+        `--overlap-margin-right:${badgeMargin}px`,
+        `--overlap-offset-y:${badgeY}px`,
+        `--overlap-font-size:${badgeFontSize}px`,
+        `--overlap-bg:${colorWithOpacity(badgeFill, badgeFillOpacity)}`,
+        `--overlap-border:${colorWithOpacity(badgeStroke, badgeStrokeOpacity)}`,
+        `--overlap-border-width:${badgeStrokeWidth}px`,
+        `--overlap-text-color:${badgeTextColor}`,
+        `--overlap-font-family:${JSON.stringify(badgeFontFamily)}`,
+        `--overlap-font-weight:${badgeFontWeight}`,
+        `--overlap-corner-radius:${badgeCornerRadius}px`
+      ];
+      const styleAttr = styleParts.length ? ` style="${styleParts.join(';')}"` : '';
+      return `<span class="marker-overlap-badge"${styleAttr}>${indicatorText}</span>`;
+    })();
+    const wrapperStyleAttr = wrapperStyles.length ? ` style="${wrapperStyles.join(';')}"` : '';
+    const html = `<div class="marker-pin-wrapper"${wrapperStyleAttr}><img class="marker-pin-image" src="data:image/svg+xml;base64,${btoa(svg)}" alt="" aria-hidden="true" />${overlapHtml}</div>`;
+    return L.divIcon({
+      className:'marker-pin-icon',
+      html,
       iconSize:[sz,sz],
       iconAnchor:[anchorX, anchorY],
       popupAnchor:[popupAnchorX, popupAnchorY]
