@@ -143,9 +143,9 @@
                   <?= htmlspecialchars($toolbarText['theme_toggle']['label'] ?? '🌙 / ☀️') ?>
                 </button>
               <?php endif; ?>
-              <button id="settingsBtn" type="button" title="Beállítások">
+              <a id="settingsBtn" class="toolbar-menu-link" href="settings.php" title="Beállítások">
                 Beállítások
-              </button>
+              </a>
             </div>
           </div>
         <?php endif; ?>
@@ -163,18 +163,6 @@
     <div id="groups" class="groups"></div>
   </aside>
   <main id="map"></main>
-</div>
-<div id="settingsView" class="settings-view" hidden>
-  <header class="settings-header">
-    <button id="settingsBackBtn" type="button" class="settings-back">← Vissza</button>
-    <h2>Beállítások</h2>
-    <div class="settings-header-actions">
-      <button id="settingsCancelBtn" type="button" class="settings-cancel" disabled>Mégse</button>
-      <button id="settingsSaveBtn" type="button" class="settings-save" disabled>Mentés</button>
-    </div>
-  </header>
-  <div id="settingsStatus" class="settings-status" role="status" aria-live="polite"></div>
-  <div id="settingsContent" class="settings-content"></div>
 </div>
 </body>
 </html>
