@@ -9,7 +9,8 @@ A projekt mostantól SQLite adatbázist használ (`data/app.db`). A tárolt sém
    ```bash
    php scripts/init-db.php
    ```
-   Ez létrehozza a `data/app.db` fájlt (ha még nem létezik), lefuttatja a `db/migrations` alatti migrációkat és betölti a `db/seed.sql` mintadatait, ha az adatbázis üres.
+   Ez létrehozza a `data/app.db` fájlt (ha még nem létezik), lefuttatja a `db/migrations` alatti, naplózott migrációkat és betölti a `db/seed.sql` mintadatait, ha az adatbázis üres.
+   Többszöri futtatáskor a script és a migrációk idempotensek, a már alkalmazott módosításokat kihagyja.
 3. A script automatikusan WAL módba állítja az adatbázist és engedélyezi a `foreign_keys` PRAGMA-t.
 
 ## Fájlstruktúra
@@ -17,7 +18,17 @@ A projekt mostantól SQLite adatbázist használ (`data/app.db`). A tárolt sém
 - `db/schema.sql` – a teljes séma összefoglalása PRAGMA beállításokkal.
 - `db/migrations/0001_init.sql` – migrációs lépés a táblák és indexek létrehozásához.
 - `db/seed.sql` – opcionális mintabejegyzések a kezdéshez.
-- `scripts/init-db.php` – a fenti fájlok futtatása és a WAL mód beállítása.
+- `scripts/init-db.php` – a fenti fájlok futtatása, a WAL mód beállítása és barátságos naplózás.
+
+### Friss inicializálás CI-hoz
+
+Használd a `--fresh` flaget, ha biztosan szeretnéd újraépíteni az adatbázist (például CI futáskor):
+
+```bash
+php scripts/init-db.php --fresh
+```
+
+Ez a kapcsoló törli a meglévő `data/app.db` fájlt (és a kapcsolódó WAL/SHM fájlokat), majd újra lefuttat minden migrációt.
 
 ## Alkalmazás indítás
 
