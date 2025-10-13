@@ -1,1 +1,3 @@
-Require all denied
+<Files "config.json">
+  Require local
+</Files>
