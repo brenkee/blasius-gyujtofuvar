@@ -73,6 +73,14 @@ function validate_structure($newValue, $currentValue, $path = '') {
         throw new RuntimeException('invalid_type:' . $path);
       }
       return;
+    case 'NULL':
+      if ($newValue === null) {
+        return;
+      }
+      if (is_scalar($newValue)) {
+        return;
+      }
+      throw new RuntimeException('invalid_type:' . $path);
     case 'array':
       if (!is_array($newValue)) {
         throw new RuntimeException('invalid_type:' . $path);

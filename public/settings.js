@@ -154,7 +154,7 @@ function renderLoading() {
   if (!elements.root) return;
   elements.root.innerHTML = '';
   const wrapper = document.createElement('div');
-  wrapper.className = 'card p-10 flex flex-col items-center justify-center text-center text-slate-500 dark:text-slate-300';
+  wrapper.className = 'card p-10 flex flex-col items-center justify-center text-center text-slate-500';
   wrapper.innerHTML = '<div class="animate-spin h-10 w-10 rounded-full border-4 border-slate-200 border-t-sky-500 mb-4"></div><p>Beállítások betöltése…</p>';
   elements.root.appendChild(wrapper);
 }
@@ -163,7 +163,7 @@ function renderError(message) {
   if (!elements.root) return;
   elements.root.innerHTML = '';
   const wrapper = document.createElement('div');
-  wrapper.className = 'card p-8 text-center text-red-600 dark:text-red-300';
+  wrapper.className = 'card p-8 text-center text-red-600';
   wrapper.textContent = message;
   elements.root.appendChild(wrapper);
 }
@@ -192,7 +192,7 @@ function renderSection(key, value, path) {
   header.className = 'flex items-center justify-between gap-3';
 
   const title = document.createElement('h2');
-  title.className = 'text-xl font-semibold text-slate-800 dark:text-slate-100';
+  title.className = 'text-xl font-semibold text-slate-800';
   title.textContent = formatKey(key);
   header.appendChild(title);
 
@@ -202,7 +202,7 @@ function renderSection(key, value, path) {
   if (isPlainObject(value) || Array.isArray(value)) {
     const toggleBtn = document.createElement('button');
     toggleBtn.type = 'button';
-    toggleBtn.className = 'rounded-full border border-slate-300 dark:border-slate-700 px-3 py-1 text-xs font-medium text-slate-500 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition';
+    toggleBtn.className = 'rounded-full border border-slate-300 px-3 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 transition';
     toggleBtn.textContent = 'Összecsukás';
     toggleBtn.addEventListener('click', () => {
       body.classList.toggle('hidden');
@@ -235,22 +235,22 @@ function renderField(key, value, path) {
 function renderObjectField(key, value, path) {
   const details = document.createElement('details');
   details.open = true;
-  details.className = 'field-row space-y-3 bg-white/60 dark:bg-slate-900/30';
+  details.className = 'field-row space-y-3';
   details.dataset.fieldPath = pathToString(path);
 
   const summary = document.createElement('summary');
-  summary.className = 'cursor-pointer text-sm font-semibold text-slate-700 dark:text-slate-100 flex items-center justify-between';
+  summary.className = 'cursor-pointer text-sm font-semibold text-slate-700 flex items-center justify-between';
   const name = document.createElement('span');
   name.textContent = formatKey(path[path.length - 1]);
   const badge = document.createElement('span');
-  badge.className = 'ml-2 text-xs text-slate-400 dark:text-slate-500';
+  badge.className = 'ml-2 text-xs text-slate-400';
   badge.textContent = 'objektum';
   summary.appendChild(name);
   summary.appendChild(badge);
   details.appendChild(summary);
 
   const container = document.createElement('div');
-  container.className = 'mt-3 space-y-3 border-l border-slate-200/60 dark:border-slate-700/60 pl-4';
+  container.className = 'mt-3 space-y-3 border-l border-slate-200/60 pl-4';
   Object.entries(value).forEach(([childKey, childValue]) => {
     const childPath = path.concat(childKey);
     const field = renderField(childKey, childValue, childPath);
@@ -264,14 +264,14 @@ function renderObjectField(key, value, path) {
 
 function renderArrayField(key, value, path) {
   const wrapper = document.createElement('div');
-  wrapper.className = 'field-row space-y-3 bg-white/60 dark:bg-slate-900/30';
+  wrapper.className = 'field-row space-y-3';
   wrapper.dataset.fieldPath = pathToString(path);
 
   const header = document.createElement('div');
   header.className = 'flex flex-wrap items-center justify-between gap-2';
 
   const label = document.createElement('div');
-  label.className = 'text-sm font-semibold text-slate-700 dark:text-slate-100';
+  label.className = 'text-sm font-semibold text-slate-700';
   label.textContent = formatKey(path[path.length - 1]);
   header.appendChild(label);
 
@@ -280,7 +280,7 @@ function renderArrayField(key, value, path) {
 
   const addBtn = document.createElement('button');
   addBtn.type = 'button';
-  addBtn.className = 'inline-flex items-center gap-1 rounded-full border border-slate-300 dark:border-slate-700 px-3 py-1 text-xs font-medium text-slate-600 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition';
+  addBtn.className = 'inline-flex items-center gap-1 rounded-full border border-slate-300 px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 transition';
   addBtn.innerHTML = '<span aria-hidden="true">＋</span> Új elem';
   addBtn.addEventListener('click', () => {
     addArrayItem(path);
@@ -303,7 +303,7 @@ function renderArrayItems(container, path) {
   const arr = getValueAtPath(state.config, path);
   if (!Array.isArray(arr) || arr.length === 0) {
     const empty = document.createElement('div');
-    empty.className = 'text-xs text-slate-400 dark:text-slate-500 italic';
+    empty.className = 'text-xs text-slate-400 italic';
     empty.textContent = 'Nincs elem';
     container.appendChild(empty);
     return;
@@ -319,13 +319,13 @@ function renderArrayItems(container, path) {
     row.className = 'flex items-center justify-between gap-2';
 
     const title = document.createElement('div');
-    title.className = 'text-sm font-medium text-slate-600 dark:text-slate-200';
+    title.className = 'text-sm font-medium text-slate-600';
     title.textContent = `${formatKey(path[path.length - 1])} #${index + 1}`;
     row.appendChild(title);
 
     const removeBtn = document.createElement('button');
     removeBtn.type = 'button';
-    removeBtn.className = 'inline-flex items-center justify-center rounded-full border border-red-400 text-red-500 px-2 py-1 text-xs hover:bg-red-50 dark:hover:bg-red-900/40 transition';
+    removeBtn.className = 'inline-flex items-center justify-center rounded-full border border-red-400 text-red-500 px-2 py-1 text-xs hover:bg-red-50 transition';
     removeBtn.innerHTML = '<span aria-hidden="true">🗑️</span>';
     removeBtn.addEventListener('click', () => {
       removeArrayItem(path, index);
@@ -362,25 +362,27 @@ function renderArrayItems(container, path) {
 function renderPrimitiveField(key, value, path, options = {}) {
   const fieldId = pathToId(path);
   const wrapper = document.createElement('div');
-  wrapper.className = 'field-row flex flex-col gap-2 bg-white/60 dark:bg-slate-900/30';
+  wrapper.className = 'field-row flex flex-col gap-2';
   wrapper.dataset.fieldPath = pathToString(path);
 
   const label = document.createElement('label');
-  label.className = 'text-sm font-medium text-slate-600 dark:text-slate-200 flex items-center gap-2';
+  label.className = 'text-sm font-medium text-slate-600 flex items-center gap-2';
   label.setAttribute('for', fieldId);
   label.textContent = options.labelText || formatKey(path[path.length - 1]);
   wrapper.appendChild(label);
 
   if (options.showTypeBadge !== false) {
     const typeBadge = document.createElement('span');
-    typeBadge.className = 'rounded-full border border-slate-300 dark:border-slate-700 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500';
+    typeBadge.className = 'rounded-full border border-slate-200 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-400';
     typeBadge.textContent = detectPrimitiveType(value);
     label.appendChild(typeBadge);
   }
 
   let control = null;
 
-  if (typeof value === 'boolean') {
+  if (value === null) {
+    control = createTextControl(fieldId, null, path, { treatEmptyAsNull: true });
+  } else if (typeof value === 'boolean') {
     control = createBooleanControl(fieldId, value, path);
   } else if (typeof value === 'number') {
     control = createNumberControl(fieldId, value, path);
@@ -394,7 +396,7 @@ function renderPrimitiveField(key, value, path, options = {}) {
     }
   } else {
     const info = document.createElement('div');
-    info.className = 'text-xs text-slate-400 dark:text-slate-500';
+    info.className = 'text-xs text-slate-400';
     info.textContent = 'Nem támogatott típus';
     control = info;
   }
@@ -417,7 +419,7 @@ function createBooleanControl(fieldId, value, path) {
   slider.className = 'toggle-slider';
 
   const text = document.createElement('span');
-  text.className = 'text-xs font-medium text-slate-500 dark:text-slate-300';
+  text.className = 'text-xs font-medium text-slate-500';
   text.textContent = input.checked ? 'Be' : 'Ki';
 
   input.addEventListener('change', () => {
@@ -441,7 +443,7 @@ function createNumberControl(fieldId, value, path) {
   input.id = fieldId;
   input.value = Number.isFinite(value) ? String(value) : '';
   input.step = Number.isInteger(value) ? '1' : '0.01';
-  input.className = 'w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white/70 dark:bg-slate-900/50 px-3 py-2 text-sm text-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500';
+  input.className = 'w-full rounded-xl border border-slate-300 bg-white/80 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-500';
   input.addEventListener('input', () => {
     const raw = input.value.trim();
     const pathKey = pathToString(path);
@@ -463,14 +465,15 @@ function createNumberControl(fieldId, value, path) {
   return input;
 }
 
-function createTextControl(fieldId, value, path) {
+function createTextControl(fieldId, value, path, options = {}) {
   const input = document.createElement('input');
   input.type = 'text';
   input.id = fieldId;
   input.value = value ?? '';
-  input.className = 'w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white/70 dark:bg-slate-900/50 px-3 py-2 text-sm text-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500';
+  input.className = 'w-full rounded-xl border border-slate-300 bg-white/80 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-500';
   input.addEventListener('input', () => {
-    setValueAtPath(path, input.value);
+    const useNull = options.treatEmptyAsNull && input.value === '';
+    setValueAtPath(path, useNull ? null : input.value);
     updateDirtyForPath(path);
     updateDirtyIndicators();
     updateSaveState();
@@ -484,7 +487,7 @@ function createTextareaControl(fieldId, value, path) {
   textarea.id = fieldId;
   textarea.value = value ?? '';
   textarea.rows = Math.min(12, Math.max(4, textarea.value.split('\n').length + 1));
-  textarea.className = 'w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white/70 dark:bg-slate-900/50 px-3 py-2 text-sm text-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500';
+  textarea.className = 'w-full rounded-xl border border-slate-300 bg-white/80 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-500';
   textarea.addEventListener('input', () => {
     setValueAtPath(path, textarea.value);
     updateDirtyForPath(path);
@@ -506,13 +509,13 @@ function createColorControl(fieldId, value, path) {
   colorInput.id = `${fieldId}_color`;
   const initialColor = isHexColor(value) ? normalizeHex(value) : '#000000';
   colorInput.value = initialColor;
-  colorInput.className = 'h-10 w-14 cursor-pointer rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent p-1';
+  colorInput.className = 'h-10 w-14 cursor-pointer rounded-lg border border-slate-300 bg-white p-1';
 
   const textInput = document.createElement('input');
   textInput.type = 'text';
   textInput.id = fieldId;
   textInput.value = value ?? '';
-  textInput.className = 'flex-1 min-w-[12rem] rounded-xl border border-slate-300 dark:border-slate-700 bg-white/70 dark:bg-slate-900/50 px-3 py-2 text-sm text-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500';
+  textInput.className = 'flex-1 min-w-[12rem] rounded-xl border border-slate-300 bg-white/80 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-500';
 
   const applyValue = (next) => {
     setValueAtPath(path, next);
@@ -554,6 +557,7 @@ function createColorControl(fieldId, value, path) {
 }
 
 function detectPrimitiveType(value) {
+  if (value === null) return 'null';
   if (typeof value === 'boolean') return 'boolean';
   if (typeof value === 'number') return 'number';
   if (typeof value === 'string') return 'string';

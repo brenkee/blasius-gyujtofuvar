@@ -9,55 +9,37 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     :root {
-      color-scheme: light dark;
+      color-scheme: light;
     }
     body {
       min-height: 100vh;
     }
     .card {
-      background-color: rgba(255, 255, 255, 0.82);
+      background-color: rgba(255, 255, 255, 0.95);
       border-radius: 1.25rem;
-      border: 1px solid rgba(148, 163, 184, 0.4);
-      box-shadow: 0 10px 30px -18px rgba(15, 23, 42, 0.35);
-      backdrop-filter: blur(6px);
+      border: 1px solid rgba(203, 213, 225, 0.8);
+      box-shadow: 0 16px 38px -26px rgba(59, 130, 246, 0.45);
+      backdrop-filter: blur(8px);
       transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
     }
-    @media (prefers-color-scheme: dark) {
-      .card {
-        background-color: rgba(15, 23, 42, 0.7);
-        border-color: rgba(71, 85, 105, 0.7);
-        box-shadow: 0 12px 30px -18px rgba(15, 118, 110, 0.25);
-      }
-    }
     .card.changed {
-      border-color: #0ea5e9;
-      box-shadow: 0 14px 36px -20px rgba(14, 165, 233, 0.55);
+      border-color: rgba(14, 165, 233, 0.7);
+      box-shadow: 0 18px 42px -24px rgba(14, 165, 233, 0.45);
     }
     .field-row {
       border: 1px solid transparent;
       border-radius: 0.75rem;
       padding: 0.75rem;
+      background-color: rgba(248, 250, 252, 0.7);
       transition: border-color 0.2s ease, background-color 0.2s ease;
     }
     .field-row.changed {
-      border-color: rgba(14, 165, 233, 0.65);
-      background-color: rgba(224, 242, 254, 0.35);
+      border-color: rgba(14, 165, 233, 0.55);
+      background-color: rgba(224, 242, 254, 0.8);
     }
     .field-row.invalid {
       border-color: rgba(248, 113, 113, 0.8);
-      background-color: rgba(254, 226, 226, 0.4);
-    }
-    @media (prefers-color-scheme: dark) {
-      .field-row {
-        background-color: rgba(15, 23, 42, 0.2);
-        border-color: rgba(51, 65, 85, 0.6);
-      }
-      .field-row.changed {
-        background-color: rgba(12, 74, 110, 0.45);
-      }
-      .field-row.invalid {
-        background-color: rgba(127, 29, 29, 0.55);
-      }
+      background-color: rgba(254, 226, 226, 0.85);
     }
     .toggle-input {
       position: absolute;
@@ -71,7 +53,7 @@
       height: 1.5rem;
       width: 2.75rem;
       border-radius: 9999px;
-      background-color: rgba(148, 163, 184, 0.65);
+      background-color: rgba(203, 213, 225, 0.9);
       transition: background-color 0.2s ease;
     }
     .toggle-slider::after {
@@ -81,7 +63,7 @@
       border-radius: 9999px;
       background: #fff;
       transform: translateX(0.25rem);
-      box-shadow: 0 4px 10px -6px rgba(15, 23, 42, 0.6);
+      box-shadow: 0 4px 10px -6px rgba(15, 23, 42, 0.3);
       transition: transform 0.2s ease;
     }
     .toggle-input:checked + .toggle-slider {
@@ -90,16 +72,11 @@
     .toggle-input:checked + .toggle-slider::after {
       transform: translateX(1.35rem);
     }
-    @media (prefers-color-scheme: dark) {
-      .toggle-slider {
-        background-color: rgba(71, 85, 105, 0.85);
-      }
-    }
     .array-item {
       position: relative;
       border-radius: 1rem;
-      border: 1px solid rgba(148, 163, 184, 0.55);
-      background-color: rgba(248, 250, 252, 0.6);
+      border: 1px solid rgba(203, 213, 225, 0.9);
+      background-color: rgba(255, 255, 255, 0.9);
       padding: 1rem;
       margin-bottom: 1rem;
       transition: border-color 0.2s ease, background-color 0.2s ease;
@@ -108,18 +85,12 @@
       margin-bottom: 0;
     }
     .array-item.changed {
-      border-color: rgba(14, 165, 233, 0.65);
-      background-color: rgba(224, 242, 254, 0.35);
+      border-color: rgba(59, 130, 246, 0.55);
+      background-color: rgba(219, 234, 254, 0.9);
     }
     .array-item.invalid {
       border-color: rgba(248, 113, 113, 0.8);
-      background-color: rgba(254, 226, 226, 0.4);
-    }
-    @media (prefers-color-scheme: dark) {
-      .array-item {
-        border-color: rgba(71, 85, 105, 0.7);
-        background-color: rgba(15, 23, 42, 0.45);
-      }
+      background-color: rgba(254, 226, 226, 0.9);
     }
     .toast {
       pointer-events: auto;
@@ -130,7 +101,7 @@
       border-radius: 0.9rem;
       font-size: 0.95rem;
       font-weight: 600;
-      box-shadow: 0 20px 35px -20px rgba(15, 23, 42, 0.5);
+      box-shadow: 0 20px 35px -20px rgba(15, 23, 42, 0.25);
       transition: opacity 0.2s ease, transform 0.2s ease;
     }
     .toast-success {
@@ -143,17 +114,17 @@
     }
   </style>
 </head>
-<body class="h-full bg-gradient-to-b from-slate-50 via-slate-100 to-slate-50 text-slate-900 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 dark:text-slate-100">
+<body class="h-full bg-gradient-to-b from-slate-50 via-white to-slate-100 text-slate-900">
   <div class="min-h-full flex flex-col">
-    <header class="sticky top-0 z-20 border-b border-slate-200/60 dark:border-slate-800/60 bg-white/80 dark:bg-slate-950/80 backdrop-blur supports-backdrop-blur:backdrop-blur-md">
+    <header class="sticky top-0 z-20 border-b border-slate-200/60 bg-white/90 backdrop-blur supports-backdrop-blur:backdrop-blur-md">
       <div class="mx-auto max-w-6xl px-4 py-4">
         <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 class="text-2xl font-semibold">Alkalmazás beállítások</h1>
-            <p class="text-sm text-slate-500 dark:text-slate-400">A konfigurációs értékek valós időben a config.json alapján generálódnak.</p>
+            <p class="text-sm text-slate-500">A konfigurációs értékek valós időben a config.json alapján generálódnak.</p>
           </div>
           <div class="flex gap-3">
-            <button id="refreshBtn" type="button" class="inline-flex items-center gap-2 rounded-full border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+            <button id="refreshBtn" type="button" class="inline-flex items-center gap-2 rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 transition">
               <span aria-hidden="true">⟳</span> Frissítés
             </button>
           </div>
@@ -162,16 +133,16 @@
     </header>
     <main class="flex-1">
       <div class="mx-auto max-w-6xl px-4 py-6">
-        <div id="statusBanner" class="hidden mb-6 rounded-xl border border-amber-400 bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200 px-4 py-3 text-sm"></div>
+        <div id="statusBanner" class="hidden mb-6 rounded-xl border border-amber-300 bg-amber-50 text-amber-700 px-4 py-3 text-sm"></div>
         <div id="settingsRoot" class="space-y-6" aria-live="polite"></div>
       </div>
     </main>
-    <footer class="sticky bottom-0 z-30 border-t border-slate-200/60 dark:border-slate-800/60 bg-white/85 dark:bg-slate-950/80 backdrop-blur supports-backdrop-blur:backdrop-blur-md">
+    <footer class="sticky bottom-0 z-30 border-t border-slate-200/60 bg-white/90 backdrop-blur supports-backdrop-blur:backdrop-blur-md">
       <div class="mx-auto max-w-6xl px-4 py-4">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div class="text-xs text-slate-500 dark:text-slate-400" id="metaInfo"></div>
+          <div class="text-xs text-slate-500" id="metaInfo"></div>
           <div class="flex flex-wrap items-center gap-3">
-            <button id="resetBtn" type="button" class="inline-flex items-center gap-2 rounded-full border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition disabled:opacity-50 disabled:cursor-not-allowed">
+            <button id="resetBtn" type="button" class="inline-flex items-center gap-2 rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 transition disabled:opacity-50 disabled:cursor-not-allowed">
               <span aria-hidden="true">↺</span> Visszaállítás
             </button>
             <button id="saveBtn" type="button" class="inline-flex items-center gap-2 rounded-full bg-sky-600 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-sky-600/30 hover:bg-sky-500 transition disabled:opacity-60 disabled:cursor-not-allowed">
