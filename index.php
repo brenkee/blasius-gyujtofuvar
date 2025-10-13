@@ -1,4 +1,12 @@
-<?php require __DIR__ . '/common.php'; ?>
+<?php
+require __DIR__ . '/auth.php';
+
+$currentUser = auth_require_login();
+auth_redirect_if_password_change_needed();
+$currentPath = auth_sanitize_redirect($_SERVER['REQUEST_URI'] ?? null) ?? '/index.php';
+$passwordLink = base_url('password.php') . '?redirect=' . rawurlencode($currentPath);
+$logoutLink = base_url('logout.php') . '?redirect=' . rawurlencode($currentPath);
+?>
 <!doctype html>
 <html lang="hu">
 <head>
@@ -57,6 +65,13 @@
   <aside class="panel">
     <div id="panelTop" class="panel-top">
       <h1><?= htmlspecialchars($CFG['app']['title']) ?></h1>
+      <div class="account-actions" role="navigation" aria-label="Felhasználói menü">
+        <span class="account-actions__user" title="Bejelentkezve mint <?= htmlspecialchars($currentUser['username']) ?>">
+          <?= htmlspecialchars($currentUser['username']) ?>
+        </span>
+        <a class="account-actions__link" href="<?= htmlspecialchars($passwordLink) ?>">Jelszó módosítása</a>
+        <a class="account-actions__link account-actions__link--logout" href="<?= htmlspecialchars($logoutLink) ?>">Kijelentkezés</a>
+      </div>
       <?php
         $toolbarFeatures = $CFG['features']['toolbar'] ?? [];
         $toolbarText = $CFG['text']['toolbar'] ?? [];

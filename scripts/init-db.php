@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once dirname(__DIR__) . '/auth_functions.php';
+
 
 /**
  * Initialise the SQLite database for the Gyűjtőfuvar application.
@@ -110,6 +112,8 @@ function init_app_database(array $options = []): array {
             throw $e;
         }
     }
+
+    auth_bootstrap_default_admin($pdo);
 
     return [
         'created' => $created,

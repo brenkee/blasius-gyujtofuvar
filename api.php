@@ -1,5 +1,5 @@
 <?php
-require __DIR__ . '/common.php';
+require __DIR__ . '/auth.php';
 
 header('X-Content-Type-Options: nosniff');
 
@@ -24,6 +24,18 @@ $sendJsonError = function($message, $code = 400) use ($jsonHeader){
   echo json_encode(['ok' => false, 'error' => $message], JSON_UNESCAPED_UNICODE);
   exit;
 };
+
+$authUser = auth_require_login(['json' => true]);
+if (auth_user_must_change_password($authUser)) {
+  $jsonHeader();
+  http_response_code(403);
+  echo json_encode([
+    'ok' => false,
+    'error' => 'password_change_required',
+    'redirect' => base_url('password.php'),
+  ], JSON_UNESCAPED_UNICODE);
+  exit;
+}
 
 function require_actor_id() {
   $actor = normalized_actor_id($_SERVER['HTTP_X_CLIENT_ID'] ?? '');
@@ -231,7 +243,15 @@ if ($action === 'cfg') {
 
 if ($action === 'session') {
   $jsonHeader();
-  echo json_encode(['ok' => true, 'client_id' => generate_client_id()], JSON_UNESCAPED_UNICODE);
+  echo json_encode([
+    'ok' => true,
+    'client_id' => generate_client_id(),
+    'user' => [
+      'id' => (int)$authUser['id'],
+      'username' => $authUser['username'],
+      'email' => $authUser['email'] ?? '',
+    ],
+  ], JSON_UNESCAPED_UNICODE);
   exit;
 }
 

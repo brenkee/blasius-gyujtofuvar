@@ -1,5 +1,8 @@
 <?php
-require __DIR__ . '/common.php';
+require __DIR__ . '/auth.php';
+
+auth_require_login();
+auth_redirect_if_password_change_needed();
 
 $initError = $DATA_INIT_ERROR ?? null;
 if (!empty($initError)) {
