@@ -3147,7 +3147,7 @@
     let globalIndex = 0;
     order.forEach(rid=>{
       const inRound = state.items.filter(it => (+it.round||0) === rid && it.id !== placeholderId);
-      if (rid !== 0 && inRound.length === 0) return;
+      if (inRound.length === 0) return;
 
       const totals = totalsForRound(rid);
       const groupEl = makeGroupHeader(rid, totals);
