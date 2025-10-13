@@ -28,7 +28,7 @@ body.import-busy .app{filter:blur(4px);pointer-events:none;user-select:none}
 .auth-link:hover{text-decoration:underline}
 .auth-forgot{display:grid;gap:12px;margin-top:8px}
 .auth-forgot-toggle{background:none;border:none;color:inherit;padding:0;font:inherit;cursor:pointer}
-.auth-forgot-section{display:grid;gap:12px}
+.auth-forgot-section{gap:12px}
 .auth-forgot-section hr{border:none;border-top:1px solid var(--border);margin:0}
 .auth-forgot-section h2{margin:0;font-size:16px;text-align:center;color:var(--muted)}
 .auth-submit-secondary{background:var(--border);color:var(--text)}
@@ -87,7 +87,9 @@ h1{font-size:18px;margin:0 0 6px}
 .quick-search-status.is-empty{border-color:var(--qs-status-empty-border);background:var(--qs-status-empty-bg);color:var(--qs-status-empty-color);font-size:13px}
 .visually-hidden{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .new-address-container{display:grid;gap:12px;margin-bottom:12px}
-.new-address-container:empty{display:none}
+.new-address-container:empty{display:none}        
+.new-address-container .warn, .new-address-container .title-city, .new-address-container .num{display:none !important;}
+.new-address-container .title-label.placeholder{color:green}
 .groups{display:grid;gap:12px}
 .group{border:1px solid var(--border);border-radius:12px;background:var(--panel)}
 .group-header{display:flex;flex-direction:column;gap:8px;padding:10px;border-bottom:1px solid var(--border);background: #f0f2f5;}

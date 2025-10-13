@@ -105,7 +105,7 @@
         "login": {
             "page_title": "Bejelentkezés",
             "title": "Bejelentkezés",
-            "subtitle": "Kérjük, jelentkezz be a Gyűjtőfuvar használatához.",
+            "subtitle": "Kérjük, jelentkezz be az alkalmazás használatához.",
             "username_label": "Felhasználónév",
             "password_label": "Jelszó",
             "login_button": "Belépés",
