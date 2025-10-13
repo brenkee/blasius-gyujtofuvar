@@ -1838,6 +1838,60 @@
       return false;
     }
   }
+  function extractHungarianPostcode(text){
+    if (typeof text !== 'string') return '';
+    const match = text.match(/\b(\d{4})\b/u);
+    return match ? match[1] : '';
+  }
+
+  function normalizeHungarianAddress(raw){
+    if (typeof raw !== 'string') return {normalized:'', changed:false};
+    let normalized = raw;
+    let changed = false;
+    const apply = (pattern, replacement='')=>{
+      const next = normalized.replace(pattern, replacement);
+      if (next !== normalized){
+        normalized = next;
+        changed = true;
+      }
+    };
+
+    if (/budapest/i.test(normalized)){
+      apply(/budapest\s*[-–]?\s*(\d{1,2}|[IVXLCDM]{1,4})(?:\.?\s*(?:ker(?:\.|ület|ulet)?)?)?/gi, 'Budapest');
+      apply(/,\s*(?:\d{1,2}|[IVXLCDM]{1,4})\.?\s*ker(?:\.|ület|ulet)?/gi, '');
+      apply(/,\s*[IVXLCDM]{1,4}\.?\b/gi, '');
+      apply(/Budapest\s*\.(?=\s|,|$)/gi, 'Budapest');
+      apply(/\(\s*(\d{1,2}|[IVXLCDM]{1,4})(?:\.?\s*(?:ker(?:\.|ület|ulet)?)?)\s*\)/gi, '');
+    }
+
+    apply(/\b(\d+)\./g, '$1');
+
+    const streetRegex = /\b(?:utca|u\.?|út|ut|körút|korut|krt\.?|tér|ter|köz|koz|sétány|setany|lejtő|lejto|rakpart|sor|park|fasor|dűlőút|dülőút|duloút|dűlő|dülő|dulo|dűlősor|dülősor|dulosor|kert|határút|hatarút|állomás|allomas|telep|lakótelep|lakotelep)\b\.?/gi;
+    apply(streetRegex, '');
+
+    const unitRegexes = [
+      /\b(?:fszt|földszint|foldszint|emelet|em\.?|eme\.?|eme|ajtó|ajto|lh\.?|lph\.?|lépcsőház|lepcsohaz|ép\.?|épület|epulet|ép)\s*\d*[A-Za-z]?/gi,
+      /\b[IVXLCDM]{1,4}\s*\/\s*\d+[A-Za-z]?\b/gi,
+      /\b\d+\s*\/\s*[A-Za-z0-9]+\b/gi,
+      /\b\d+\s*-\s*\d+\b/gi
+    ];
+    unitRegexes.forEach(re=> apply(re, ''));
+
+    normalized = normalized.replace(/\s*[,;]\s*/g, match=> match.trim().endsWith(',') ? ', ' : ' ');
+    if (normalized !== raw) changed = true;
+
+    normalized = normalized
+      .replace(/\s{2,}/g, ' ')
+      .replace(/\s+,/g, ',')
+      .replace(/,\s*,/g, ',')
+      .replace(/\s+\./g, '.')
+      .replace(/,+/g, ',')
+      .replace(/,\s*$/g, '')
+      .trim();
+
+    return {normalized, changed: changed || normalized !== raw.trim()};
+  }
+
   async function geocodeRobust(q){
     const qNorm = q.replace(/^\s*([^,]+)\s*,\s*(.+?)\s*,\s*(\d{4})\s*$/u, '$3 $1, $2');
     const url = EP.geocode + '&' + new URLSearchParams({q:qNorm});
@@ -1862,6 +1916,7 @@
       const address = (item[addressFieldId] ?? '').toString().trim();
       if (!address) continue;
       attempted += 1;
+      const originalPostcode = extractHungarianPostcode(address);
       try {
         const geo = await geocodeRobust(address);
         const updated = {...item};
@@ -1873,19 +1928,60 @@
         changed = true;
       } catch (err) {
         console.error('auto geocode failed for import', err);
+        let finalAddress = address;
+        let finalFallbackCity = cityFromDisplay(address, item.city);
+        let finalPostcode = originalPostcode;
+        let finalItem = item;
+        let geocoded = false;
+
+        const normalized = normalizeHungarianAddress(address);
+        if (normalized.changed && normalized.normalized) {
+          finalAddress = normalized.normalized;
+          finalFallbackCity = cityFromDisplay(finalAddress, item.city);
+          finalPostcode = extractHungarianPostcode(finalAddress) || finalPostcode;
+          const normalizedItem = {...item};
+          normalizedItem[addressFieldId] = finalAddress;
+          normalizedItem.lat = null;
+          normalizedItem.lon = null;
+          if (!normalizedItem.city && finalFallbackCity) {
+            normalizedItem.city = finalFallbackCity;
+          }
+          state.items[i] = normalizedItem;
+          finalItem = normalizedItem;
+          changed = true;
+          try {
+            const geoNormalized = await geocodeRobust(finalAddress);
+            normalizedItem.lat = geoNormalized.lat;
+            normalizedItem.lon = geoNormalized.lon;
+            const normalizedCity = geoNormalized.city || finalFallbackCity;
+            if (normalizedCity) {
+              normalizedItem.city = normalizedCity;
+            }
+            state.items[i] = normalizedItem;
+            geocoded = true;
+          } catch (secondErr) {
+            console.error('normalized auto geocode failed for import', secondErr);
+          }
+        }
+
+        if (geocoded) {
+          continue;
+        }
+
         failed += 1;
         const idPart = item.id != null ? `#${item.id} ` : '';
         const label = (item[labelFieldId] ?? '').toString().trim();
         const labelPart = label ? `${label} – ` : '';
-        const fallbackCity = cityFromDisplay(address, item.city);
+        const effectiveAddress = (state.items[i]?.[addressFieldId] ?? finalAddress).toString().trim();
         failures.push({
           index: i,
           id: idStr,
           label,
-          address,
-          city: typeof item.city === 'string' ? item.city.trim() : '',
-          fallbackCity,
-          summary: `${idPart}${labelPart}${address}`.trim() || fallbackCity || `${idPart}${label}`.trim()
+          address: effectiveAddress,
+          city: typeof finalItem.city === 'string' ? finalItem.city.trim() : '',
+          fallbackCity: finalFallbackCity,
+          postalCode: finalPostcode,
+          summary: `${idPart}${labelPart}${effectiveAddress}`.trim() || finalFallbackCity || `${idPart}${label}`.trim()
         });
       }
     }
@@ -3719,8 +3815,10 @@
       updated.city = cityCandidate;
       updated.lat = null;
       updated.lon = null;
+      const postcode = entry.postalCode && /^\d{4}$/.test(entry.postalCode) ? entry.postalCode : extractHungarianPostcode(updated[addressFieldId]);
+      const geocodeQuery = postcode ? `${postcode} ${cityCandidate}` : cityCandidate;
       try {
-        const geo = await geocodeRobust(cityCandidate);
+        const geo = await geocodeRobust(geocodeQuery);
         updated.lat = geo.lat;
         updated.lon = geo.lon;
         if (geo.city) {
