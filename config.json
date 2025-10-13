@@ -91,6 +91,16 @@
         "language": "hu",
         "user_agent": "fuvarszervezo-internal/1.4 (+contact@example.com)"
     },
+    "smtp": {
+        "host": "smtp.example.com",
+        "port": 587,
+        "username": "username",
+        "password": "password",
+        "encryption": "tls",
+        "from_email": "noreply@example.com",
+        "from_name": "Gyűjtőfuvar",
+        "timeout": 15
+    },
     "ui": {
         "panel_min_px": 330,
         "panel_pref_vw": 36,

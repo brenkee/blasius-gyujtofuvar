@@ -128,6 +128,16 @@ $CFG_DEFAULT = [
     "language" => "hu",
     "user_agent" => "fuvarszervezo-internal/1.5 (+contact@example.com)"
   ],
+  "smtp" => [
+    "host" => "",
+    "port" => 587,
+    "username" => "",
+    "password" => "",
+    "encryption" => "tls",
+    "from_email" => "",
+    "from_name" => "Gyűjtőfuvar",
+    "timeout" => 15
+  ],
   "ui" => [
     "panel_min_px" => 330,
     "panel_pref_vw" => 36,
@@ -1715,7 +1725,7 @@ if (!function_exists('auth_find_user_by_id')) {
     }
     try {
       $pdo = auth_db();
-      $stmt = $pdo->prepare('SELECT id, username, email, password_hash, must_change_password, created_at, updated_at FROM users WHERE id = :id LIMIT 1');
+      $stmt = $pdo->prepare('SELECT id, username, email, role, password_hash, must_change_password, created_at, updated_at FROM users WHERE id = :id LIMIT 1');
       $dbStart = microtime(true);
       $stmt->execute([':id' => $userId]);
       app_perf_track_db($dbStart);
@@ -1724,6 +1734,7 @@ if (!function_exists('auth_find_user_by_id')) {
         return null;
       }
       $row['must_change_password'] = !empty($row['must_change_password']);
+      $row['role'] = isset($row['role']) && is_string($row['role']) && $row['role'] !== '' ? $row['role'] : 'editor';
       return $row;
     } catch (Throwable $e) {
       error_log('Felhasználó lekérdezési hiba: ' . $e->getMessage());
@@ -1740,7 +1751,7 @@ if (!function_exists('auth_find_user_by_username')) {
     }
     try {
       $pdo = auth_db();
-      $stmt = $pdo->prepare('SELECT id, username, email, password_hash, must_change_password, created_at, updated_at FROM users WHERE username = :username LIMIT 1');
+      $stmt = $pdo->prepare('SELECT id, username, email, role, password_hash, must_change_password, created_at, updated_at FROM users WHERE username = :username LIMIT 1');
       $dbStart = microtime(true);
       $stmt->execute([':username' => $name]);
       app_perf_track_db($dbStart);
@@ -1749,6 +1760,7 @@ if (!function_exists('auth_find_user_by_username')) {
         return null;
       }
       $row['must_change_password'] = !empty($row['must_change_password']);
+      $row['role'] = isset($row['role']) && is_string($row['role']) && $row['role'] !== '' ? $row['role'] : 'editor';
       return $row;
     } catch (Throwable $e) {
       error_log('Felhasználó keresési hiba: ' . $e->getMessage());
@@ -1778,6 +1790,522 @@ if (!function_exists('auth_update_user_password')) {
   }
 }
 
+if (!function_exists('auth_valid_roles')) {
+  function auth_valid_roles() {
+    return ['full-admin', 'editor', 'viewer'];
+  }
+}
+
+if (!function_exists('auth_normalize_role')) {
+  function auth_normalize_role($value) {
+    $role = is_string($value) ? strtolower(trim($value)) : '';
+    $valid = auth_valid_roles();
+    foreach ($valid as $candidate) {
+      if ($role === strtolower($candidate)) {
+        return $candidate;
+      }
+    }
+    return 'editor';
+  }
+}
+
+if (!function_exists('auth_user_role')) {
+  function auth_user_role($user = null) {
+    if (!is_array($user)) {
+      return 'editor';
+    }
+    $role = $user['role'] ?? 'editor';
+    return auth_normalize_role($role);
+  }
+}
+
+if (!function_exists('auth_user_is_admin')) {
+  function auth_user_is_admin($user = null) {
+    return auth_user_role($user) === 'full-admin';
+  }
+}
+
+if (!function_exists('auth_user_can')) {
+  function auth_user_can($user, $capability) {
+    $role = auth_user_role($user);
+    $cap = is_string($capability) ? strtolower(trim($capability)) : '';
+    $map = [
+      'view' => ['full-admin', 'editor', 'viewer'],
+      'export' => ['full-admin', 'editor', 'viewer'],
+      'print' => ['full-admin', 'editor', 'viewer'],
+      'edit' => ['full-admin', 'editor'],
+      'save' => ['full-admin', 'editor'],
+      'sort' => ['full-admin', 'editor'],
+      'round_meta' => ['full-admin', 'editor'],
+      'delete' => ['full-admin', 'editor'],
+      'import' => ['full-admin', 'editor'],
+      'manage_users' => ['full-admin'],
+    ];
+    if (!isset($map[$cap])) {
+      return false;
+    }
+    return in_array($role, $map[$cap], true);
+  }
+}
+
+if (!function_exists('auth_build_permissions')) {
+  function auth_build_permissions($user = null) {
+    $role = auth_user_role($user);
+    return [
+      'role' => $role,
+      'readOnly' => $role === 'viewer',
+      'canEdit' => auth_user_can($user, 'edit'),
+      'canSave' => auth_user_can($user, 'save'),
+      'canSort' => auth_user_can($user, 'sort'),
+      'canChangeRoundMeta' => auth_user_can($user, 'round_meta'),
+      'canDelete' => auth_user_can($user, 'delete'),
+      'canImport' => auth_user_can($user, 'import'),
+      'canExport' => auth_user_can($user, 'export'),
+      'canPrint' => auth_user_can($user, 'print'),
+      'canManageUsers' => auth_user_can($user, 'manage_users'),
+    ];
+  }
+}
+
+if (!function_exists('app_features_for_user')) {
+  function app_features_for_user($features, array $permissions) {
+    $result = is_array($features) ? $features : [];
+    $toolbar = isset($result['toolbar']) && is_array($result['toolbar']) ? $result['toolbar'] : [];
+    $groupActions = isset($result['group_actions']) && is_array($result['group_actions']) ? $result['group_actions'] : [];
+
+    if (empty($permissions['canImport'])) {
+      $toolbar['import_all'] = false;
+    }
+    if (empty($permissions['canExport'])) {
+      $toolbar['export_all'] = false;
+      $groupActions['export'] = false;
+    }
+    if (empty($permissions['canPrint'])) {
+      $toolbar['print_all'] = false;
+      $groupActions['print'] = false;
+    }
+    if (empty($permissions['canManageUsers'])) {
+      $toolbar['download_archive'] = $toolbar['download_archive'] ?? false;
+    }
+    if (empty($permissions['canEdit'])) {
+      $toolbar['undo'] = false;
+      $groupActions['delete'] = false;
+      $toolbar['expand_all'] = $toolbar['expand_all'] ?? true;
+      $toolbar['collapse_all'] = $toolbar['collapse_all'] ?? true;
+    }
+    if (!empty($permissions['readOnly'])) {
+      $toolbar['import_all'] = false;
+      $toolbar['download_archive'] = false;
+    }
+
+    $result['toolbar'] = $toolbar;
+    $result['group_actions'] = $groupActions;
+    return $result;
+  }
+}
+
+if (!function_exists('auth_find_user_by_email')) {
+  function auth_find_user_by_email($email) {
+    $emailStr = trim((string)$email);
+    if ($emailStr === '') {
+      return null;
+    }
+    try {
+      $pdo = auth_db();
+      $stmt = $pdo->prepare('SELECT id, username, email, role, password_hash, must_change_password, created_at, updated_at FROM users WHERE LOWER(email) = LOWER(:email) LIMIT 1');
+      $dbStart = microtime(true);
+      $stmt->execute([':email' => $emailStr]);
+      app_perf_track_db($dbStart);
+      $row = $stmt->fetch(PDO::FETCH_ASSOC);
+      if (!$row) {
+        return null;
+      }
+      $row['must_change_password'] = !empty($row['must_change_password']);
+      $row['role'] = isset($row['role']) && is_string($row['role']) && $row['role'] !== '' ? $row['role'] : 'editor';
+      return $row;
+    } catch (Throwable $e) {
+      error_log('Felhasználó lekérdezési hiba (email): ' . $e->getMessage());
+      return null;
+    }
+  }
+}
+
+if (!function_exists('auth_find_user_by_identifier')) {
+  function auth_find_user_by_identifier($identifier) {
+    $id = trim((string)$identifier);
+    if ($id === '') {
+      return null;
+    }
+    $user = auth_find_user_by_username($id);
+    if ($user) {
+      return $user;
+    }
+    return auth_find_user_by_email($id);
+  }
+}
+
+if (!function_exists('auth_list_users')) {
+  function auth_list_users() {
+    try {
+      $pdo = auth_db();
+      $stmt = $pdo->query('SELECT id, username, email, role, must_change_password, created_at, updated_at FROM users ORDER BY LOWER(username) ASC');
+      $dbStart = microtime(true);
+      $rows = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+      app_perf_track_db($dbStart);
+      foreach ($rows as &$row) {
+        $row['must_change_password'] = !empty($row['must_change_password']);
+        $row['role'] = isset($row['role']) && is_string($row['role']) && $row['role'] !== '' ? $row['role'] : 'editor';
+      }
+      unset($row);
+      return is_array($rows) ? $rows : [];
+    } catch (Throwable $e) {
+      error_log('Felhasználó lista hiba: ' . $e->getMessage());
+      return [];
+    }
+  }
+}
+
+if (!function_exists('auth_count_users_with_role')) {
+  function auth_count_users_with_role($role) {
+    $normalized = auth_normalize_role($role);
+    try {
+      $pdo = auth_db();
+      $stmt = $pdo->prepare('SELECT COUNT(*) FROM users WHERE role = :role');
+      $dbStart = microtime(true);
+      $stmt->execute([':role' => $normalized]);
+      app_perf_track_db($dbStart);
+      return (int)$stmt->fetchColumn();
+    } catch (Throwable $e) {
+      error_log('Szerepkör számolási hiba: ' . $e->getMessage());
+      return 0;
+    }
+  }
+}
+
+if (!function_exists('auth_create_user')) {
+  function auth_create_user(array $data, &$error = null) {
+    $username = trim((string)($data['username'] ?? ''));
+    if ($username === '') {
+      $error = 'empty_username';
+      return false;
+    }
+    $email = trim((string)($data['email'] ?? ''));
+    $role = auth_normalize_role($data['role'] ?? 'editor');
+    $password = (string)($data['password'] ?? '');
+    if ($password === '') {
+      $error = 'empty_password';
+      return false;
+    }
+    try {
+      $pdo = auth_db();
+      $stmt = $pdo->prepare('SELECT COUNT(*) FROM users WHERE username = :username');
+      $dbStart = microtime(true);
+      $stmt->execute([':username' => $username]);
+      app_perf_track_db($dbStart);
+      if ((int)$stmt->fetchColumn() > 0) {
+        $error = 'username_taken';
+        return false;
+      }
+      $hash = auth_password_hash($password);
+      $now = gmdate('c');
+      $ins = $pdo->prepare('INSERT INTO users (username, email, role, password_hash, must_change_password, created_at, updated_at) VALUES (:username, :email, :role, :hash, :must_change, :created, :created)');
+      $dbStart = microtime(true);
+      $ins->execute([
+        ':username' => $username,
+        ':email' => $email,
+        ':role' => $role,
+        ':hash' => $hash,
+        ':must_change' => array_key_exists('must_change_password', $data)
+          ? (!empty($data['must_change_password']) ? 1 : 0)
+          : 1,
+        ':created' => $now,
+      ]);
+      app_perf_track_db($dbStart);
+      return true;
+    } catch (Throwable $e) {
+      $error = 'db_error';
+      error_log('Felhasználó létrehozási hiba: ' . $e->getMessage());
+      return false;
+    }
+  }
+}
+
+if (!function_exists('auth_update_user')) {
+  function auth_update_user($userId, array $data, &$error = null) {
+    $id = (int)$userId;
+    if ($id <= 0) {
+      $error = 'invalid_id';
+      return false;
+    }
+    $fields = [];
+    $params = [':id' => $id];
+    if (array_key_exists('username', $data)) {
+      $username = trim((string)$data['username']);
+      if ($username === '') {
+        $error = 'empty_username';
+        return false;
+      }
+      try {
+        $pdo = auth_db();
+        $stmt = $pdo->prepare('SELECT COUNT(*) FROM users WHERE username = :username AND id != :id');
+        $dbStart = microtime(true);
+        $stmt->execute([':username' => $username, ':id' => $id]);
+        app_perf_track_db($dbStart);
+        if ((int)$stmt->fetchColumn() > 0) {
+          $error = 'username_taken';
+          return false;
+        }
+      } catch (Throwable $e) {
+        $error = 'db_error';
+        error_log('Felhasználó frissítési hiba: ' . $e->getMessage());
+        return false;
+      }
+      $fields[] = 'username = :username';
+      $params[':username'] = $username;
+    }
+    if (array_key_exists('email', $data)) {
+      $fields[] = 'email = :email';
+      $params[':email'] = trim((string)$data['email']);
+    }
+    if (array_key_exists('role', $data)) {
+      $fields[] = 'role = :role';
+      $params[':role'] = auth_normalize_role($data['role']);
+    }
+    $mustChangeProvided = array_key_exists('must_change_password', $data);
+    if (!empty($data['password'])) {
+      $hash = auth_password_hash((string)$data['password']);
+      $fields[] = 'password_hash = :hash';
+      $params[':hash'] = $hash;
+      $fields[] = 'must_change_password = :must_change_password';
+      if (!empty($data['force_change_password'])) {
+        $params[':must_change_password'] = 1;
+      } elseif ($mustChangeProvided) {
+        $params[':must_change_password'] = !empty($data['must_change_password']) ? 1 : 0;
+      } else {
+        $params[':must_change_password'] = 1;
+      }
+    } elseif ($mustChangeProvided) {
+      $fields[] = 'must_change_password = :must_change_password';
+      $params[':must_change_password'] = !empty($data['must_change_password']) ? 1 : 0;
+    }
+    if (!$fields) {
+      return true;
+    }
+    $fields[] = 'updated_at = :updated_at';
+    $params[':updated_at'] = gmdate('c');
+    try {
+      $pdo = auth_db();
+      $sql = 'UPDATE users SET ' . implode(', ', $fields) . ' WHERE id = :id';
+      $stmt = $pdo->prepare($sql);
+      $dbStart = microtime(true);
+      $stmt->execute($params);
+      app_perf_track_db($dbStart);
+      return true;
+    } catch (Throwable $e) {
+      $error = 'db_error';
+      error_log('Felhasználó frissítési hiba: ' . $e->getMessage());
+      return false;
+    }
+  }
+}
+
+if (!function_exists('auth_generate_random_password')) {
+  function auth_generate_random_password($length = 12) {
+    $length = max(8, (int)$length);
+    $bytes = random_bytes($length);
+    $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+    $alphabetLength = strlen($alphabet);
+    $result = '';
+    for ($i = 0; $i < $length; $i++) {
+      $result .= $alphabet[ord($bytes[$i]) % $alphabetLength];
+    }
+    return $result;
+  }
+}
+
+if (!function_exists('app_format_email_address')) {
+  function app_format_email_address($email, $name = '') {
+    $email = trim((string)$email);
+    $name = trim((string)$name);
+    if ($name === '') {
+      return $email;
+    }
+    $encodedName = $name;
+    if (function_exists('mb_encode_mimeheader')) {
+      $encodedName = mb_encode_mimeheader($name, 'UTF-8', 'B', '\r\n');
+    }
+    return sprintf('%s <%s>', $encodedName, $email);
+  }
+}
+
+if (!function_exists('app_smtp_send_mail')) {
+  function app_smtp_send_mail(array $smtpCfg, array $message, &$error = null) {
+    $host = trim((string)($smtpCfg['host'] ?? ''));
+    if ($host === '') {
+      $error = 'missing_host';
+      return false;
+    }
+    $port = isset($smtpCfg['port']) ? (int)$smtpCfg['port'] : 587;
+    if ($port <= 0) {
+      $port = 587;
+    }
+    $username = (string)($smtpCfg['username'] ?? '');
+    $password = (string)($smtpCfg['password'] ?? '');
+    $encryption = strtolower((string)($smtpCfg['encryption'] ?? 'tls'));
+    $timeout = isset($smtpCfg['timeout']) ? (int)$smtpCfg['timeout'] : 15;
+    if ($timeout <= 0) {
+      $timeout = 15;
+    }
+    $fromEmail = trim((string)($message['from_email'] ?? ($smtpCfg['from_email'] ?? $username)));
+    if ($fromEmail === '') {
+      $error = 'missing_from_email';
+      return false;
+    }
+    $fromName = trim((string)($message['from_name'] ?? ($smtpCfg['from_name'] ?? '')));
+    $toEmail = trim((string)($message['to_email'] ?? ''));
+    if ($toEmail === '') {
+      $error = 'missing_recipient';
+      return false;
+    }
+    $toName = trim((string)($message['to_name'] ?? ''));
+    $subject = (string)($message['subject'] ?? '');
+    $body = (string)($message['body'] ?? '');
+    $ehloDomain = $message['ehlo_domain'] ?? 'localhost';
+    $transport = ($encryption === 'ssl') ? 'ssl://' : 'tcp://';
+
+    $errno = 0;
+    $errstr = '';
+    $socket = @stream_socket_client($transport . $host . ':' . $port, $errno, $errstr, $timeout, STREAM_CLIENT_CONNECT);
+    if (!$socket) {
+      $error = 'connect_failed: ' . $errstr;
+      return false;
+    }
+    stream_set_timeout($socket, $timeout);
+
+    $readResponse = function () use ($socket) {
+      $response = '';
+      while (($line = fgets($socket, 515)) !== false) {
+        $response .= $line;
+        if (strlen($line) >= 4 && $line[3] === ' ') {
+          break;
+        }
+      }
+      return $response;
+    };
+
+    $sendCommand = function ($command) use ($socket) {
+      if ($command !== null) {
+        fwrite($socket, $command . "\r\n");
+      }
+    };
+
+    $expect = function ($command, $expectedCode) use ($sendCommand, $readResponse, &$error) {
+      if ($command !== null) {
+        $sendCommand($command);
+      }
+      $resp = $readResponse();
+      if ($resp === '' || strpos($resp, (string)$expectedCode) !== 0) {
+        $error = 'smtp_error: ' . trim($resp);
+        return false;
+      }
+      return $resp;
+    };
+
+    $greeting = $readResponse();
+    if ($greeting === '' || strpos($greeting, '220') !== 0) {
+      $error = 'smtp_greeting_failed';
+      fclose($socket);
+      return false;
+    }
+
+    if ($expect('EHLO ' . $ehloDomain, 250) === false) {
+      fclose($socket);
+      return false;
+    }
+
+    if ($encryption === 'tls') {
+      if ($expect('STARTTLS', 220) === false) {
+        fclose($socket);
+        return false;
+      }
+      if (!stream_socket_enable_crypto($socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
+        $error = 'tls_negotiation_failed';
+        fclose($socket);
+        return false;
+      }
+      if ($expect('EHLO ' . $ehloDomain, 250) === false) {
+        fclose($socket);
+        return false;
+      }
+    }
+
+    if ($username !== '' && $password !== '') {
+      if ($expect('AUTH LOGIN', 334) === false) {
+        fclose($socket);
+        return false;
+      }
+      if ($expect(base64_encode($username), 334) === false) {
+        fclose($socket);
+        return false;
+      }
+      if ($expect(base64_encode($password), 235) === false) {
+        fclose($socket);
+        return false;
+      }
+    }
+
+    if ($expect('MAIL FROM:<' . $fromEmail . '>', 250) === false) {
+      fclose($socket);
+      return false;
+    }
+    if ($expect('RCPT TO:<' . $toEmail . '>', 250) === false) {
+      fclose($socket);
+      return false;
+    }
+    if ($expect('DATA', 354) === false) {
+      fclose($socket);
+      return false;
+    }
+
+    $encodedSubject = $subject;
+    if ($subject !== '' && function_exists('mb_encode_mimeheader')) {
+      $encodedSubject = mb_encode_mimeheader($subject, 'UTF-8', 'B', "\r\n");
+    }
+
+    $headers = [
+      'Date: ' . gmdate('D, d M Y H:i:s O'),
+      'From: ' . app_format_email_address($fromEmail, $fromName),
+      'To: ' . app_format_email_address($toEmail, $toName),
+      'Subject: ' . $encodedSubject,
+      'MIME-Version: 1.0',
+      'Content-Type: text/plain; charset=UTF-8',
+      'Content-Transfer-Encoding: 8bit'
+    ];
+
+    $normalizedBody = str_replace(["\r\n", "\r"], "\n", $body);
+    $lines = explode("\n", $normalizedBody);
+    foreach ($lines as &$line) {
+      if (isset($line[0]) && $line[0] === '.') {
+        $line = '.' . $line;
+      }
+    }
+    unset($line);
+    $payload = implode("\r\n", $headers) . "\r\n\r\n" . implode("\r\n", $lines) . "\r\n.";
+    $sendCommand($payload);
+
+    $resp = $readResponse();
+    if ($resp === '' || strpos($resp, '250') !== 0) {
+      $error = 'smtp_data_rejected: ' . trim($resp);
+      fclose($socket);
+      return false;
+    }
+
+    $sendCommand('QUIT');
+    fclose($socket);
+    return true;
+  }
+}
+
 if (!function_exists('auth_ensure_admin_user')) {
   function auth_ensure_admin_user() {
     static $ensured = false;
@@ -1801,11 +2329,12 @@ if (!function_exists('auth_ensure_admin_user')) {
       if ($count === 0) {
         $hash = auth_password_hash('admin');
         $now = gmdate('c');
-        $stmt = $pdo->prepare('INSERT INTO users (username, email, password_hash, must_change_password, created_at, updated_at) VALUES (:username, :email, :hash, 1, :created, :created)');
+        $stmt = $pdo->prepare('INSERT INTO users (username, email, role, password_hash, must_change_password, created_at, updated_at) VALUES (:username, :email, :role, :hash, 1, :created, :created)');
         $dbStart = microtime(true);
         $stmt->execute([
           ':username' => 'admin',
           ':email' => '',
+          ':role' => 'full-admin',
           ':hash' => $hash,
           ':created' => $now,
         ]);

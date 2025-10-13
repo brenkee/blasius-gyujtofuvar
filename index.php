@@ -1,6 +1,8 @@
 <?php
 require __DIR__ . '/common.php';
 $CURRENT_USER = auth_require_login();
+$PERMISSIONS = auth_build_permissions($CURRENT_USER);
+$FEATURES = app_features_for_user($CFG['features'] ?? [], $PERMISSIONS);
 $LOGOUT_TOKEN = csrf_get_token();
 ?>
 <!doctype html>
@@ -40,6 +42,8 @@ $LOGOUT_TOKEN = csrf_get_token();
   window.APP_BOOTSTRAP = <?= json_encode([
     'baseUrl' => $CFG['base_url'],
     'endpoints' => $bootstrapEndpoints,
+    'permissions' => $PERMISSIONS,
+    'features' => $FEATURES,
   ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
   window.APP_BOOTSTRAP.endpoints.printRound = function(rid){
     const base = <?= json_encode($printRoundBase, JSON_UNESCAPED_SLASHES) ?>;
@@ -49,7 +53,7 @@ $LOGOUT_TOKEN = csrf_get_token();
 </script>
 <script defer src="<?= htmlspecialchars(base_url('public/app.js'), ENT_QUOTES) ?>"></script>
 </head>
-<body>
+<body<?= !empty($PERMISSIONS['readOnly']) ? ' class="app-readonly"' : '' ?>>
 <?php if (!empty($DATA_INIT_ERROR)): ?>
 <div class="init-error-banner">
   <strong>Adatbázis inicializációs hiba</strong>
@@ -74,7 +78,7 @@ $LOGOUT_TOKEN = csrf_get_token();
         </span>
       </div>
       <?php
-        $toolbarFeatures = $CFG['features']['toolbar'] ?? [];
+        $toolbarFeatures = $FEATURES['toolbar'] ?? [];
         $toolbarText = $CFG['text']['toolbar'] ?? [];
         $badgeText = $CFG['text']['badges']['pin_counter_label'] ?? 'Pin-ek:';
         $badgeTitle = $CFG['text']['badges']['pin_counter_title'] ?? '';
@@ -108,7 +112,8 @@ $LOGOUT_TOKEN = csrf_get_token();
           || !empty($toolbarFeatures['export_all'])
           || !empty($toolbarFeatures['print_all'])
           || !empty($toolbarFeatures['download_archive'])
-          || !empty($toolbarFeatures['theme_toggle']);
+          || !empty($toolbarFeatures['theme_toggle'])
+          || !empty($PERMISSIONS['canManageUsers']);
       ?>
       <div class="toolbar">
         <?php if (!empty($toolbarFeatures['expand_all'])): ?>
@@ -167,6 +172,9 @@ $LOGOUT_TOKEN = csrf_get_token();
                 <button id="themeToggle" type="button" title="<?= htmlspecialchars($toolbarText['theme_toggle']['title'] ?? '') ?>">
                   <?= htmlspecialchars($toolbarText['theme_toggle']['label'] ?? '🌙 / ☀️') ?>
                 </button>
+              <?php endif; ?>
+              <?php if (!empty($PERMISSIONS['canManageUsers'])): ?>
+                <a class="toolbar-menu-link" href="<?= htmlspecialchars(app_url_path('admin.php'), ENT_QUOTES) ?>">Admin</a>
               <?php endif; ?>
             </div>
           </div>

@@ -55,6 +55,8 @@ h1{font-size:18px;margin:0 0 6px}
 .toolbar-menu[hidden]{display:none!important}
 .toolbar-menu button{width:100%;text-align:left}
 .toolbar-menu button:hover{background:rgba(148,163,184,0.12)}
+.toolbar-menu a.toolbar-menu-link{display:block;padding:8px 10px;border-radius:8px;text-decoration:none;color:inherit;font-size:14px}
+.toolbar-menu a.toolbar-menu-link:hover{background:rgba(148,163,184,0.12)}
 .quick-search-wrapper{margin:8px 8px 4px;display:flex;width:100%;--qs-input-text-color:var(--text);--qs-input-bg-color:rgba(148,163,184,0.14);--qs-focus-input-bg-color:rgba(37,99,235,0.08);--qs-text-color:var(--muted);--qs-active-color:var(--accent);--qs-focus-ring:rgba(37,99,235,0.2);--qs-status-border:rgba(37,99,235,0.3);--qs-status-bg:rgba(37,99,235,0.08);--qs-status-color:var(--accent);--qs-status-empty-border:rgba(220,38,38,0.35);--qs-status-empty-bg:rgba(248,113,113,0.15);--qs-status-empty-color:var(--err)}
 .panel-top .quick-search-wrapper{width:100%}
 :root.dark .quick-search-wrapper{--qs-input-bg-color:rgba(15,23,42,0.65);--qs-focus-input-bg-color:rgba(37,99,235,0.15);--qs-text-color:#94a3b8;--qs-focus-ring:rgba(96,165,250,0.3);--qs-status-border:rgba(96,165,250,0.35);--qs-status-bg:rgba(96,165,250,0.12);--qs-status-empty-border:rgba(248,113,113,0.4);--qs-status-empty-bg:rgba(248,113,113,0.2)}
@@ -129,6 +131,12 @@ h1{font-size:18px;margin:0 0 6px}
 .iconbtn:hover{background:rgba(148,163,184,0.12)}
 .body{padding:8px;display:grid;gap:6px}
 .form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:6px}
+.f-readonly{display:flex;flex-direction:column;gap:4px}
+.f-readonly .readonly-label{font-size:12px;font-weight:600;color:var(--muted)}
+.f-readonly .readonly-value{display:block;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text);min-height:36px;word-break:break-word;white-space:pre-wrap}
+.group-planned-date--readonly,.group-planned-time--readonly{display:flex;gap:8px;align-items:center}
+.group-planned-date--readonly .readonly-label,.group-planned-time--readonly .readonly-label{font-size:12px;font-weight:600;color:var(--muted)}
+.group-planned-date--readonly .readonly-value,.group-planned-time--readonly .readonly-value{padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text)}
 .metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:6px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .f{display:grid;gap:3px}

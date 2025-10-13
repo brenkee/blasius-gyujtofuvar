@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT NOT NULL UNIQUE,
   email TEXT,
+  role TEXT NOT NULL DEFAULT 'editor',
   password_hash TEXT NOT NULL,
   must_change_password INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
