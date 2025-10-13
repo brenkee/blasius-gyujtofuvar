@@ -1520,8 +1520,166 @@
     return numberedIcon(color, index+1, showCount);
   }
 
+  const settlementIndex = {
+    entries: [],
+    byZip: new Map(),
+    byNormalizedName: new Map(),
+    loaded: false
+  };
+  let settlementIndexPromise = null;
+
+  function normalizeSettlementText(text){
+    let normalized = (text ?? '').toString();
+    if (!normalized) return '';
+    if (typeof normalized.normalize === 'function') {
+      try {
+        normalized = normalized.normalize('NFD');
+      } catch (_) {
+        // ignore if normalization not supported
+      }
+    }
+    try {
+      normalized = normalized.replace(/\p{M}/gu, '');
+    } catch (_) {
+      normalized = normalized.replace(/[\u0300-\u036f]/g, '');
+    }
+    normalized = normalized.toLocaleLowerCase('hu');
+    normalized = normalized.replace(/\d+/g, ' ');
+    normalized = normalized.replace(/[^a-z]+/g, ' ');
+    normalized = normalized.replace(/\s+/g, ' ').trim();
+    return normalized;
+  }
+
+  function registerSettlementEntry(zip, name){
+    const zipTrimmed = (zip ?? '').toString().trim();
+    const nameTrimmed = (name ?? '').toString().trim();
+    if (!zipTrimmed || !nameTrimmed) return false;
+    const normalizedName = normalizeSettlementText(nameTrimmed);
+    if (!normalizedName) return false;
+    const entry = {zip: zipTrimmed, name: nameTrimmed, normalizedName};
+    settlementIndex.entries.push(entry);
+    if (!settlementIndex.byZip.has(zipTrimmed)) {
+      settlementIndex.byZip.set(zipTrimmed, []);
+    }
+    settlementIndex.byZip.get(zipTrimmed).push(entry);
+    if (!settlementIndex.byNormalizedName.has(normalizedName)) {
+      settlementIndex.byNormalizedName.set(normalizedName, entry);
+    }
+    return true;
+  }
+
+  function parseSettlementCsv(text){
+    if (!text || typeof text !== 'string') return false;
+    settlementIndex.entries.length = 0;
+    settlementIndex.byZip.clear();
+    settlementIndex.byNormalizedName.clear();
+    let added = 0;
+    const lines = text.split(/\r?\n/);
+    for (let i = 0; i < lines.length; i += 1) {
+      const raw = lines[i];
+      if (!raw || !raw.trim()) continue;
+      if (i === 0 && /iranyitoszam\s*;\s*telepulesneve/i.test(raw)) {
+        continue;
+      }
+      const parts = raw.split(';');
+      if (parts.length < 2) continue;
+      if (registerSettlementEntry(parts[0], parts[1])) {
+        added += 1;
+      }
+    }
+    settlementIndex.loaded = added > 0;
+    return settlementIndex.loaded;
+  }
+
+  async function ensureSettlementIndexLoaded(){
+    if (settlementIndex.loaded) return settlementIndex;
+    if (settlementIndexPromise) {
+      try {
+        await settlementIndexPromise;
+      } catch (_) {
+        // ignore individual load errors
+      }
+      return settlementIndex;
+    }
+    if (typeof fetch !== 'function') {
+      return settlementIndex;
+    }
+    const urls = ['telepulesek.csv', 'public/telepulesek.csv'];
+    settlementIndexPromise = (async ()=>{
+      for (const url of urls) {
+        try {
+          const response = await fetch(url, {cache: 'no-store'});
+          if (!response || !response.ok) continue;
+          const text = await response.text();
+          if (parseSettlementCsv(text)) {
+            break;
+          }
+        } catch (err) {
+          console.error('failed to load settlement index', err);
+        }
+      }
+    })();
+    try {
+      await settlementIndexPromise;
+    } catch (_) {
+      // ignore errors, we'll retry on next call
+    }
+    settlementIndexPromise = null;
+    return settlementIndex;
+  }
+
+  ensureSettlementIndexLoaded().catch(()=>{});
+
+  function settlementFromAddress(address){
+    if (!settlementIndex.loaded) return '';
+    const rawAddress = (address ?? '').toString();
+    if (!rawAddress.trim()) return '';
+    const normalizedFull = normalizeSettlementText(rawAddress);
+    if (!normalizedFull) return '';
+    const postalMatches = rawAddress.match(/\b\d{4}\b/g) || [];
+    const uniquePostalCodes = Array.from(new Set(postalMatches));
+    for (const zip of uniquePostalCodes) {
+      const entries = settlementIndex.byZip.get(zip);
+      if (entries && entries.length) {
+        if (entries.length === 1) {
+          return entries[0].name;
+        }
+        for (const entry of entries) {
+          if (normalizedFull.includes(entry.normalizedName)) {
+            return entry.name;
+          }
+        }
+        return entries[0].name;
+      }
+    }
+    const segments = rawAddress.split(/[;,\n]+/).map(part => part.trim()).filter(Boolean);
+    for (const segment of segments) {
+      let normalizedSegment = normalizeSettlementText(segment);
+      if (!normalizedSegment) continue;
+      const exact = settlementIndex.byNormalizedName.get(normalizedSegment);
+      if (exact) {
+        return exact.name;
+      }
+      const withoutPostal = normalizedSegment.replace(/\b\d+\b/g, '').replace(/\s+/g, ' ').trim();
+      if (withoutPostal) {
+        const entry = settlementIndex.byNormalizedName.get(withoutPostal);
+        if (entry) {
+          return entry.name;
+        }
+      }
+    }
+    for (const entry of settlementIndex.entries) {
+      if (entry.normalizedName && normalizedFull.includes(entry.normalizedName)) {
+        return entry.name;
+      }
+    }
+    return '';
+  }
+
   function cityFromDisplay(address, currentCity){
     if (currentCity && currentCity.trim()) return currentCity;
+    const settlement = settlementFromAddress(address);
+    if (settlement) return settlement;
     const bits = (address||'').split(',').map(s=>s.trim());
     const m = bits[0] && bits[0].match(/\b(\d{4})\s+(.+)$/u);
     if (m) return m[2].trim();
@@ -1849,6 +2007,7 @@
     const idSet = Array.isArray(targetIds) && targetIds.length ? new Set(targetIds.map(id => String(id))) : null;
     const addressFieldId = getAddressFieldId();
     const labelFieldId = getLabelFieldId();
+    await ensureSettlementIndexLoaded();
     let changed = false;
     let attempted = 0;
     let failed = 0;
@@ -2377,6 +2536,7 @@
     if (!address){ alert(text('messages.address_required', 'Adj meg teljes címet!')); if (addressInput) addressInput.focus(); return; }
     if (okBtn){ okBtn.disabled=true; okBtn.textContent='...'; }
     try{
+      await ensureSettlementIndexLoaded();
       const g = await geocodeRobust(address);
       const newRound = (overrideRound!=null) ? overrideRound : (typeof it._pendingRound!=='undefined' ? it._pendingRound : it.round);
       pushSnapshot();
@@ -3700,6 +3860,7 @@
     }
     pushSnapshot();
     const addressFieldId = getAddressFieldId();
+    await ensureSettlementIndexLoaded();
     let changed = false;
     let attempted = 0;
     let failed = 0;
@@ -3708,7 +3869,8 @@
       const idx = entry.index;
       const item = state.items[idx];
       if (!item || typeof item !== 'object') continue;
-      const cityCandidate = (entry.city && entry.city.trim()) || (entry.fallbackCity && entry.fallbackCity.trim());
+      const fallbackFromAddress = settlementFromAddress(entry.address);
+      const cityCandidate = (entry.city && entry.city.trim()) || (entry.fallbackCity && entry.fallbackCity.trim()) || fallbackFromAddress;
       if (!cityCandidate) {
         failed += 1;
         continue;
