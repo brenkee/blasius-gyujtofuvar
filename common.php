@@ -3,6 +3,7 @@
 
 $CONFIG_FILE = __DIR__ . '/config.json';
 $CFG_DEFAULT = [
+  "base_url" => "/",
   "app" => [
     "title" => "Gyűjtőfuvar – címkezelő",
     "auto_sort_by_round" => true,
@@ -346,12 +347,55 @@ $CFG_DEFAULT = [
   ]
 ];
 
+if (!function_exists('normalize_base_url')) {
+  function normalize_base_url($value) {
+    if (!is_string($value)) {
+      $value = '';
+    }
+    $value = trim($value);
+    if ($value === '') {
+      return '/';
+    }
+    if (preg_match('~^https?://~i', $value)) {
+      return rtrim($value, '/') . '/';
+    }
+    if ($value[0] !== '/') {
+      $value = '/' . $value;
+    }
+    return rtrim($value, '/') . '/';
+  }
+}
+
+if (!function_exists('base_url')) {
+  function base_url($path = '') {
+    global $CFG;
+    $base = isset($CFG['base_url']) && is_string($CFG['base_url'])
+      ? $CFG['base_url']
+      : '/';
+    if ($path === '' || $path === null) {
+      return $base;
+    }
+    $pathStr = (string)$path;
+    if ($pathStr === '') {
+      return $base;
+    }
+    if (preg_match('~^https?://~i', $pathStr)) {
+      return $pathStr;
+    }
+    if ($pathStr !== '' && $pathStr[0] === '/') {
+      $pathStr = ltrim($pathStr, '/');
+    }
+    return $base . $pathStr;
+  }
+}
+
 $CFG = $CFG_DEFAULT;
 if (is_file($CONFIG_FILE)) {
   $raw = file_get_contents($CONFIG_FILE);
   $json = json_decode($raw, true);
   if (is_array($json)) $CFG = array_replace_recursive($CFG_DEFAULT, $json);
 }
+$CFG['base_url'] = normalize_base_url($CFG['base_url'] ?? '/');
 if (empty($CFG['rounds'])) {
   $CFG['rounds'] = [
     ["id"=>0,"label"=>"Alap (0)","color"=>"#9aa0a6"],

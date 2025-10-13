@@ -179,6 +179,7 @@ if ($action === 'cfg') {
     $saveStatusCfg = [];
   }
   $JS_CFG = [
+    "base_url" => $CFG['base_url'],
     "app" => [
       "title" => $CFG['app']['title'],
       "auto_sort_by_round" => (bool)$CFG['app']['auto_sort_by_round'],
