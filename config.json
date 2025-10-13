@@ -11,7 +11,7 @@
         "max_steps": 10
     },
     "change_watcher": {
-        "enabled": true,
+        "enabled": false,
         "pause_when_hidden": true,
         "error_retry_delay_ms": 1200,
         "revision": {
