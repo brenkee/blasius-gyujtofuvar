@@ -125,9 +125,14 @@ $CFG_DEFAULT = [
     "max_bounds_pad" => 0.6
   ],
   "geocode" => [
+    "endpoint" => "https://nominatim.openstreetmap.org/search",
     "countrycodes" => "hu",
     "language" => "hu",
-    "user_agent" => "fuvarszervezo-internal/1.5 (+contact@example.com)"
+    "user_agent" => "fuvarszervezo-internal/1.5 (+contact@example.com)",
+    "timeout" => 12,
+    "max_attempts" => 3,
+    "retry_wait_ms" => 350,
+    "failure_retry_minutes" => 1440
   ],
   "smtp" => [
     "host" => "",
@@ -2519,4 +2524,6 @@ function bootstrap_data_store_if_needed() {
 }
 
 bootstrap_data_store_if_needed();
+require_once __DIR__ . '/geocode.php';
+
 auth_bootstrap_users();

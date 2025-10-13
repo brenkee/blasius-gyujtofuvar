@@ -87,9 +87,14 @@
         "max_bounds_pad": 0.6
     },
     "geocode": {
+        "endpoint": "https://nominatim.openstreetmap.org/search",
         "countrycodes": "hu",
         "language": "hu",
-        "user_agent": "fuvarszervezo-internal/1.4 (+contact@example.com)"
+        "user_agent": "fuvarszervezo-internal/1.4 (+contact@example.com)",
+        "timeout": 12,
+        "max_attempts": 3,
+        "retry_wait_ms": 350,
+        "failure_retry_minutes": 1440
     },
     "smtp": {
         "host": "mail.brenkee.hu",

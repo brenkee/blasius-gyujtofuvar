@@ -136,6 +136,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $users = auth_list_users();
 $roles = auth_valid_roles();
 $csrfToken = csrf_get_token();
+$geocodeFailures = geocode_list_failures(100);
 ?>
 <!doctype html>
 <html lang="hu">
@@ -168,6 +169,12 @@ $csrfToken = csrf_get_token();
     .create-card h2{margin:0;font-size:18px}
     .back-link{color:var(--accent);text-decoration:none;font-weight:600}
     .back-link:hover{text-decoration:underline}
+    .geocode-card{border:1px solid var(--border);background:var(--panel);border-radius:12px;padding:16px 18px;display:grid;gap:12px}
+    .geocode-card h2{margin:0;font-size:18px}
+    .geocode-table{width:100%;border-collapse:collapse;font-size:14px}
+    .geocode-table th,.geocode-table td{padding:8px 10px;border-bottom:1px solid var(--border);text-align:left}
+    .geocode-table th{font-weight:600;color:var(--muted);text-transform:uppercase;font-size:12px}
+    .geocode-empty{color:var(--muted);font-size:14px}
   </style>
 </head>
 <body>
@@ -275,6 +282,61 @@ $csrfToken = csrf_get_token();
           <?php endif; ?>
         </article>
       <?php endforeach; ?>
+    </section>
+
+    <section class="geocode-card">
+      <h2>Geokódolási hibák</h2>
+      <p class="admin-subtitle">Az automatikus geokódolás során sikertelenül feldolgozott címek listája.</p>
+      <?php if (!empty($geocodeFailures)): ?>
+        <table class="geocode-table">
+          <thead>
+            <tr>
+              <th>Cím</th>
+              <th>Település</th>
+              <th>Utolsó próbálkozás</th>
+              <th>Próbálkozások</th>
+              <th>Megjegyzés</th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php foreach ($geocodeFailures as $failure): ?>
+              <?php
+                $reason = isset($failure['reason']) ? (string)$failure['reason'] : 'unknown';
+                $reasonMap = [
+                  'no_result' => 'Nincs találat',
+                  'http_error' => 'Hálózati hiba',
+                  'bad_json' => 'Érvénytelen válasz',
+                  'unavailable' => 'Szolgáltatás nem elérhető',
+                  'cached_failure' => 'Korábbi sikertelen próbálkozás',
+                  'geocode_failed' => 'Sikertelen geokódolás'
+                ];
+                $reasonLabel = $reasonMap[$reason] ?? 'Ismeretlen hiba';
+                $context = isset($failure['context']) && is_array($failure['context']) ? $failure['context'] : [];
+                $details = [];
+                if (!empty($context['label'])) { $details[] = htmlspecialchars((string)$context['label'], ENT_QUOTES); }
+                if (!empty($context['item_id'])) { $details[] = '#' . htmlspecialchars((string)$context['item_id'], ENT_QUOTES); }
+                $detailText = $details ? implode(' · ', $details) : '';
+                $ts = isset($failure['updated_at']) ? strtotime((string)$failure['updated_at']) : 0;
+                $tsText = $ts ? date('Y.m.d H:i', $ts) : '—';
+              ?>
+              <tr>
+                <td><?= htmlspecialchars($failure['address'] ?? '', ENT_QUOTES) ?></td>
+                <td><?= htmlspecialchars($failure['city'] ?? '', ENT_QUOTES) ?></td>
+                <td><?= htmlspecialchars($tsText, ENT_QUOTES) ?></td>
+                <td><?= (int)($failure['attempts'] ?? 0) ?></td>
+                <td>
+                  <?= htmlspecialchars($reasonLabel, ENT_QUOTES) ?>
+                  <?php if ($detailText): ?>
+                    <br><small><?= $detailText ?></small>
+                  <?php endif; ?>
+                </td>
+              </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+      <?php else: ?>
+        <p class="geocode-empty">Jelenleg nincs jelölt sikertelen cím.</p>
+      <?php endif; ?>
     </section>
   </main>
 </body>

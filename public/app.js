@@ -1831,6 +1831,13 @@
         resetForeignRevisions();
         changeNotice.hide();
       }
+      if (ok && j && Array.isArray(j.items)) {
+        applyLoadedData({items: j.items, round_meta: j.round_meta ?? normalizedRoundMeta()});
+        renderEverything();
+      }
+      if (ok && j && j.geocode_report && Number(j.geocode_report?.failed ?? 0) > 0) {
+        console.warn('Geocoding incomplete for some addresses.', j.geocode_report);
+      }
       return ok;
     }catch(e){
       console.error(e);
@@ -1838,62 +1845,28 @@
       return false;
     }
   }
-  async function geocodeRobust(q){
+  async function geocodeRobust(q, options={}){
     const qNorm = q.replace(/^\s*([^,]+)\s*,\s*(.+?)\s*,\s*(\d{4})\s*$/u, '$3 $1, $2');
-    const url = EP.geocode + '&' + new URLSearchParams({q:qNorm});
-    async function one(){ const r = await fetch(url,{cache:'no-store'}); const t=await r.text(); let j; try{ j=JSON.parse(t);}catch(e){throw new Error('geocode_error');} if(!r.ok||j.error) throw new Error('geocode_error'); return j; }
-    try{ return await one(); } catch(_){ return await one(); }
-  }
-
-  async function autoGeocodeImported(targetIds){
-    const idSet = Array.isArray(targetIds) && targetIds.length ? new Set(targetIds.map(id => String(id))) : null;
-    const addressFieldId = getAddressFieldId();
-    const labelFieldId = getLabelFieldId();
-    let changed = false;
-    let attempted = 0;
-    let failed = 0;
-    const failures = [];
-    for (let i = 0; i < state.items.length; i += 1) {
-      const item = state.items[i];
-      if (!item || typeof item !== 'object') continue;
-      const idStr = item.id != null ? String(item.id) : '';
-      if (idSet && !idSet.has(idStr)) continue;
-      if (item.lat != null && item.lon != null) continue;
-      const address = (item[addressFieldId] ?? '').toString().trim();
-      if (!address) continue;
-      attempted += 1;
-      try {
-        const geo = await geocodeRobust(address);
-        const updated = {...item};
-        updated.lat = geo.lat;
-        updated.lon = geo.lon;
-        const fallbackCity = cityFromDisplay(address, item.city);
-        updated.city = geo.city || fallbackCity;
-        state.items[i] = updated;
-        changed = true;
-      } catch (err) {
-        console.error('auto geocode failed for import', err);
-        failed += 1;
-        const idPart = item.id != null ? `#${item.id} ` : '';
-        const label = (item[labelFieldId] ?? '').toString().trim();
-        const labelPart = label ? `${label} – ` : '';
-        const fallbackCity = cityFromDisplay(address, item.city);
-        failures.push({
-          index: i,
-          id: idStr,
-          label,
-          address,
-          city: typeof item.city === 'string' ? item.city.trim() : '',
-          fallbackCity,
-          summary: `${idPart}${labelPart}${address}`.trim() || fallbackCity || `${idPart}${label}`.trim()
-        });
+    const params = new URLSearchParams({q:qNorm});
+    if (options.city) {
+      params.set('city', options.city);
+    }
+    const url = EP.geocode + '&' + params.toString();
+    async function one(){
+      const r = await fetch(url,{cache:'no-store'});
+      const t = await r.text();
+      let j;
+      try{ j=JSON.parse(t); }
+      catch(e){ const err = new Error('geocode_error'); err.detail='bad_json'; throw err; }
+      if(!r.ok || (j && j.error)){
+        const code = (j && typeof j.error === 'string') ? j.error : 'geocode_error';
+        const err = new Error(code);
+        err.detail = code;
+        throw err;
       }
+      return j;
     }
-    let saveOk = true;
-    if (changed) {
-      saveOk = await saveAll();
-    }
-    return {changed, saveOk, failed, attempted, failures};
+    try{ return await one(); } catch(_){ return await one(); }
   }
 
   // ======= AUTO SORT (kör + körön belül távolság)
@@ -3865,13 +3838,17 @@
         }
         applyLoadedData(data);
         history.length = 0;
-        const geo = await autoGeocodeImported(importedIds);
+        const geoReportRaw = data.geocode_report || {};
+        const failedRaw = Number(geoReportRaw.failed);
+        const geo = {
+          attempted: Number(geoReportRaw.attempted ?? 0),
+          success: Number(geoReportRaw.success ?? 0),
+          failed: Number.isFinite(failedRaw) ? failedRaw : (Array.isArray(geoReportRaw.failures) ? geoReportRaw.failures.length : 0),
+          updated: Number(geoReportRaw.updated ?? 0),
+          failures: Array.isArray(geoReportRaw.failures) ? geoReportRaw.failures : []
+        };
         renderEverything();
-        if (!geo.changed) {
-          showSaveStatus(true);
-        } else if (!geo.saveOk) {
-          showSaveStatus(false);
-        }
+        showSaveStatus(true);
         ensureLoaderRemoved();
         let successMsg = text('messages.import_success', 'Import kész.');
         if (geo.failed > 0 && geo.attempted > 0) {

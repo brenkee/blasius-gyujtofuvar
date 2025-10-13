@@ -388,6 +388,8 @@ if ($action === 'save') {
   } else {
     http_response_code(400); echo json_encode(['ok'=>false]); exit;
   }
+  [$existingItems, $existingRoundMeta] = data_store_read($DATA_FILE);
+  [$items, $geoReport] = geocode_apply_to_items($items, $existingItems);
   try {
     $result = commit_dataset_update($items, $roundMeta, $actorId, $requestId, $batchId, 'save', ['scope' => 'full_save']);
   } catch (Throwable $e) {
@@ -396,7 +398,13 @@ if ($action === 'save') {
     exit;
   }
   backup_now($CFG, $DATA_FILE);
-  echo json_encode(['ok' => true, 'rev' => $result['rev'] ?? null]);
+  echo json_encode([
+    'ok' => true,
+    'rev' => $result['rev'] ?? null,
+    'items' => $items,
+    'round_meta' => $roundMeta,
+    'geocode_report' => $geoReport
+  ], JSON_UNESCAPED_UNICODE);
   exit;
 }
 
@@ -404,30 +412,23 @@ if ($action === 'geocode') {
   $jsonHeader();
   $q = trim($_GET['q'] ?? '');
   if ($q === '') { http_response_code(400); echo json_encode(['error'=>'empty']); exit; }
-  $qNorm = preg_replace('/^\s*([^,]+)\s*,\s*(.+?)\s*,\s*(\d{4})\s*$/u', '$3 $1, $2', $q);
-  if (!$qNorm) $qNorm = $q;
-
-  $params = http_build_query([
-    'q'=>$qNorm,'format'=>'jsonv2','limit'=>1,'addressdetails'=>1,
-    'countrycodes'=>$CFG['geocode']['countrycodes'] ?? 'hu',
-    'accept-language'=>$CFG['geocode']['language'] ?? 'hu'
-  ]);
-  $ctx = stream_context_create(['http'=>[
-    'method'=>'GET',
-    'header'=>[
-      'User-Agent: '.($CFG['geocode']['user_agent'] ?? 'fuvarszervezo-internal/1.5'),
-      'Accept: application/json'
-    ],
-    'timeout'=>10
-  ]]);
-  $resp = @file_get_contents("https://nominatim.openstreetmap.org/search?$params", false, $ctx);
-  if ($resp === false) { http_response_code(502); echo json_encode(['error'=>'fetch']); exit; }
-  $arr = json_decode($resp, true);
-  if (!is_array($arr) || !count($arr)) { http_response_code(404); echo json_encode(['error'=>'noresult']); exit; }
-  $best = $arr[0];
-  $addr = isset($best['address']) && is_array($best['address']) ? $best['address'] : [];
-  $city = $addr['city'] ?? $addr['town'] ?? $addr['village'] ?? $addr['municipality'] ?? $addr['county'] ?? '';
-  echo json_encode(['lat'=>(float)$best['lat'], 'lon'=>(float)$best['lon'], 'city'=>$city, 'normalized'=>$qNorm], JSON_UNESCAPED_UNICODE);
+  $city = trim($_GET['city'] ?? '');
+  $result = geocode_lookup($q, ['city' => $city]);
+  if (($result['status'] ?? '') === 'success') {
+    echo json_encode([
+      'lat' => (float)$result['lat'],
+      'lon' => (float)$result['lon'],
+      'city' => $result['city'] ?? '',
+      'normalized' => $result['normalized'] ?? geocode_normalize_key($q),
+      'accuracy' => $result['accuracy'] ?? null,
+      'source' => $result['source'] ?? 'nominatim'
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+  $reason = $result['reason'] ?? 'geocode_failed';
+  $code = $reason === 'empty_address' ? 400 : (($reason === 'no_result' || $reason === 'cached_failure') ? 404 : 502);
+  http_response_code($code);
+  echo json_encode(['error' => $reason], JSON_UNESCAPED_UNICODE);
   exit;
 }
 
@@ -784,6 +785,7 @@ if ($action === 'import_csv') {
   $roundMeta = normalize_round_meta($baseRoundMeta);
 
   $finalItems = $importMode === 'append' ? array_merge($existingItems, $items) : $items;
+  [$finalItems, $geoReport] = geocode_apply_to_items($finalItems, $existingItems);
 
   try {
     $result = commit_dataset_update($finalItems, $roundMeta, $actorId, $requestId, $batchId ?: ('batch_'.$requestId), 'import', [
@@ -808,7 +810,8 @@ if ($action === 'import_csv') {
     'round_meta' => $roundMeta,
     'imported_ids' => $importedIds,
     'mode' => $importMode,
-    'rev' => $result['rev'] ?? null
+    'rev' => $result['rev'] ?? null,
+    'geocode_report' => $geoReport
   ], JSON_UNESCAPED_UNICODE);
   exit;
 }
