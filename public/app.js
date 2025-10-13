@@ -1894,11 +1894,69 @@
     }
   }
 
+  function normalizeGeocodeQuery(raw){
+    if (raw == null) return '';
+    const text = String(raw).trim().replace(/\s{2,}/g, ' ');
+    if (!text) return '';
+    return text.replace(/^\s*([^,]+)\s*,\s*(.+?)\s*,\s*(\d{4})\s*$/u, '$3 $1, $2');
+  }
+
+  function stripStreetType(raw){
+    if (raw == null) return '';
+    const text = String(raw).trim();
+    if (!text) return '';
+    const commaIdx = text.indexOf(',');
+    const street = commaIdx === -1 ? text : text.slice(0, commaIdx);
+    const rest = commaIdx === -1 ? '' : text.slice(commaIdx);
+    const simplifiedStreet = street.replace(/\b(?:út|utca|tér|köz)\b\.?/giu, '').replace(/\s{2,}/g, ' ').trim();
+    if (simplifiedStreet === street.trim()) {
+      return text;
+    }
+    const rebuilt = simplifiedStreet ? `${simplifiedStreet}${rest}` : rest.replace(/^,\s*/, '');
+    return rebuilt.replace(/\s{2,}/g, ' ').replace(/\s+,/g, ',').trim();
+  }
+
   async function geocodeRobust(q){
-    const qNorm = q.replace(/^\s*([^,]+)\s*,\s*(.+?)\s*,\s*(\d{4})\s*$/u, '$3 $1, $2');
-    const url = EP.geocode + '&' + new URLSearchParams({q:qNorm});
-    async function one(){ const r = await fetch(url,{cache:'no-store'}); const t=await r.text(); let j; try{ j=JSON.parse(t);}catch(e){throw new Error('geocode_error');} if(!r.ok||j.error) throw new Error('geocode_error'); return j; }
-    try{ return await one(); } catch(_){ return await one(); }
+    const queries = [];
+    const primary = normalizeGeocodeQuery(q);
+    if (primary) queries.push(primary);
+    const stripped = stripStreetType(q);
+    if (stripped) {
+      const normalizedStripped = normalizeGeocodeQuery(stripped);
+      if (normalizedStripped && !queries.includes(normalizedStripped)) {
+        queries.push(normalizedStripped);
+      }
+    }
+    if (!queries.length) {
+      throw new Error('geocode_error');
+    }
+    let lastError = null;
+    for (const query of queries) {
+      const url = EP.geocode + '&' + new URLSearchParams({q: query});
+      async function attempt(){
+        const r = await fetch(url, {cache: 'no-store'});
+        const t = await r.text();
+        let j;
+        try {
+          j = JSON.parse(t);
+        } catch (e) {
+          throw new Error('geocode_error');
+        }
+        if (!r.ok || j.error) throw new Error('geocode_error');
+        return j;
+      }
+      try {
+        return await attempt();
+      } catch (err) {
+        try {
+          return await attempt();
+        } catch (errAgain) {
+          lastError = errAgain;
+        }
+      }
+    }
+    if (lastError) throw lastError;
+    throw new Error('geocode_error');
   }
 
   async function autoGeocodeImported(targetIds){
