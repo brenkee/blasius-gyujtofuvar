@@ -179,6 +179,12 @@ $LOGOUT_TOKEN = csrf_get_token();
                 <?php if ($menuSectionRendered): ?>
                   <hr class="toolbar-menu-separator" role="presentation" />
                 <?php endif; ?>
+                <a
+                  class="toolbar-menu-link"
+                  href="<?= htmlspecialchars(app_url_path('public/settings.html'), ENT_QUOTES) ?>"
+                  target="_blank"
+                  rel="noopener"
+                >Beállítások</a>
                 <a class="toolbar-menu-link" href="<?= htmlspecialchars(app_url_path('admin.php'), ENT_QUOTES) ?>">Admin</a>
                 <?php $menuSectionRendered = true; ?>
               <?php endif; ?>
