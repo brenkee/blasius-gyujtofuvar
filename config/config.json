@@ -25,13 +25,13 @@
     },
     "features": {
         "toolbar": {
-            "expand_all": true,
-            "collapse_all": true,
+            "expand_all": false,
+            "collapse_all": false,
             "import_all": true,
             "export_all": true,
             "print_all": true,
             "download_archive": true,
-            "theme_toggle": true,
+            "theme_toggle": false,
             "undo": true
         },
         "quick_search": true,
@@ -507,10 +507,10 @@
             "placeholder": ""
         },
         "meta_display": {
-            "separator": " · ",
+            "separator": " | ",
             "missing_warning": {
                 "enabled": true,
-                "text": "!",
+                "text": "0 kg | 0 m³",
                 "title": "Hiányzó súly és térfogat",
                 "class": "warn"
             }

@@ -45,7 +45,7 @@ body.import-busy .app{filter:blur(4px);pointer-events:none;user-select:none}
 h1{font-size:18px;margin:0 0 6px}
 .user-info-bar{display:none;}
 .user-info-name{font-weight:600;color:var(--text)}
-.toolbar{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+.toolbar{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;justify-content: flex-end;}
 .toolbar-menu-container{position:relative}
 .toolbar-menu-toggle{display:inline-flex;align-items:center;justify-content:center;padding:8px;gap:0}
 .toolbar-menu-toggle:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
