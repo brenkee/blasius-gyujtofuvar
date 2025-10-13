@@ -107,6 +107,13 @@
       this.pollingPromise = null;
       this.visibilityListener = this.handleVisibilityChange.bind(this);
       this.revisionTimer = null;
+      const pauseHiddenRaw = opts?.pauseWhenHidden;
+      this.pauseWhenHidden = pauseHiddenRaw !== false;
+      const retryDelayRaw = Number(opts?.errorRetryDelayMs);
+      this.errorRetryDelayMs = Number.isFinite(retryDelayRaw) && retryDelayRaw >= 0 ? retryDelayRaw : 1200;
+      const revisionIntervalRaw = Number(opts?.revisionIntervalMs);
+      this.revisionIntervalMs = Number.isFinite(revisionIntervalRaw) && revisionIntervalRaw >= 0 ? revisionIntervalRaw : 12000;
+      this.revisionChecksEnabled = opts?.revisionChecksEnabled !== false;
     }
 
     setBaseline(rev){
@@ -126,15 +133,23 @@
     start(){
       if (this.active) return;
       this.active = true;
-      document.addEventListener('visibilitychange', this.visibilityListener);
+      if (this.pauseWhenHidden) {
+        document.addEventListener('visibilitychange', this.visibilityListener);
+      }
       this.loop();
-      this.revisionTimer = setInterval(()=> this.checkRevision(), 12000);
+      if (this.revisionChecksEnabled && this.revisionIntervalMs > 0) {
+        this.revisionTimer = setInterval(()=> this.checkRevision(), this.revisionIntervalMs);
+      } else {
+        this.revisionTimer = null;
+      }
     }
 
     stop(){
       if (!this.active) return;
       this.active = false;
-      document.removeEventListener('visibilitychange', this.visibilityListener);
+      if (this.pauseWhenHidden) {
+        document.removeEventListener('visibilitychange', this.visibilityListener);
+      }
       if (this.revisionTimer) clearInterval(this.revisionTimer);
       this.revisionTimer = null;
     }
@@ -147,6 +162,7 @@
     }
 
     isVisible(){
+      if (!this.pauseWhenHidden) return true;
       return document.visibilityState !== 'hidden';
     }
 
@@ -163,7 +179,8 @@
             await this.poll();
           } catch (err) {
             console.warn('változásfigyelés hiba', err);
-            await this.delay(1200);
+            const retryDelay = Math.max(0, this.errorRetryDelayMs || 0);
+            await this.delay(retryDelay);
           }
         }
         this.pollingPromise = null;
@@ -218,6 +235,7 @@
     }
 
     waitUntilVisible(){
+      if (!this.pauseWhenHidden) return Promise.resolve();
       if (this.isVisible()) return Promise.resolve();
       return new Promise(resolve => {
         const handler = ()=>{
@@ -281,20 +299,31 @@
 
   function initChangeWatcher(){
     if (!state.clientId) return;
+    const watcherCfg = cfg('change_watcher', {}) || {};
+    const enabled = watcherCfg && watcherCfg.enabled !== false;
+    if (!enabled) {
+      if (state.changeWatcher) {
+        state.changeWatcher.stop();
+        state.changeWatcher = null;
+      }
+      return;
+    }
     const opts = {
       clientId: state.clientId,
       changesUrl: EP.changes,
       revisionUrl: EP.revision,
       baselineRev: state.baselineRevision,
-      onForeignChange: handleForeignChange
+      onForeignChange: handleForeignChange,
+      pauseWhenHidden: watcherCfg.pause_when_hidden !== false,
+      errorRetryDelayMs: cfgNumber('change_watcher.error_retry_delay_ms', 1200),
+      revisionChecksEnabled: cfg('change_watcher.revision.enabled', true) !== false,
+      revisionIntervalMs: cfgNumber('change_watcher.revision.interval_ms', 12000)
     };
-    if (!state.changeWatcher) {
-      state.changeWatcher = new ChangeWatcher(opts);
-      state.changeWatcher.start();
-    } else {
-      state.changeWatcher.clientId = state.clientId;
-      state.changeWatcher.setBaseline(state.baselineRevision);
+    if (state.changeWatcher) {
+      state.changeWatcher.stop();
     }
+    state.changeWatcher = new ChangeWatcher(opts);
+    state.changeWatcher.start();
   }
 
   function closeConflictOverlay(){
