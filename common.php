@@ -53,7 +53,7 @@ if (!defined('APP_CSRF_COOKIE')) {
   define('APP_CSRF_COOKIE', 'GF-CSRF');
 }
 
-$CONFIG_FILE = __DIR__ . '/config.json';
+$CONFIG_FILE = __DIR__ . '/config/config.json';
 $CFG_DEFAULT = [
   "base_url" => "/",
   "app" => [
@@ -106,14 +106,14 @@ $CFG_DEFAULT = [
     "round_planned_date" => true,
     "round_planned_time" => true
   ],
-    "files" => [
+  "files" => [
     "data_file" => "data/app.db",
-    "export_file" => "fuvar_export.csv",
+    "export_file" => "backups/fuvar_export.csv",
     "export_download_name" => "fuvar_export.csv",
-    "archive_file" => "fuvar_archive.log",
-    "revision_file" => "fuvar_revision.json",
-    "change_log_file" => "fuvar_changes.log",
-    "lock_file" => "fuvar_state.lock"
+    "archive_file" => "temp/fuvar_archive.log",
+    "revision_file" => "temp/fuvar_revision.json",
+    "change_log_file" => "temp/fuvar_changes.log",
+    "lock_file" => "temp/fuvar_state.lock"
   ],
   "map" => [
     "tiles" => [
@@ -544,12 +544,12 @@ foreach ($CFG['rounds'] as $r) {
 sort($ROUND_IDS);
 
 $DATA_FILE       = __DIR__ . '/' . ($CFG['files']['data_file'] ?? 'data/app.db');
-$EXPORT_FILE     = __DIR__ . '/' . ($CFG['files']['export_file'] ?? 'fuvar_export.txt');
+$EXPORT_FILE     = __DIR__ . '/' . ($CFG['files']['export_file'] ?? 'backups/fuvar_export.txt');
 $EXPORT_NAME     = (string)($CFG['files']['export_download_name'] ?? 'fuvar_export.txt');
-$ARCHIVE_FILE    = __DIR__ . '/' . ($CFG['files']['archive_file'] ?? 'fuvar_archive.log');
-$REVISION_FILE   = __DIR__ . '/' . ($CFG['files']['revision_file'] ?? 'fuvar_revision.json');
-$CHANGE_LOG_FILE = __DIR__ . '/' . ($CFG['files']['change_log_file'] ?? 'fuvar_changes.log');
-$STATE_LOCK_FILE = __DIR__ . '/' . ($CFG['files']['lock_file'] ?? 'fuvar_state.lock');
+$ARCHIVE_FILE    = __DIR__ . '/' . ($CFG['files']['archive_file'] ?? 'temp/fuvar_archive.log');
+$REVISION_FILE   = __DIR__ . '/' . ($CFG['files']['revision_file'] ?? 'temp/fuvar_revision.json');
+$CHANGE_LOG_FILE = __DIR__ . '/' . ($CFG['files']['change_log_file'] ?? 'temp/fuvar_changes.log');
+$STATE_LOCK_FILE = __DIR__ . '/' . ($CFG['files']['lock_file'] ?? 'temp/fuvar_state.lock');
 
 $DATA_BOOTSTRAP_INFO = [];
 $DATA_INIT_ERROR = null;
