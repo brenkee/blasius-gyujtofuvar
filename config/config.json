@@ -53,9 +53,9 @@
     },
     "files": {
         "data_file": "data/app.db",
-        "export_file": "fuvar_export.csv",
+        "export_file": "backups/fuvar_export.csv",
         "export_download_name": "fuvar_export.csv",
-        "archive_file": "fuvar_archive.log"
+        "archive_file": "temp/fuvar_archive.log"
     },
     "backup": {
         "enabled": true,

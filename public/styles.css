@@ -122,7 +122,7 @@ h1{font-size:18px;margin:0 0 6px}
 .title-label{font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .title-label.placeholder{color:var(--muted);font-style:italic;font-weight:600}
 .title-city{color:var(--muted);font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.deadline-indicator{width:0;height:0;background-color:var(--deadline-color,currentColor);-webkit-mask:url('../hatarido.svg') center/contain no-repeat;mask:url('../hatarido.svg') center/contain no-repeat;display:inline-flex;flex-shrink:0;opacity:0;transition:opacity .2s ease}
+.deadline-indicator{width:0;height:0;background-color:var(--deadline-color,currentColor);-webkit-mask:url('../pic/hatarido.svg') center/contain no-repeat;mask:url('../pic/hatarido.svg') center/contain no-repeat;display:inline-flex;flex-shrink:0;opacity:0;transition:opacity .2s ease}
 .deadline-indicator[data-visible="true"]{width:var(--deadline-icon-size,16px);height:var(--deadline-icon-size,16px);opacity:1}
 .tools{display:flex;gap:6px;align-items:center;   order: 3;}
 .iconbtn{border:1px solid var(--border);background:var(--panel);color:var(--text);border-radius:8px;padding:4px 8px;cursor:pointer;line-height:1}

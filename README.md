@@ -11,15 +11,15 @@ Ez a projekt egy fájlalapú gyűjtőfuvar-tervező eszköz, amely mostantól gl
    ```
 3. Nyisd meg a böngészőben a `http://localhost:8000/index.php` címet.
 
-> **Megjegyzés:** Az alkalmazás minden útvonala a `config.json` `base_url` kulcsát használja. Alapértelmezés szerint ez `/github/blasius/blasius-gyujtofuvar/`, lokális futtatáshoz állítsd `"/"` értékre.
+> **Megjegyzés:** Az alkalmazás minden útvonala a `config/config.json` `base_url` kulcsát használja. Alapértelmezés szerint ez `/github/blasius/blasius-gyujtofuvar/`, lokális futtatáshoz állítsd `"/"` értékre.
 
-A háttér a `data/app.db` SQLite-adatbázisban tárolja az adatokat. Az adatbázist a `scripts/init-db.php` script hozza létre és frissíti, amelyet az alkalmazás induláskor automatikusan meghív, ha a fájl hiányzik. A revíziókezeléshez további fájlok jönnek létre:
+A háttér a `data/app.db` SQLite-adatbázisban tárolja az adatokat. Az adatbázist a `scripts/init-db.php` script hozza létre és frissíti, amelyet az alkalmazás induláskor automatikusan meghív, ha a fájl hiányzik. A revíziókezeléshez további fájlok jönnek létre a `temp/` könyvtárban:
 
-- `fuvar_revision.json` – az aktuális globális revíziószám.
-- `fuvar_changes.log` – JSONL formátumú változásnapló.
-- `fuvar_state.lock` – fájlzár a tranzakciók atomikusságához.
+- `temp/fuvar_revision.json` – az aktuális globális revíziószám.
+- `temp/fuvar_changes.log` – JSONL formátumú változásnapló.
+- `temp/fuvar_state.lock` – fájlzár a tranzakciók atomikusságához.
 
-Ezek a fájlok a `config.json`-ban a `files` szekcióban átnevezhetők.
+Ezek a fájlok a `config/config.json`-ban a `files` szekcióban átnevezhetők.
 
 ## API végpontok
 
@@ -49,10 +49,10 @@ Ezek a fájlok a `config.json`-ban a `files` szekcióban átnevezhetők.
 
 A sikeres írások során a szerver:
 
-1. Zárolja a teljes adatállományt (`fuvar_state.lock`).
+1. Zárolja a teljes adatállományt (`temp/fuvar_state.lock`).
 2. Elmenti az új adatokat (`fuvar_data.sqlite`).
-3. Növeli a globális revíziót (`fuvar_revision.json`).
-4. Naplózza az esemény(eke)t a `fuvar_changes.log` fájlba.
+3. Növeli a globális revíziót (`temp/fuvar_revision.json`).
+4. Naplózza az esemény(eke)t a `temp/fuvar_changes.log` fájlba.
 
 A naplóbejegyzések tartalma: `rev`, `entity`, `entity_id`, `action`, `ts`, `actor_id`, `request_id`, opcionálisan `batch_id` és `meta` (módosított mezők, akció típusa, stb.).
 
@@ -75,7 +75,7 @@ A kliensek a `since` paraméterrel kérhetik le a számukra releváns (más akto
 
 ## Mentés és visszaállítás
 
-Minden sikeres írás a beállítások szerint automatikus biztonsági mentést készít a `backups/` könyvtárba. A mentés a CSV exporttal azonos formátumban történik, legfeljebb meghatározott (alapértelmezetten 10 perces) időközönként. A régebbi mentések automatikus ritkítása biztosítja, hogy 12 óránál idősebb mentésből óránként legfeljebb egy, 24 óránál régebbiekből háromóránként legfeljebb egy, 3 napnál régebbiekből naponta legfeljebb egy, egy hétnél régebbiekből háromnaponta legfeljebb egy, egy hónapnál régebbiekből hetente legfeljebb egy maradjon meg. Minden paraméter – így az intervallum és a ritkítási szabályok is – a `config.json` `backup` szekciójában konfigurálható.
+Minden sikeres írás a beállítások szerint automatikus biztonsági mentést készít a `backups/` könyvtárba. A mentés a CSV exporttal azonos formátumban történik, legfeljebb meghatározott (alapértelmezetten 10 perces) időközönként. A régebbi mentések automatikus ritkítása biztosítja, hogy 12 óránál idősebb mentésből óránként legfeljebb egy, 24 óránál régebbiekből háromóránként legfeljebb egy, 3 napnál régebbiekből naponta legfeljebb egy, egy hétnél régebbiekből háromnaponta legfeljebb egy, egy hónapnál régebbiekből hetente legfeljebb egy maradjon meg. Minden paraméter – így az intervallum és a ritkítási szabályok is – a `config/config.json` `backup` szekciójában konfigurálható.
 
 ## Kör metaadatok és rendezés
 

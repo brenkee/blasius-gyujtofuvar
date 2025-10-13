@@ -13,7 +13,7 @@ $LOGOUT_TOKEN = csrf_get_token();
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title><?= htmlspecialchars($CFG['app']['title']) ?></title>
-<link rel="icon" type="image/png" href="<?= htmlspecialchars(base_url('favicon.png'), ENT_QUOTES) ?>" />
+<link rel="icon" type="image/png" href="<?= htmlspecialchars(base_url('pic/favicon.png'), ENT_QUOTES) ?>" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <link rel="stylesheet" href="<?= htmlspecialchars(base_url('public/styles.css'), ENT_QUOTES) ?>">
 <?php
