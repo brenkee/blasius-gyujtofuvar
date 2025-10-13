@@ -208,6 +208,7 @@ $LOGOUT_TOKEN = csrf_get_token();
     </div>
     <div id="newAddress" class="new-address-container"></div>
     <div id="groups" class="groups"></div>
+    <img id="devlogo" src="pic/devlogo.webp">
   </aside>
   <main id="map"></main>
 </div>
