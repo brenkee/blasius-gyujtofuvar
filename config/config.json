@@ -101,6 +101,28 @@
         "from_name": "BlasiusSoft",
         "timeout": 15
     },
+    "auth": {
+        "login": {
+            "page_title": "Bejelentkezés",
+            "title": "Bejelentkezés",
+            "subtitle": "Kérjük, jelentkezz be a Gyűjtőfuvar használatához.",
+            "username_label": "Felhasználónév",
+            "password_label": "Jelszó",
+            "login_button": "Belépés",
+            "forgot_link": "Elfelejtett jelszó?",
+            "forgot_title": "Új jelszó igénylése",
+            "forgot_subtitle": "Add meg a felhasználónevedet vagy email címedet.",
+            "forgot_identifier_label": "Felhasználónév vagy email cím",
+            "forgot_button": "Új jelszó kérése",
+            "reset_success": "Ha a megadott adatok helyesek, elküldtük az új jelszót az email címedre.",
+            "reset_error_missing_identifier": "Kérjük, add meg a felhasználónevedet vagy az email címedet.",
+            "reset_error_no_email": "A felhasználóhoz nem tartozik email cím, kérjük, vedd fel a kapcsolatot az adminisztrátorral.",
+            "reset_error_update": "Az új jelszó beállítása nem sikerült.",
+            "reset_error_mail": "Az email küldése nem sikerült. Kérjük, vedd fel a kapcsolatot az adminisztrátorral.",
+            "login_error_missing_fields": "Kérjük, töltsd ki a felhasználónevet és a jelszót is.",
+            "login_error_invalid_credentials": "Hibás felhasználónév vagy jelszó."
+        }
+    },
     "ui": {
         "panel_min_px": 330,
         "panel_pref_vw": 36,

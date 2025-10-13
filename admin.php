@@ -102,6 +102,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
         }
+    } elseif ($mode === 'delete') {
+        $userId = (int)($_POST['user_id'] ?? 0);
+        if ($userId <= 0) {
+            $errors[] = 'Érvénytelen felhasználó azonosító.';
+        } elseif ($userId === (int)$CURRENT_USER['id']) {
+            $errors[] = 'A saját felhasználói fiókodat nem törölheted.';
+        } else {
+            $existing = auth_find_user_by_id($userId);
+            if (!$existing) {
+                $errors[] = 'A felhasználó nem található.';
+            } else {
+                if ($existing['role'] === 'full-admin') {
+                    $adminCount = auth_count_users_with_role('full-admin');
+                    if ($adminCount <= 1) {
+                        $errors[] = 'Legalább egy teljes admin felhasználóra szükség van.';
+                    }
+                }
+                if (!$errors) {
+                    $deleteErr = null;
+                    $deleteOk = auth_delete_user($userId, $deleteErr);
+                    if ($deleteOk) {
+                        $success = 'Felhasználó törölve.';
+                    } else {
+                        $errors[] = 'A felhasználó törlése nem sikerült.';
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -131,6 +159,8 @@ $csrfToken = csrf_get_token();
     .user-actions .checkbox{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
     .btn-primary{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:10px 16px;font-weight:600;cursor:pointer}
     .btn-primary:hover{filter:brightness(.95)}
+    .btn-danger{background:#dc2626;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-weight:600;cursor:pointer}
+    .btn-danger:hover{filter:brightness(.9)}
     .notice{padding:12px 16px;border-radius:10px;font-size:14px}
     .notice-success{background:rgba(22,163,74,0.12);border:1px solid rgba(22,163,74,0.35);color:#14532d}
     .notice-error{background:rgba(220,38,38,0.12);border:1px solid rgba(220,38,38,0.35);color:#7f1d1d}
@@ -235,6 +265,14 @@ $csrfToken = csrf_get_token();
               <button class="btn-primary" type="submit">Mentés</button>
             </div>
           </form>
+          <?php if ((int)$user['id'] !== (int)$CURRENT_USER['id']): ?>
+            <form method="post" onsubmit="return confirm('Biztosan törlöd ezt a felhasználót?');">
+              <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES) ?>" />
+              <input type="hidden" name="mode" value="delete" />
+              <input type="hidden" name="user_id" value="<?= (int)$user['id'] ?>" />
+              <button class="btn-danger" type="submit">Felhasználó törlése</button>
+            </form>
+          <?php endif; ?>
         </article>
       <?php endforeach; ?>
     </section>
