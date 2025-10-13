@@ -14,6 +14,19 @@ $CFG_DEFAULT = [
     "undo_enabled" => true,
     "max_steps" => 3
   ],
+  "change_watcher" => [
+    "enabled" => true,
+    "pause_when_hidden" => true,
+    "error_retry_delay_ms" => 1200,
+    "revision" => [
+      "enabled" => true,
+      "interval_ms" => 12000,
+    ],
+    "long_poll" => [
+      "timeout_seconds" => 25,
+      "sleep_microseconds" => 300000,
+    ],
+  ],
   "features" => [
     "toolbar" => [
       "expand_all" => true,

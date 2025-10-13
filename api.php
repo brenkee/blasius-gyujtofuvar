@@ -3,6 +3,39 @@ require __DIR__ . '/common.php';
 
 header('X-Content-Type-Options: nosniff');
 
+$changeWatcherRaw = isset($CFG['change_watcher']) && is_array($CFG['change_watcher']) ? $CFG['change_watcher'] : [];
+$changeWatcherRevisionRaw = isset($changeWatcherRaw['revision']) && is_array($changeWatcherRaw['revision'])
+  ? $changeWatcherRaw['revision']
+  : [];
+$changeWatcherLongPollRaw = isset($changeWatcherRaw['long_poll']) && is_array($changeWatcherRaw['long_poll'])
+  ? $changeWatcherRaw['long_poll']
+  : [];
+$CHANGE_WATCHER_CFG = [
+  'enabled' => array_key_exists('enabled', $changeWatcherRaw) ? (bool)$changeWatcherRaw['enabled'] : true,
+  'pause_when_hidden' => array_key_exists('pause_when_hidden', $changeWatcherRaw)
+    ? (bool)$changeWatcherRaw['pause_when_hidden']
+    : true,
+  'error_retry_delay_ms' => isset($changeWatcherRaw['error_retry_delay_ms'])
+    ? max(0, (int)$changeWatcherRaw['error_retry_delay_ms'])
+    : 1200,
+  'revision' => [
+    'enabled' => array_key_exists('enabled', $changeWatcherRevisionRaw)
+      ? (bool)$changeWatcherRevisionRaw['enabled']
+      : true,
+    'interval_ms' => isset($changeWatcherRevisionRaw['interval_ms'])
+      ? max(0, (int)$changeWatcherRevisionRaw['interval_ms'])
+      : 12000,
+  ],
+  'long_poll' => [
+    'timeout_seconds' => isset($changeWatcherLongPollRaw['timeout_seconds'])
+      ? max(0, (float)$changeWatcherLongPollRaw['timeout_seconds'])
+      : 25.0,
+    'sleep_microseconds' => isset($changeWatcherLongPollRaw['sleep_microseconds'])
+      ? max(0, (int)$changeWatcherLongPollRaw['sleep_microseconds'])
+      : 300000,
+  ],
+];
+
 if (!empty($DATA_INIT_ERROR)) {
   header('Content-Type: application/json; charset=utf-8');
   http_response_code(503);
@@ -190,6 +223,7 @@ if ($action === 'cfg') {
       "undo_enabled" => !empty($CFG['history']['undo_enabled']),
       "max_steps" => (int)($CFG['history']['max_steps'] ?? 3)
     ],
+    "change_watcher" => $CHANGE_WATCHER_CFG,
     "features" => $CFG['features'] ?? [],
     "ui" => [
       "panel_min_px" => (int)$CFG['ui']['panel_min_px'],
@@ -242,6 +276,12 @@ if ($action === 'revision') {
 }
 
 if ($action === 'changes') {
+  if (empty($CHANGE_WATCHER_CFG['enabled'])) {
+    $jsonHeader();
+    http_response_code(503);
+    echo json_encode(['ok' => false, 'error' => 'change_watcher_disabled'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
   $since = isset($_GET['since']) ? (int)$_GET['since'] : 0;
   $excludeActor = normalized_actor_id($_GET['exclude_actor'] ?? '') ?? null;
   $excludeBatchRaw = $_GET['exclude_batch'] ?? '';
@@ -255,9 +295,20 @@ if ($action === 'changes') {
   }
   $excludeBatchList = array_values(array_unique($excludeBatchList));
 
-  $timeout = 25.0;
+  $timeout = isset($CHANGE_WATCHER_CFG['long_poll']['timeout_seconds'])
+    ? (float)$CHANGE_WATCHER_CFG['long_poll']['timeout_seconds']
+    : 25.0;
+  if ($timeout <= 0) {
+    http_response_code(204);
+    exit;
+  }
   $start = microtime(true);
-  $sleepMicro = 300000; // 0.3s
+  $sleepMicro = isset($CHANGE_WATCHER_CFG['long_poll']['sleep_microseconds'])
+    ? (int)$CHANGE_WATCHER_CFG['long_poll']['sleep_microseconds']
+    : 300000;
+  if ($sleepMicro < 0) {
+    $sleepMicro = 0;
+  }
 
   while (true) {
     $entries = read_change_log_entries();
