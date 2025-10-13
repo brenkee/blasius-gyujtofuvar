@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/../auth/password.php';
+
 
 /**
  * Initialise the SQLite database for the Gyűjtőfuvar application.
@@ -111,12 +113,43 @@ function init_app_database(array $options = []): array {
         }
     }
 
+    ensure_default_admin_user($pdo);
+
     return [
         'created' => $created,
         'migrations' => $executedMigrations,
         'seeded' => $seeded,
         'db_path' => $dbPath,
     ];
+}
+
+/**
+ * Create the default administrator account when the users table is empty.
+ */
+function ensure_default_admin_user(PDO $pdo): void
+{
+    try {
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name = :name");
+        $stmt->execute([':name' => 'users']);
+        if ((int)$stmt->fetchColumn() === 0) {
+            return;
+        }
+
+        $countStmt = $pdo->query('SELECT COUNT(*) FROM users');
+        if ($countStmt !== false && (int)$countStmt->fetchColumn() > 0) {
+            return;
+        }
+
+        $hash = auth_password_hash('admin');
+        $insert = $pdo->prepare('INSERT INTO users (username, email, password_hash) VALUES (:username, :email, :hash)');
+        $insert->bindValue(':username', 'admin', PDO::PARAM_STR);
+        $insert->bindValue(':email', 'admin@example.com', PDO::PARAM_STR);
+        $insert->bindValue(':hash', $hash, PDO::PARAM_STR);
+        $insert->execute();
+    } catch (Throwable $e) {
+        // A hibát naplózzuk, de nem akadályozzuk az adatbázis inicializálását.
+        error_log('Default admin létrehozása nem sikerült: ' . $e->getMessage());
+    }
 }
 
 /**

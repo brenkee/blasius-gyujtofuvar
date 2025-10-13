@@ -1,4 +1,5 @@
 <?php
+define('AUTH_RESPONSE_JSON', true);
 require __DIR__ . '/common.php';
 
 header('X-Content-Type-Options: nosniff');

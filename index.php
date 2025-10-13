@@ -1,4 +1,8 @@
-<?php require __DIR__ . '/common.php'; ?>
+<?php
+require __DIR__ . '/common.php';
+$currentUser = auth_current_user();
+$authFlashes = auth_consume_flashes();
+?>
 <!doctype html>
 <html lang="hu">
 <head>
@@ -46,6 +50,18 @@
 <script defer src="<?= htmlspecialchars(base_url('public/app.js'), ENT_QUOTES) ?>"></script>
 </head>
 <body>
+<?php if (!empty($authFlashes)): ?>
+  <div class="auth-flash-container">
+    <?php foreach ($authFlashes as $flash):
+      $type = isset($flash['type']) ? (string)$flash['type'] : 'info';
+      if (!in_array($type, ['success', 'error', 'info'], true)) { $type = 'info'; }
+      $message = isset($flash['message']) && is_string($flash['message']) ? trim($flash['message']) : '';
+      if ($message === '') { continue; }
+    ?>
+      <div class="auth-flash auth-flash--<?= htmlspecialchars($type, ENT_QUOTES) ?>"><?= htmlspecialchars($message) ?></div>
+    <?php endforeach; ?>
+  </div>
+<?php endif; ?>
 <?php if (!empty($DATA_INIT_ERROR)): ?>
 <div class="init-error-banner">
   <strong>Adatbázis inicializációs hiba</strong>
@@ -57,6 +73,15 @@
   <aside class="panel">
     <div id="panelTop" class="panel-top">
       <h1><?= htmlspecialchars($CFG['app']['title']) ?></h1>
+      <?php if ($currentUser): ?>
+      <div class="user-session" role="navigation" aria-label="Felhasználói műveletek">
+        <span class="user-session__name" title="Bejelentkezve mint">👤 <?= htmlspecialchars((string)$currentUser['username']) ?></span>
+        <span class="user-session__divider" aria-hidden="true">·</span>
+        <a class="user-session__link" href="<?= htmlspecialchars(base_url('password_change.php'), ENT_QUOTES) ?>">Jelszó módosítása</a>
+        <span class="user-session__divider" aria-hidden="true">·</span>
+        <a class="user-session__link" href="<?= htmlspecialchars(base_url('logout.php'), ENT_QUOTES) ?>">Kijelentkezés</a>
+      </div>
+      <?php endif; ?>
       <?php
         $toolbarFeatures = $CFG['features']['toolbar'] ?? [];
         $toolbarText = $CFG['text']['toolbar'] ?? [];

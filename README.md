@@ -21,6 +21,13 @@ A háttér a `data/app.db` SQLite-adatbázisban tárolja az adatokat. Az adatbá
 
 Ezek a fájlok a `config.json`-ban a `files` szekcióban átnevezhetők.
 
+## Hitelesítés
+
+- Minden végpont eléréséhez aktív, sütialapú munkamenet szükséges.
+- Az első indításkor – vagy üres felhasználói tábla esetén – automatikusan létrejön az `admin` felhasználó az `admin` jelszóval.
+- Az alapértelmezett admin felhasználó első bejelentkezés után kötelezően új jelszót állít be (minimum 12 karakter, betű és szám kombinációja).
+- A munkamenet HttpOnly sütiben tárolódik, a kijelentkezés a `logout.php` útvonalon érhető el.
+
 ## API végpontok
 
 | Végpont | Metódus | Leírás |

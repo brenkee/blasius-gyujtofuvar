@@ -69,6 +69,34 @@
     return headers;
   }
 
+  async function ensureAuthenticatedResponse(resp){
+    if (!resp || (resp.status !== 401 && resp.status !== 403)) {
+      return resp;
+    }
+    const headerName = resp.status === 401 ? 'X-Login-Url' : 'X-Redirect-Url';
+    let target = resp.headers?.get?.(headerName) || '';
+    if (!target) {
+      try {
+        const clone = resp.clone();
+        const data = await clone.json();
+        if (resp.status === 401 && data && typeof data.login_url === 'string') {
+          target = data.login_url;
+        } else if (resp.status === 403 && data && typeof data.change_url === 'string') {
+          target = data.change_url;
+        }
+      } catch (err) {
+        // swallow JSON parse errors – we'll fall back to default URL.
+      }
+    }
+    if (!target) {
+      const base = window.APP_BOOTSTRAP?.baseUrl || '/';
+      const normalized = base.endsWith('/') ? base : base + '/';
+      target = normalized + (resp.status === 401 ? 'login.php' : 'password_change.php');
+    }
+    window.location.href = target;
+    throw new Error(resp.status === 401 ? 'unauthorized' : 'password_change_required');
+  }
+
   function updateKnownRevision(rev){
     if (!Number.isFinite(rev)) return;
     const num = Number(rev);
@@ -176,6 +204,7 @@
       if (this.batchIds.size) params.set('exclude_batch', Array.from(this.batchIds).join(','));
       const url = this.buildUrl(this.changesUrl, params.toString());
       const resp = await fetch(url, {cache:'no-store', headers: buildHeaders()});
+      await ensureAuthenticatedResponse(resp);
       if (resp.status === 204) {
         return;
       }
@@ -200,6 +229,7 @@
       if (!this.active) return;
       try {
         const resp = await fetch(this.revisionUrl, {cache:'no-store', headers: buildHeaders()});
+        await ensureAuthenticatedResponse(resp);
         if (!resp.ok) return;
         const data = await resp.json();
         const rev = Number(data.rev);
@@ -1686,6 +1716,7 @@
     const options = opts ? {...opts} : {};
     options.headers = buildHeaders(options.headers || {});
     const r = await fetch(url, options);
+    await ensureAuthenticatedResponse(r);
     const text = await r.text();
     let j; try{ j = JSON.parse(text); } catch(e){ throw new Error('bad_json'); }
     j.__http_ok = r.ok; j.__status = r.status;
@@ -1738,6 +1769,7 @@
       const requestId = makeRequestId();
       headers.set('X-Request-ID', requestId);
       const r = await fetch(EP.save, {method:'POST', headers, body: payload});
+      await ensureAuthenticatedResponse(r);
       const t = await r.text();
       let j=null; try{ j = JSON.parse(t); }catch(_){}
       const ok = !!(r.ok && j && j.ok===true);
@@ -1758,7 +1790,14 @@
   async function geocodeRobust(q){
     const qNorm = q.replace(/^\s*([^,]+)\s*,\s*(.+?)\s*,\s*(\d{4})\s*$/u, '$3 $1, $2');
     const url = EP.geocode + '&' + new URLSearchParams({q:qNorm});
-    async function one(){ const r = await fetch(url,{cache:'no-store'}); const t=await r.text(); let j; try{ j=JSON.parse(t);}catch(e){throw new Error('geocode_error');} if(!r.ok||j.error) throw new Error('geocode_error'); return j; }
+    async function one(){
+      const r = await fetch(url,{cache:'no-store'});
+      await ensureAuthenticatedResponse(r);
+      const t=await r.text();
+      let j; try{ j=JSON.parse(t);}catch(e){throw new Error('geocode_error');}
+      if(!r.ok||j.error) throw new Error('geocode_error');
+      return j;
+    }
     try{ return await one(); } catch(_){ return await one(); }
   }
 
@@ -3053,6 +3092,7 @@
             headers,
             body: JSON.stringify({round:rid})
           });
+          await ensureAuthenticatedResponse(r);
           const t = await r.text();
           let ok=false, j=null;
           try { j = JSON.parse(t); ok = !!j.ok; }
@@ -3688,6 +3728,7 @@
           headers.set('X-Batch-ID', batchId);
           loaderCtrl = showImportProgressOverlay(text('messages.import_in_progress', 'Import folyamatban…'));
           resp = await fetch(EP.importCsv, {method:'POST', headers, body: form});
+          await ensureAuthenticatedResponse(resp);
         } finally {
           if (state.changeWatcher) state.changeWatcher.unregisterBatch(batchId);
         }
@@ -3858,6 +3899,7 @@
         const originName = cfg('routing.origin', 'Maglód');
         try{
           const r = await fetch(EP.geocode + '&' + new URLSearchParams({q:originName}), {cache:'force-cache'});
+          await ensureAuthenticatedResponse(r);
           if (r.ok){
             const j = await r.json();
             if (j && j.lat && j.lon){ state.ORIGIN = {lat:j.lat, lon:j.lon}; }

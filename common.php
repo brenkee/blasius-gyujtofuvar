@@ -1,6 +1,13 @@
 <?php
 // Közös betöltések: konfiguráció, körök, fájlok, segédfüggvények
 
+require_once __DIR__ . '/auth/password.php';
+
+$_AUTH_CURRENT_USER = null;
+$_AUTH_CURRENT_USER_LOADED = false;
+$_AUTH_USERS_TABLE_EXISTS = null;
+$_AUTH_DEFAULT_ADMIN_CHECKED = false;
+
 $CONFIG_FILE = __DIR__ . '/config.json';
 $CFG_DEFAULT = [
   "base_url" => "/",
@@ -1432,4 +1439,516 @@ function bootstrap_data_store_if_needed() {
   }
 }
 
+function app_db_connection(): ?PDO {
+  static $pdo = null;
+  static $initialized = false;
+
+  if ($initialized) {
+    return $pdo;
+  }
+
+  global $DATA_FILE;
+  $initialized = true;
+  $pdo = null;
+
+  if (!data_store_is_sqlite($DATA_FILE)) {
+    return null;
+  }
+
+  try {
+    [$conn] = data_store_sqlite_open($DATA_FILE);
+    if ($conn instanceof PDO) {
+      $pdo = $conn;
+    }
+  } catch (Throwable $e) {
+    error_log('Adatbázis kapcsolat hiba: ' . $e->getMessage());
+    $pdo = null;
+  }
+
+  return $pdo;
+}
+
+function auth_users_table_exists(PDO $pdo): bool {
+  global $_AUTH_USERS_TABLE_EXISTS;
+
+  if ($_AUTH_USERS_TABLE_EXISTS !== null) {
+    return (bool)$_AUTH_USERS_TABLE_EXISTS;
+  }
+
+  try {
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name = :name");
+    $stmt->execute([':name' => 'users']);
+    $_AUTH_USERS_TABLE_EXISTS = ((int)$stmt->fetchColumn() > 0);
+  } catch (Throwable $e) {
+    error_log('Felhasználói tábla ellenőrzésének hibája: ' . $e->getMessage());
+    $_AUTH_USERS_TABLE_EXISTS = false;
+  }
+
+  return (bool)$_AUTH_USERS_TABLE_EXISTS;
+}
+
+function auth_set_user_cache(?array $user, bool $loaded = true): void {
+  global $_AUTH_CURRENT_USER, $_AUTH_CURRENT_USER_LOADED;
+  $_AUTH_CURRENT_USER = $user;
+  $_AUTH_CURRENT_USER_LOADED = $loaded;
+}
+
+function auth_reset_user_cache(): void {
+  auth_set_user_cache(null, false);
+}
+
+function auth_session_name(): string {
+  return 'GYUJTOFUVARSESSID';
+}
+
+function auth_is_secure_request(): bool {
+  if (!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off') {
+    return true;
+  }
+  $forwarded = strtolower((string)($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? ''));
+  return $forwarded === 'https';
+}
+
+function auth_session_cookie_path(): string {
+  $base = base_url();
+  $path = parse_url($base, PHP_URL_PATH);
+  if (!is_string($path) || $path === '') {
+    return '/';
+  }
+  return $path;
+}
+
+function auth_start_session_if_needed(): void {
+  static $started = false;
+
+  if (PHP_SAPI === 'cli') {
+    return;
+  }
+
+  if ($started || session_status() === PHP_SESSION_ACTIVE) {
+    $started = true;
+    return;
+  }
+
+  $cookieParams = [
+    'lifetime' => 0,
+    'path' => auth_session_cookie_path(),
+    'secure' => auth_is_secure_request(),
+    'httponly' => true,
+    'samesite' => 'Lax',
+  ];
+
+  if (!headers_sent()) {
+    session_name(auth_session_name());
+    session_set_cookie_params($cookieParams);
+  }
+
+  session_start();
+  $started = true;
+}
+
+function auth_current_request_uri(): string {
+  if (PHP_SAPI === 'cli') {
+    return '';
+  }
+  $uri = $_SERVER['REQUEST_URI'] ?? '';
+  if (!is_string($uri)) {
+    return '';
+  }
+  return trim($uri);
+}
+
+function auth_sanitize_redirect_target($target): string {
+  if (!is_string($target)) {
+    return '';
+  }
+  $value = trim($target);
+  if ($value === '' || $value[0] !== '/') {
+    return '';
+  }
+  if (preg_match('~^//~', $value)) {
+    return '';
+  }
+  if (preg_match('~^[a-zA-Z][a-zA-Z0-9+.-]*://~', $value)) {
+    return '';
+  }
+  if (strlen($value) > 2048) {
+    $value = substr($value, 0, 2048);
+  }
+  return $value;
+}
+
+function auth_build_redirect_url(string $baseUrl, string $target): string {
+  if ($target === '') {
+    return $baseUrl;
+  }
+  $separator = strpos($baseUrl, '?') === false ? '?' : '&';
+  return $baseUrl . $separator . 'redirect=' . rawurlencode($target);
+}
+
+function auth_handle_unauthorized(array $options = []): void {
+  $responseType = $options['response_type'] ?? 'redirect';
+  $current = auth_sanitize_redirect_target(auth_current_request_uri());
+  $loginUrl = base_url('login.php');
+  if ($current !== '') {
+    $loginUrl = auth_build_redirect_url($loginUrl, $current);
+  }
+
+  if ($responseType === 'json') {
+    header('Content-Type: application/json; charset=utf-8');
+    header('X-Login-Url: ' . $loginUrl);
+    http_response_code(401);
+    echo json_encode([
+      'ok' => false,
+      'error' => 'unauthorized',
+      'login_url' => $loginUrl,
+    ], JSON_UNESCAPED_UNICODE);
+  } else {
+    header('Location: ' . $loginUrl, true, 302);
+  }
+  exit;
+}
+
+function auth_redirect_to_password_change(?string $target = null, array $options = []): void {
+  $responseType = $options['response_type'] ?? 'redirect';
+  $redirectTarget = $target !== null ? auth_sanitize_redirect_target($target) : auth_sanitize_redirect_target(auth_current_request_uri());
+  $changeUrl = base_url('password_change.php');
+  if ($redirectTarget !== '') {
+    $changeUrl = auth_build_redirect_url($changeUrl, $redirectTarget);
+  }
+
+  if ($responseType === 'json') {
+    header('Content-Type: application/json; charset=utf-8');
+    header('X-Redirect-Url: ' . $changeUrl);
+    http_response_code(403);
+    echo json_encode([
+      'ok' => false,
+      'error' => 'password_change_required',
+      'change_url' => $changeUrl,
+    ], JSON_UNESCAPED_UNICODE);
+  } else {
+    header('Location: ' . $changeUrl, true, 302);
+  }
+  exit;
+}
+
+function auth_forget_session_user(): void {
+  if (PHP_SAPI === 'cli') {
+    return;
+  }
+  auth_start_session_if_needed();
+  if (isset($_SESSION['auth']) && is_array($_SESSION['auth'])) {
+    unset($_SESSION['auth']['user_id'], $_SESSION['auth']['username']);
+  }
+  auth_set_user_cache(null);
+}
+
+function auth_current_user(): ?array {
+  global $_AUTH_CURRENT_USER_LOADED, $_AUTH_CURRENT_USER;
+
+  if ($_AUTH_CURRENT_USER_LOADED) {
+    return $_AUTH_CURRENT_USER;
+  }
+
+  $_AUTH_CURRENT_USER_LOADED = true;
+  $_AUTH_CURRENT_USER = null;
+
+  if (PHP_SAPI === 'cli') {
+    return null;
+  }
+
+  auth_start_session_if_needed();
+
+  $userIdRaw = $_SESSION['auth']['user_id'] ?? null;
+  if (!is_int($userIdRaw)) {
+    if (!is_string($userIdRaw) || !ctype_digit($userIdRaw)) {
+      return null;
+    }
+    $userIdRaw = (int)$userIdRaw;
+  }
+
+  $userId = (int)$userIdRaw;
+  if ($userId <= 0) {
+    return null;
+  }
+
+  $pdo = app_db_connection();
+  if (!$pdo instanceof PDO || !auth_users_table_exists($pdo)) {
+    return null;
+  }
+
+  try {
+    $stmt = $pdo->prepare('SELECT id, username, email, password_hash, created_at, updated_at FROM users WHERE id = :id LIMIT 1');
+    $stmt->bindValue(':id', $userId, PDO::PARAM_INT);
+    $stmt->execute();
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    if ($row === false) {
+      auth_forget_session_user();
+      return null;
+    }
+    if (isset($row['id'])) {
+      $row['id'] = (int)$row['id'];
+    }
+    auth_set_user_cache($row);
+    return $row;
+  } catch (Throwable $e) {
+    error_log('Felhasználó beolvasási hiba: ' . $e->getMessage());
+    return null;
+  }
+}
+
+function auth_fetch_user_by_username(string $username): ?array {
+  $pdo = app_db_connection();
+  if (!$pdo instanceof PDO || !auth_users_table_exists($pdo)) {
+    return null;
+  }
+
+  try {
+    $stmt = $pdo->prepare('SELECT id, username, email, password_hash, created_at, updated_at FROM users WHERE username = :username LIMIT 1');
+    $stmt->bindValue(':username', $username, PDO::PARAM_STR);
+    $stmt->execute();
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    if ($row !== false && isset($row['id'])) {
+      $row['id'] = (int)$row['id'];
+    }
+    return $row !== false ? $row : null;
+  } catch (Throwable $e) {
+    error_log('Felhasználó lekérdezési hiba: ' . $e->getMessage());
+    return null;
+  }
+}
+
+function auth_fetch_user_by_id(int $userId): ?array {
+  $pdo = app_db_connection();
+  if (!$pdo instanceof PDO || !auth_users_table_exists($pdo)) {
+    return null;
+  }
+
+  try {
+    $stmt = $pdo->prepare('SELECT id, username, email, password_hash, created_at, updated_at FROM users WHERE id = :id LIMIT 1');
+    $stmt->bindValue(':id', $userId, PDO::PARAM_INT);
+    $stmt->execute();
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    if ($row !== false && isset($row['id'])) {
+      $row['id'] = (int)$row['id'];
+    }
+    return $row !== false ? $row : null;
+  } catch (Throwable $e) {
+    error_log('Felhasználó beolvasási hiba: ' . $e->getMessage());
+    return null;
+  }
+}
+
+function auth_is_logged_in(): bool {
+  return auth_current_user() !== null;
+}
+
+function auth_user_requires_password_change(array $user): bool {
+  $username = isset($user['username']) ? (string)$user['username'] : '';
+  $hash = isset($user['password_hash']) ? (string)$user['password_hash'] : '';
+  if ($username === '') {
+    return false;
+  }
+  if ($username === 'admin' && $hash !== '' && auth_password_verify('admin', $hash)) {
+    return true;
+  }
+  return false;
+}
+
+function auth_login_user(array $user): void {
+  if (PHP_SAPI === 'cli') {
+    return;
+  }
+  auth_start_session_if_needed();
+  session_regenerate_id(true);
+  $_SESSION['auth'] = [
+    'user_id' => (int)($user['id'] ?? 0),
+    'username' => (string)($user['username'] ?? ''),
+    'last_active' => time(),
+  ];
+  auth_set_user_cache($user);
+}
+
+function auth_logout(): void {
+  if (PHP_SAPI === 'cli') {
+    return;
+  }
+  auth_start_session_if_needed();
+  $_SESSION = [];
+  if (ini_get('session.use_cookies')) {
+    $params = session_get_cookie_params();
+    setcookie(
+      session_name(),
+      '',
+      time() - 42000,
+      [
+        'path' => $params['path'] ?? '/',
+        'domain' => $params['domain'] ?? '',
+        'secure' => !empty($params['secure']),
+        'httponly' => true,
+        'samesite' => $params['samesite'] ?? 'Lax',
+      ]
+    );
+  }
+  session_destroy();
+  auth_set_user_cache(null);
+}
+
+function auth_update_user_password(int $userId, string $newPassword): bool {
+  $pdo = app_db_connection();
+  if (!$pdo instanceof PDO || !auth_users_table_exists($pdo)) {
+    return false;
+  }
+
+  try {
+    $hash = auth_password_hash($newPassword);
+    $stmt = $pdo->prepare('UPDATE users SET password_hash = :hash, updated_at = :updated WHERE id = :id');
+    $stmt->bindValue(':hash', $hash, PDO::PARAM_STR);
+    $stmt->bindValue(':updated', gmdate('c'), PDO::PARAM_STR);
+    $stmt->bindValue(':id', $userId, PDO::PARAM_INT);
+    return $stmt->execute();
+  } catch (Throwable $e) {
+    error_log('Jelszó frissítési hiba: ' . $e->getMessage());
+    return false;
+  }
+}
+
+function auth_refresh_session_user(?array $user = null): void {
+  if ($user === null) {
+    $user = auth_current_user();
+  }
+
+  if ($user === null) {
+    auth_forget_session_user();
+    return;
+  }
+
+  auth_start_session_if_needed();
+  if (!isset($_SESSION['auth']) || !is_array($_SESSION['auth'])) {
+    $_SESSION['auth'] = [];
+  }
+  $_SESSION['auth']['user_id'] = (int)($user['id'] ?? 0);
+  $_SESSION['auth']['username'] = (string)($user['username'] ?? '');
+  $_SESSION['auth']['last_active'] = time();
+  auth_set_user_cache($user);
+}
+
+function auth_rehash_password_if_needed(array &$user, string $password): void {
+  if (!isset($user['password_hash']) || !is_string($user['password_hash'])) {
+    return;
+  }
+  if (!auth_password_needs_rehash($user['password_hash'])) {
+    return;
+  }
+  $pdo = app_db_connection();
+  if (!$pdo instanceof PDO || !auth_users_table_exists($pdo)) {
+    return;
+  }
+  try {
+    $newHash = auth_password_hash($password);
+    $stmt = $pdo->prepare('UPDATE users SET password_hash = :hash, updated_at = :updated WHERE id = :id');
+    $stmt->bindValue(':hash', $newHash, PDO::PARAM_STR);
+    $stmt->bindValue(':updated', gmdate('c'), PDO::PARAM_STR);
+    $stmt->bindValue(':id', (int)($user['id'] ?? 0), PDO::PARAM_INT);
+    if ($stmt->execute()) {
+      $user['password_hash'] = $newHash;
+    }
+  } catch (Throwable $e) {
+    error_log('Jelszó újrahasholási hiba: ' . $e->getMessage());
+  }
+}
+
+function auth_add_flash(string $type, string $message): void {
+  if (PHP_SAPI === 'cli') {
+    return;
+  }
+  auth_start_session_if_needed();
+  if (!isset($_SESSION['auth_flash']) || !is_array($_SESSION['auth_flash'])) {
+    $_SESSION['auth_flash'] = [];
+  }
+  $_SESSION['auth_flash'][] = [
+    'type' => $type,
+    'message' => $message,
+  ];
+}
+
+function auth_consume_flashes(): array {
+  if (PHP_SAPI === 'cli') {
+    return [];
+  }
+  auth_start_session_if_needed();
+  $messages = $_SESSION['auth_flash'] ?? [];
+  unset($_SESSION['auth_flash']);
+  if (!is_array($messages)) {
+    return [];
+  }
+  return array_values(array_filter($messages, function ($entry) {
+    return is_array($entry) && isset($entry['message']);
+  }));
+}
+
+function auth_require_login(array $options = []): void {
+  if (PHP_SAPI === 'cli') {
+    return;
+  }
+
+  $allowPasswordChange = !empty($options['allow_password_change']);
+  $responseType = $options['response_type'] ?? 'redirect';
+
+  $user = auth_current_user();
+  if ($user === null) {
+    auth_handle_unauthorized(['response_type' => $responseType]);
+    return;
+  }
+
+  if (auth_user_requires_password_change($user) && !$allowPasswordChange) {
+    auth_redirect_to_password_change(null, ['response_type' => $responseType]);
+    return;
+  }
+
+  auth_refresh_session_user($user);
+}
+
+function auth_ensure_default_admin_user(): void {
+  global $_AUTH_DEFAULT_ADMIN_CHECKED;
+  if ($_AUTH_DEFAULT_ADMIN_CHECKED) {
+    return;
+  }
+  $_AUTH_DEFAULT_ADMIN_CHECKED = true;
+
+  $pdo = app_db_connection();
+  if (!$pdo instanceof PDO || !auth_users_table_exists($pdo)) {
+    return;
+  }
+
+  try {
+    $countStmt = $pdo->query('SELECT COUNT(*) FROM users');
+    if ($countStmt !== false && (int)$countStmt->fetchColumn() > 0) {
+      return;
+    }
+
+    $stmt = $pdo->prepare('INSERT INTO users (username, email, password_hash) VALUES (:username, :email, :hash)');
+    $stmt->bindValue(':username', 'admin', PDO::PARAM_STR);
+    $stmt->bindValue(':email', 'admin@example.com', PDO::PARAM_STR);
+    $stmt->bindValue(':hash', auth_password_hash('admin'), PDO::PARAM_STR);
+    $stmt->execute();
+  } catch (Throwable $e) {
+    error_log('Alap admin létrehozása sikertelen: ' . $e->getMessage());
+  }
+}
+
 bootstrap_data_store_if_needed();
+
+if (PHP_SAPI !== 'cli') {
+  auth_start_session_if_needed();
+  auth_ensure_default_admin_user();
+  $guardOptions = [
+    'allow_password_change' => defined('AUTH_ALLOW_PASSWORD_CHANGE'),
+    'response_type' => defined('AUTH_RESPONSE_JSON') ? 'json' : 'redirect',
+  ];
+  if (!defined('AUTH_OPTIONAL')) {
+    auth_require_login($guardOptions);
+  } else {
+    auth_current_user();
+  }
+}
