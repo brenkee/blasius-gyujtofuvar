@@ -11,7 +11,7 @@
         "max_steps": 10
     },
     "change_watcher": {
-        "enabled": false,
+        "enabled": true,
         "pause_when_hidden": true,
         "error_retry_delay_ms": 1200,
         "revision": {
@@ -92,13 +92,13 @@
         "user_agent": "fuvarszervezo-internal/1.4 (+contact@example.com)"
     },
     "smtp": {
-        "host": "smtp.example.com",
-        "port": 587,
-        "username": "username",
-        "password": "password",
-        "encryption": "tls",
-        "from_email": "noreply@example.com",
-        "from_name": "Gyűjtőfuvar",
+        "host": "mail.brenkee.hu",
+        "port": 465,
+        "username": "fuvaradmin@brenkee.hu",
+        "password": "8b;YJ{I!G{[/i-x.",
+        "encryption": "ssl",
+        "from_email": "fuvaradmin@brenkee.hu",
+        "from_name": "BlasiusSoft",
         "timeout": 15
     },
     "ui": {
