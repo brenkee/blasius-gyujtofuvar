@@ -1,6 +1,9 @@
 /* global L */
 (function(){
   const EP = window.APP_BOOTSTRAP?.endpoints || {};
+  const BASE_URL = typeof window.APP_BOOTSTRAP?.baseUrl === 'string'
+    ? window.APP_BOOTSTRAP.baseUrl
+    : '/';
   const BOOT_PERMISSIONS = window.APP_BOOTSTRAP?.permissions || {};
   const BOOT_FEATURES = window.APP_BOOTSTRAP?.features || {};
   const READ_ONLY = !!BOOT_PERMISSIONS.readOnly;
@@ -32,6 +35,18 @@
   const history = [];
   let importRollbackSnapshot = null;
   const undoBtn = document.getElementById('undoBtn');
+
+  function assetUrl(path){
+    if (typeof path !== 'string' || path === '') {
+      const base = typeof BASE_URL === 'string' && BASE_URL !== '' ? BASE_URL : '/';
+      return base;
+    }
+    if (/^(?:[a-z]+:)?\/\//i.test(path)) return path;
+    if (path.startsWith('/')) return path;
+    const base = typeof BASE_URL === 'string' && BASE_URL !== '' ? BASE_URL : '/';
+    const normalizedBase = base.endsWith('/') ? base : `${base}/`;
+    return normalizedBase + path.replace(/^\/+/,'');
+  }
 
   const newAddressEl = document.getElementById('newAddress');
   const groupsEl = document.getElementById('groups');
@@ -1838,6 +1853,47 @@
       return false;
     }
   }
+  let postalCityMapPromise = null;
+  async function loadPostalCityMap(){
+    if (!postalCityMapPromise) {
+      postalCityMapPromise = (async ()=>{
+        try {
+          const resp = await fetch(assetUrl('public/telepulesek.csv'), {cache:'no-store'});
+          if (!resp.ok) {
+            throw new Error(`telepulesek_csv_http_${resp.status || 'error'}`);
+          }
+          const text = await resp.text();
+          const map = new Map();
+          text.split(/\r?\n/).forEach(line => {
+            if (!line) return;
+            const trimmed = line.trim();
+            if (!trimmed) return;
+            const parts = trimmed.split(';');
+            if (parts.length < 2) return;
+            const zip = parts[0].trim();
+            const cityName = parts[1].trim();
+            if (!/^\d{4}$/.test(zip)) return;
+            if (!cityName) return;
+            if (!map.has(zip)) {
+              map.set(zip, cityName);
+            }
+          });
+          return map;
+        } catch (err) {
+          console.error('telepulesek.csv betöltése sikertelen', err);
+          return new Map();
+        }
+      })();
+    }
+    try {
+      const result = await postalCityMapPromise;
+      return result instanceof Map ? result : new Map();
+    } catch (err) {
+      console.error('telepulesek.csv feldolgozási hiba', err);
+      return new Map();
+    }
+  }
+
   async function geocodeRobust(q){
     const qNorm = q.replace(/^\s*([^,]+)\s*,\s*(.+?)\s*,\s*(\d{4})\s*$/u, '$3 $1, $2');
     const url = EP.geocode + '&' + new URLSearchParams({q:qNorm});
@@ -3700,6 +3756,7 @@
     }
     pushSnapshot();
     const addressFieldId = getAddressFieldId();
+    const postalCityMap = await loadPostalCityMap();
     let changed = false;
     let attempted = 0;
     let failed = 0;
@@ -3708,19 +3765,60 @@
       const idx = entry.index;
       const item = state.items[idx];
       if (!item || typeof item !== 'object') continue;
-      const cityCandidate = (entry.city && entry.city.trim()) || (entry.fallbackCity && entry.fallbackCity.trim());
-      if (!cityCandidate) {
+      const rawAddress = (entry.address && entry.address.trim())
+        || ((item[addressFieldId] ?? '').toString().trim());
+      const addressParts = rawAddress.split(',').map(part => part.trim()).filter(Boolean);
+      let postalCode = '';
+      let streetPart = '';
+      let inferredCity = '';
+      if (addressParts.length) {
+        const firstPart = addressParts[0];
+        const zipMatch = firstPart.match(/^(\d{4})\s*(.+)$/u);
+        if (zipMatch) {
+          postalCode = zipMatch[1];
+          inferredCity = zipMatch[2].trim();
+          streetPart = addressParts.slice(1).join(', ');
+        } else {
+          const anyZip = rawAddress.match(/\b(\d{4})\b/u);
+          if (anyZip) postalCode = anyZip[1];
+          inferredCity = firstPart.trim();
+          streetPart = addressParts.slice(1).join(', ');
+        }
+      }
+      const csvCity = postalCode ? (postalCityMap.get(postalCode) || '') : '';
+      const cityCandidate = (csvCity && csvCity.trim())
+        || (entry.city && entry.city.trim())
+        || (entry.fallbackCity && entry.fallbackCity.trim())
+        || inferredCity;
+      const normalizedCity = cityCandidate ? cityCandidate.trim() : '';
+      const normalizedStreet = streetPart ? streetPart.trim() : '';
+      let queryAddress = '';
+      if (postalCode && normalizedCity) {
+        queryAddress = `${postalCode} ${normalizedCity}`;
+        if (normalizedStreet) {
+          queryAddress += `, ${normalizedStreet}`;
+        }
+      } else if (normalizedCity && normalizedStreet) {
+        queryAddress = `${normalizedCity}, ${normalizedStreet}`;
+      } else if (normalizedCity) {
+        queryAddress = normalizedCity;
+      } else {
+        queryAddress = rawAddress;
+      }
+      if (!queryAddress) {
         failed += 1;
         continue;
       }
       attempted += 1;
       const updated = {...item};
-      updated[addressFieldId] = cityCandidate;
-      updated.city = cityCandidate;
+      updated[addressFieldId] = queryAddress;
+      if (normalizedCity) {
+        updated.city = normalizedCity;
+      }
       updated.lat = null;
       updated.lon = null;
       try {
-        const geo = await geocodeRobust(cityCandidate);
+        const geo = await geocodeRobust(queryAddress);
         updated.lat = geo.lat;
         updated.lon = geo.lon;
         if (geo.city) {
