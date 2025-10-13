@@ -2,7 +2,7 @@
 require __DIR__ . '/common.php';
 
 $returnToRaw = $_GET['return_to'] ?? $_POST['return_to'] ?? null;
-$returnTo = auth_normalize_return_to($returnToRaw);
+$returnTo = ($returnToRaw !== null && $returnToRaw !== '') ? auth_normalize_return_to($returnToRaw) : null;
 $currentUser = auth_get_current_user();
 if ($currentUser) {
     if (!empty($currentUser['must_change_password'])) {

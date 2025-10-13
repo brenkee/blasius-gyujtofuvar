@@ -3128,7 +3128,7 @@
       placeholderItem = item;
       if ((+item.round || 0) === 0) break;
     }
-    if (newAddressEl && placeholderItem) {
+    if (!READ_ONLY && newAddressEl && placeholderItem) {
       const placeholderRow = renderRow(placeholderItem, 0, {suppressNumber: true, newAddress: true});
       if (placeholderRow) {
         newAddressEl.appendChild(placeholderRow);
