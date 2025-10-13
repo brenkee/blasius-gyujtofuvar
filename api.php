@@ -1,5 +1,7 @@
 <?php
 require __DIR__ . '/common.php';
+$CURRENT_USER = auth_require_login(['response' => 'json']);
+csrf_require_token_from_request('json');
 
 header('X-Content-Type-Options: nosniff');
 

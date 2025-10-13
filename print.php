@@ -1,5 +1,6 @@
 <?php
 require __DIR__ . '/common.php';
+$CURRENT_USER = auth_require_login();
 
 $initError = $DATA_INIT_ERROR ?? null;
 if (!empty($initError)) {
