@@ -2,7 +2,7 @@
 require __DIR__ . '/common.php';
 
 $returnToRaw = $_GET['return_to'] ?? $_POST['return_to'] ?? null;
-$returnTo = auth_normalize_return_to($returnToRaw);
+$returnTo = ($returnToRaw !== null && $returnToRaw !== '') ? auth_normalize_return_to($returnToRaw) : null;
 $CURRENT_USER = auth_require_login(['allow_password_change' => true, 'return_to' => $returnTo]);
 $TOKEN = csrf_get_token();
 

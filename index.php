@@ -1,6 +1,8 @@
 <?php
 require __DIR__ . '/common.php';
 $CURRENT_USER = auth_require_login();
+$PERMISSIONS = auth_build_permissions($CURRENT_USER);
+$FEATURES = app_features_for_user($CFG['features'] ?? [], $PERMISSIONS);
 $LOGOUT_TOKEN = csrf_get_token();
 ?>
 <!doctype html>
@@ -40,6 +42,8 @@ $LOGOUT_TOKEN = csrf_get_token();
   window.APP_BOOTSTRAP = <?= json_encode([
     'baseUrl' => $CFG['base_url'],
     'endpoints' => $bootstrapEndpoints,
+    'permissions' => $PERMISSIONS,
+    'features' => $FEATURES,
   ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
   window.APP_BOOTSTRAP.endpoints.printRound = function(rid){
     const base = <?= json_encode($printRoundBase, JSON_UNESCAPED_SLASHES) ?>;
@@ -49,7 +53,7 @@ $LOGOUT_TOKEN = csrf_get_token();
 </script>
 <script defer src="<?= htmlspecialchars(base_url('public/app.js'), ENT_QUOTES) ?>"></script>
 </head>
-<body>
+<body<?= !empty($PERMISSIONS['readOnly']) ? ' class="app-readonly"' : '' ?>>
 <?php if (!empty($DATA_INIT_ERROR)): ?>
 <div class="init-error-banner">
   <strong>Adatbázis inicializációs hiba</strong>
@@ -65,16 +69,9 @@ $LOGOUT_TOKEN = csrf_get_token();
         <span class="user-info-name" title="<?= htmlspecialchars($CURRENT_USER['email'] ?? '') ?>">
           <?= htmlspecialchars($CURRENT_USER['username'] ?? 'felhasználó') ?>
         </span>
-        <span class="user-info-actions">
-          <a class="user-info-link" href="<?= htmlspecialchars(app_url_path('password.php'), ENT_QUOTES) ?>">Jelszó módosítása</a>
-          <form method="post" action="<?= htmlspecialchars(app_url_path('logout.php'), ENT_QUOTES) ?>" class="user-info-logout">
-            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($LOGOUT_TOKEN, ENT_QUOTES) ?>">
-            <button type="submit" class="user-info-link user-info-logout-btn">Kilépés</button>
-          </form>
-        </span>
       </div>
       <?php
-        $toolbarFeatures = $CFG['features']['toolbar'] ?? [];
+        $toolbarFeatures = $FEATURES['toolbar'] ?? [];
         $toolbarText = $CFG['text']['toolbar'] ?? [];
         $badgeText = $CFG['text']['badges']['pin_counter_label'] ?? 'Pin-ek:';
         $badgeTitle = $CFG['text']['badges']['pin_counter_title'] ?? '';
@@ -104,11 +101,15 @@ $LOGOUT_TOKEN = csrf_get_token();
         $menuIconStyleAttr = $menuIconStyles ? htmlspecialchars(implode(';', $menuIconStyles), ENT_QUOTES) : '';
         $toolbarMenuLabel = $toolbarText['more_actions']['label'] ?? 'Menü';
         $toolbarMenuTitle = $toolbarText['more_actions']['title'] ?? $toolbarMenuLabel;
-        $toolbarMenuHasItems = !empty($toolbarFeatures['import_all'])
-          || !empty($toolbarFeatures['export_all'])
-          || !empty($toolbarFeatures['print_all'])
-          || !empty($toolbarFeatures['download_archive'])
-          || !empty($toolbarFeatures['theme_toggle']);
+        $hasImportAll = !empty($toolbarFeatures['import_all']);
+        $hasExportAll = !empty($toolbarFeatures['export_all']);
+        $hasPrintAll = !empty($toolbarFeatures['print_all']);
+        $hasDownloadArchive = !empty($toolbarFeatures['download_archive']);
+        $hasThemeToggle = !empty($toolbarFeatures['theme_toggle']);
+        $hasAdminMenuItem = !empty($PERMISSIONS['canManageUsers']);
+        $hasUtilityMenuItems = $hasImportAll || $hasExportAll || $hasPrintAll || $hasDownloadArchive || $hasThemeToggle;
+        $hasUserMenuItems = true;
+        $toolbarMenuHasItems = $hasUtilityMenuItems || $hasAdminMenuItem || $hasUserMenuItems;
       ?>
       <div class="toolbar">
         <?php if (!empty($toolbarFeatures['expand_all'])): ?>
@@ -142,31 +143,55 @@ $LOGOUT_TOKEN = csrf_get_token();
               <span class="visually-hidden"><?= htmlspecialchars($toolbarMenuLabel) ?></span>
             </button>
             <div id="toolbarMenu" class="toolbar-menu" hidden>
-              <?php if (!empty($toolbarFeatures['import_all'])): ?>
+              <?php $menuSectionRendered = false; ?>
+              <?php if ($hasImportAll): ?>
                 <button id="importBtn" type="button" title="<?= htmlspecialchars($toolbarText['import_all']['title'] ?? '') ?>">
                   <?= htmlspecialchars($toolbarText['import_all']['label'] ?? 'Import (CSV)') ?>
                 </button>
                 <input type="file" id="importFileInput" accept=".csv,text/csv" style="display:none" />
+                <?php $menuSectionRendered = true; ?>
               <?php endif; ?>
-              <?php if (!empty($toolbarFeatures['export_all'])): ?>
+              <?php if ($hasExportAll): ?>
                 <button id="exportBtn" type="button" title="<?= htmlspecialchars($toolbarText['export_all']['title'] ?? '') ?>">
                   <?= htmlspecialchars($toolbarText['export_all']['label'] ?? 'Export') ?>
                 </button>
+                <?php $menuSectionRendered = true; ?>
               <?php endif; ?>
-              <?php if (!empty($toolbarFeatures['print_all'])): ?>
+              <?php if ($hasPrintAll): ?>
                 <button id="printBtn" type="button" title="<?= htmlspecialchars($toolbarText['print_all']['title'] ?? '') ?>">
                   <?= htmlspecialchars($toolbarText['print_all']['label'] ?? 'Nyomtatás') ?>
                 </button>
+                <?php $menuSectionRendered = true; ?>
               <?php endif; ?>
-              <?php if (!empty($toolbarFeatures['download_archive'])): ?>
+              <?php if ($hasDownloadArchive): ?>
                 <button id="downloadArchiveBtn" type="button" title="<?= htmlspecialchars($toolbarText['download_archive']['title'] ?? '') ?>">
                   <?= htmlspecialchars($toolbarText['download_archive']['label'] ?? 'Archívum letöltése') ?>
                 </button>
+                <?php $menuSectionRendered = true; ?>
               <?php endif; ?>
-              <?php if (!empty($toolbarFeatures['theme_toggle'])): ?>
+              <?php if ($hasThemeToggle): ?>
                 <button id="themeToggle" type="button" title="<?= htmlspecialchars($toolbarText['theme_toggle']['title'] ?? '') ?>">
                   <?= htmlspecialchars($toolbarText['theme_toggle']['label'] ?? '🌙 / ☀️') ?>
                 </button>
+                <?php $menuSectionRendered = true; ?>
+              <?php endif; ?>
+              <?php if ($hasAdminMenuItem): ?>
+                <?php if ($menuSectionRendered): ?>
+                  <hr class="toolbar-menu-separator" role="presentation" />
+                <?php endif; ?>
+                <a class="toolbar-menu-link" href="<?= htmlspecialchars(app_url_path('admin.php'), ENT_QUOTES) ?>">Admin</a>
+                <?php $menuSectionRendered = true; ?>
+              <?php endif; ?>
+              <?php if ($hasUserMenuItems): ?>
+                <?php if ($menuSectionRendered): ?>
+                  <hr class="toolbar-menu-separator" role="presentation" />
+                <?php endif; ?>
+                <a class="toolbar-menu-link" href="<?= htmlspecialchars(app_url_path('password.php'), ENT_QUOTES) ?>">Jelszó módosítása</a>
+                <form method="post" action="<?= htmlspecialchars(app_url_path('logout.php'), ENT_QUOTES) ?>" class="toolbar-menu-form">
+                  <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($LOGOUT_TOKEN, ENT_QUOTES) ?>">
+                  <button type="submit">Kilépés</button>
+                </form>
+                <?php $menuSectionRendered = true; ?>
               <?php endif; ?>
             </div>
           </div>

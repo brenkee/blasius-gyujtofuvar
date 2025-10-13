@@ -1,6 +1,8 @@
 <?php
 require __DIR__ . '/common.php';
 $CURRENT_USER = auth_require_login(['response' => 'json']);
+$PERMISSIONS = auth_build_permissions($CURRENT_USER);
+$FEATURES = app_features_for_user($CFG['features'] ?? [], $PERMISSIONS);
 csrf_require_token_from_request('json');
 
 header('X-Content-Type-Options: nosniff');
@@ -226,7 +228,7 @@ if ($action === 'cfg') {
       "max_steps" => (int)($CFG['history']['max_steps'] ?? 3)
     ],
     "change_watcher" => $CHANGE_WATCHER_CFG,
-    "features" => $CFG['features'] ?? [],
+    "features" => $FEATURES,
     "ui" => [
       "panel_min_px" => (int)$CFG['ui']['panel_min_px'],
       "panel_pref_vw" => (int)$CFG['ui']['panel_pref_vw'],
@@ -261,6 +263,7 @@ if ($action === 'cfg') {
     "export" => $CFG['export'] ?? [],
     "print" => $CFG['print'] ?? []
   ];
+  $JS_CFG['permissions'] = $PERMISSIONS;
   echo json_encode($JS_CFG, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
   exit;
 }
@@ -364,6 +367,11 @@ if ($action === 'load') {
 
 if ($action === 'save') {
   $jsonHeader();
+  if (empty($PERMISSIONS['canSave'])) {
+    http_response_code(403);
+    echo json_encode(['ok' => false, 'error' => 'forbidden'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
   $actorId = require_actor_id();
   $requestId = require_request_id();
   $batchId = optional_batch_id();
@@ -444,6 +452,9 @@ if ($action === 'export') {
 if ($action === 'import_csv') {
   if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     $sendJsonError('Hibás HTTP metódus.', 405);
+  }
+  if (empty($PERMISSIONS['canImport'])) {
+    $sendJsonError('Nincs jogosultság az importáláshoz.', 403);
   }
   $actorId = require_actor_id();
   $requestId = require_request_id();
@@ -804,6 +815,11 @@ if ($action === 'import_csv') {
 
 if ($action === 'delete_round') {
   $jsonHeader();
+  if (empty($PERMISSIONS['canDelete'])) {
+    http_response_code(403);
+    echo json_encode(['ok' => false, 'error' => 'forbidden'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
   $actorId = require_actor_id();
   $requestId = require_request_id();
   $batchId = optional_batch_id();

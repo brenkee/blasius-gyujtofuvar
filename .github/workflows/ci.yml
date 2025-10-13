@@ -18,7 +18,7 @@ jobs:
           php-version: '8.2'
           extensions: sqlite3
       - name: Initialise database
-        run: php scripts/init-db.php
+        run: php scripts/init-db.php --fresh
       - name: PHP lint
         run: |
           php -l common.php

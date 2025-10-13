@@ -1,8 +1,16 @@
 /* global L */
 (function(){
   const EP = window.APP_BOOTSTRAP?.endpoints || {};
+  const BOOT_PERMISSIONS = window.APP_BOOTSTRAP?.permissions || {};
+  const BOOT_FEATURES = window.APP_BOOTSTRAP?.features || {};
+  const READ_ONLY = !!BOOT_PERMISSIONS.readOnly;
+  const CAN_EDIT = !!BOOT_PERMISSIONS.canEdit;
+  const CAN_SORT = !!BOOT_PERMISSIONS.canSort;
+  const CAN_CHANGE_ROUND_META = !!BOOT_PERMISSIONS.canChangeRoundMeta;
+  const CAN_DELETE = !!BOOT_PERMISSIONS.canDelete;
+  const CAN_IMPORT = !!BOOT_PERMISSIONS.canImport;
   const state = {
-    cfg: null,
+    cfg: {features: BOOT_FEATURES},
     items: [],                 // {id,label,address,city,note,lat,lon,round,weight,volume,_pendingRound}
     roundMeta: {},             // { [roundId]: {planned_date:string, planned_time:string, sort_mode:string, custom_order:string[]} }
     markersById: new Map(),
@@ -31,6 +39,10 @@
   const themeToggle = document.getElementById('themeToggle');
   const panelTopEl = document.getElementById('panelTop');
   let quickSearchClearBtn = null;
+
+  if (READ_ONLY && newAddressEl) {
+    newAddressEl.style.display = 'none';
+  }
 
   const flashTimers = new WeakMap();
 
@@ -708,6 +720,7 @@
   }
 
   function setPlannedDateForRound(rid, value){
+    if (!CAN_CHANGE_ROUND_META) return;
     const entry = ensureRoundMetaEntry(rid);
     const val = (value || '').trim();
     const limited = val.length > 120 ? val.slice(0, 120) : val;
@@ -728,6 +741,7 @@
   }
 
   function setPlannedTimeForRound(rid, value){
+    if (!CAN_CHANGE_ROUND_META) return;
     const entry = ensureRoundMetaEntry(rid);
     const val = (value || '').trim();
     const limited = val.length > 40 ? val.slice(0, 40) : val;
@@ -746,6 +760,7 @@
   }
 
   function setRoundSortMode(rid, mode){
+    if (!CAN_SORT) return;
     const entry = ensureRoundMetaEntry(rid);
     entry.sort_mode = mode === 'custom' ? 'custom' : 'default';
   }
@@ -771,6 +786,7 @@
   }
 
   function setRoundCustomOrder(rid, order){
+    if (!CAN_SORT) return;
     const entry = ensureRoundMetaEntry(rid);
     const sanitized = sanitizeCustomOrderList(order);
     if (sanitized.length) {
@@ -796,6 +812,7 @@
   }
 
   function removeItemFromCustomOrder(rid, itemId){
+    if (!CAN_SORT) return;
     if (!itemId) return;
     const entry = getRoundMetaEntry(rid);
     if (!entry || !Array.isArray(entry.custom_order)) return;
@@ -806,6 +823,7 @@
   }
 
   function maybeAddItemToCustomOrder(rid, itemId){
+    if (!CAN_SORT) return;
     if (!itemId) return;
     const entry = getRoundMetaEntry(rid);
     const existing = getRoundCustomOrder(rid);
@@ -1786,6 +1804,9 @@
     state.conflictNotified.clear();
   }
   async function saveAll(){
+    if (!CAN_EDIT) {
+      return false;
+    }
     try{
       const sanitizedItems = state.items.map(item => {
         if (!item || typeof item !== 'object') return item;
@@ -1975,6 +1996,7 @@
     return state.items.some(it => ((+it.round||0)===0) && !(it[addrField] && it[addrField].toString().trim()) && it.lat==null && it.lon==null);
   }
   function ensureBlankRowInDefaultRound(){
+    if (!CAN_EDIT) return;
     if (!hasBlankInDefaultRound()){
       const blank = {
         id:'row_'+Math.random().toString(36).slice(2),
@@ -2052,14 +2074,51 @@
     const plannedTimeInputId = `round_${cssId(String(rid))}_planned_time`;
     const showPlannedDate = plannedDateEnabled && !isRoundZero(rid);
     const showPlannedTime = plannedTimeEnabled && !isRoundZero(rid);
+    const canEditRoundMeta = CAN_CHANGE_ROUND_META;
     const sortLabel = text('round.sort_mode_label', 'Rendezés');
     const sortDefaultLabel = text('round.sort_mode_default', 'Alapértelmezett (távolság)');
     const sortCustomLabel = text('round.sort_mode_custom', 'Egyéni (drag & drop)');
     const sortHint = text('round.sort_mode_custom_hint', 'Fogd és vidd a címeket a rendezéshez');
     const sortSelectId = `round_${cssId(String(rid))}_sort_mode`;
     const sortMode = getRoundSortMode(rid);
-    const dragIndicator = sortMode === 'custom'
+    const dragIndicator = CAN_SORT && sortMode === 'custom'
       ? `<span class="group-drag-indicator" title="${esc(sortHint)}" aria-hidden="true">⠿</span>`
+      : '';
+    const plannedDateHtml = showPlannedDate
+      ? (canEditRoundMeta
+          ? `
+            <div class="group-planned-date">
+              <label class="planned-date-label" for="${plannedDateInputId}">${esc(plannedDateLabel)}</label>
+              <input type="text" id="${plannedDateInputId}" class="planned-date-input" data-round="${rid}" value="${esc(plannedDateValue)}"${plannedDateHint ? ` title="${esc(plannedDateHint)}"` : ''}>
+            </div>`
+          : `
+            <div class="group-planned-date group-planned-date--readonly">
+              <span class="readonly-label">${esc(plannedDateLabel)}</span>
+              <span class="readonly-value" data-round-planned-date="${rid}">${plannedDateValue ? esc(plannedDateValue) : '—'}</span>
+            </div>`)
+      : '';
+    const plannedTimeHtml = showPlannedTime
+      ? (canEditRoundMeta
+          ? `
+            <div class="group-planned-time">
+              <label class="planned-time-label" for="${plannedTimeInputId}">${esc(plannedTimeLabel)}</label>
+              <input type="time" id="${plannedTimeInputId}" class="planned-time-input" data-round="${rid}" value="${esc(plannedTimeValue)}"${plannedTimeHint ? ` title="${esc(plannedTimeHint)}"` : ''}>
+            </div>`
+          : `
+            <div class="group-planned-time group-planned-time--readonly">
+              <span class="readonly-label">${esc(plannedTimeLabel)}</span>
+              <span class="readonly-value" data-round-planned-time="${rid}">${plannedTimeValue ? esc(plannedTimeValue) : '—'}</span>
+            </div>`)
+      : '';
+    const sortControlHtml = CAN_SORT
+      ? `
+            <div class="group-sort">
+              <label class="sort-mode-label" for="${sortSelectId}">${esc(sortLabel)}</label>
+              <select id="${sortSelectId}" class="round-sort-mode" data-round="${rid}"${sortMode==='custom' && sortHint ? ` title="${esc(sortHint)}"` : ''}>
+                <option value="default"${sortMode==='default' ? ' selected' : ''}>${esc(sortDefaultLabel)}</option>
+                <option value="custom"${sortMode==='custom' ? ' selected' : ''}>${esc(sortCustomLabel)}</option>
+              </select>
+            </div>`
       : '';
     const actionButtons = [];
     if (feature('group_actions.open', true)) actionButtons.push(`<button class="iconbtn grp-open" data-round="${rid}">${esc(actionsText.open ?? 'Kinyit')}</button>`);
@@ -2076,23 +2135,9 @@
           ${sumTxt ? `<span class="__sum" style="margin-left:8px;color:#6b7280;font-weight:600;font-size:12px;">${esc(sumTxt)}</span>` : ''}
         </div>
         <div class="group-controls">
-          ${showPlannedDate ? `
-            <div class="group-planned-date">
-              <label class="planned-date-label" for="${plannedDateInputId}">${esc(plannedDateLabel)}</label>
-              <input type="text" id="${plannedDateInputId}" class="planned-date-input" data-round="${rid}" value="${esc(plannedDateValue)}"${plannedDateHint ? ` title="${esc(plannedDateHint)}"` : ''}>
-            </div>` : ''}
-          ${showPlannedTime ? `
-            <div class="group-planned-time">
-              <label class="planned-time-label" for="${plannedTimeInputId}">${esc(plannedTimeLabel)}</label>
-              <input type="time" id="${plannedTimeInputId}" class="planned-time-input" data-round="${rid}" value="${esc(plannedTimeValue)}"${plannedTimeHint ? ` title="${esc(plannedTimeHint)}"` : ''}>
-            </div>` : ''}
-          <div class="group-sort">
-            <label class="sort-mode-label" for="${sortSelectId}">${esc(sortLabel)}</label>
-            <select id="${sortSelectId}" class="round-sort-mode" data-round="${rid}"${sortMode==='custom' && sortHint ? ` title="${esc(sortHint)}"` : ''}>
-              <option value="default"${sortMode==='default' ? ' selected' : ''}>${esc(sortDefaultLabel)}</option>
-              <option value="custom"${sortMode==='custom' ? ' selected' : ''}>${esc(sortCustomLabel)}</option>
-            </select>
-          </div>
+          ${plannedDateHtml}
+          ${plannedTimeHtml}
+          ${sortControlHtml}
         </div>
         <div class="group-tools">
           ${actionButtons.join('')}
@@ -2133,6 +2178,7 @@
 
   function refreshDeleteButtonState(row, it){
     const delBtn = row.querySelector('.del');
+    if (!delBtn) return;
     const notSaved = (it.lat==null || it.lon==null);
     const addrField = getAddressFieldId();
     const hasAddr = !!((it[addrField] ?? '').toString().trim());
@@ -2315,6 +2361,7 @@
   }
 
   async function doOk(id, overrideRound=null){
+    if (!CAN_EDIT) return;
     const idx = state.items.findIndex(x=>x.id===id);
     if (idx<0) return;
     const it = state.items[idx];
@@ -2491,7 +2538,8 @@
     row.dataset.rowId = it.id;
     const opts = options || {};
     const isPlaceholderItem = isItemCompletelyBlank(it);
-    const allowDragFeature = opts.dragEnabled === true;
+    const rowReadOnly = !CAN_EDIT;
+    const allowDragFeature = CAN_SORT && opts.dragEnabled === true;
     const dragEnabled = allowDragFeature && !isPlaceholderItem;
     const dragHandleTitle = text('round.custom_sort_handle_hint', 'Fogd meg és húzd a cím átrendezéséhez');
     const dragCellHtml = allowDragFeature
@@ -2510,12 +2558,27 @@
     const metrics = getMetricDefs();
     const makeInputId = (fid)=> `${fid}_${cssId(it.id)}`;
 
+    const renderReadonlyValue = (rawValue)=>{
+      const str = rawValue == null ? '' : String(rawValue);
+      if (str === '') return {html: '—', title: '—'};
+      const escaped = esc(str);
+      return {html: escaped.replace(/\r?\n/g, '<br>'), title: escaped};
+    };
+
     const fieldHtml = fields.map(field => {
       const fid = field.id;
       const value = it[fid] ?? defaultValueForField(field);
       const idAttr = makeInputId(fid);
       const label = field.label ?? fid;
       const placeholder = field.placeholder ?? '';
+      if (rowReadOnly) {
+        const display = renderReadonlyValue(value);
+        return `
+          <div class="f f-readonly">
+            <span class="readonly-label">${esc(label)}</span>
+            <span class="readonly-value" data-field="${esc(fid)}" title="${display.title}">${display.html}</span>
+          </div>`;
+      }
       const attrs = [];
       if (field.maxlength) attrs.push(`maxlength="${field.maxlength}"`);
       if (field.autocomplete) attrs.push(`autocomplete="${field.autocomplete}"`);
@@ -2547,7 +2610,7 @@
       if (field.min != null) extra.push(`min="${field.min}"`);
       if (field.max != null) extra.push(`max="${field.max}"`);
       const extraStr = extra.join(' ');
-      const valueAttr = value != null ? `value="${typeAttr==='number' && value!=='' ? esc(value) : esc(value)}"` : '';
+      const valueAttr = value != null ? `value="${esc(value)}"` : '';
       return `
         <div class="f">
           <label for="${idAttr}">${esc(label)}</label>
@@ -2560,6 +2623,14 @@
       const idAttr = makeInputId(fid);
       const value = it[fid] ?? '';
       const placeholder = metric.placeholder ?? '';
+      if (rowReadOnly) {
+        const display = renderReadonlyValue(value);
+        return `
+          <div class="f f-readonly">
+            <span class="readonly-label">${esc(metric.label ?? fid)}</span>
+            <span class="readonly-value" data-field="${esc(fid)}" title="${display.title}">${display.html}</span>
+          </div>`;
+      }
       const extra = [];
       if (metric.step != null) extra.push(`step="${metric.step}"`);
       if (metric.min != null) extra.push(`min="${metric.min}"`);
@@ -2573,10 +2644,38 @@
         </div>`;
     }).join('');
 
+    const roundLabelText = cfg('items.round_field.label', 'Kör');
+    const currentRoundLabel = roundLabel(+it.round || 0);
+    const roundControlHtml = rowReadOnly
+      ? `
+          <div class="f f-readonly">
+            <span class="readonly-label">${esc(roundLabelText)}</span>
+            <span class="readonly-value" data-round-display title="${esc(currentRoundLabel)}">${esc(currentRoundLabel)}</span>
+          </div>`
+      : `
+          <div class="f" style="max-width:140px">
+            <label for="round_${cssId(it.id)}">${esc(roundLabelText)}</label>
+            <select id="round_${cssId(it.id)}" class="select-round">
+              ${Array.from(ROUND_MAP.values()).map(r => {
+                const sel = (+it.round===+r.id) ? 'selected' : '';
+                return `<option value="${r.id}" ${sel}>${esc(r.label)}</option>`;
+              }).join('')}
+            </select>
+          </div>`;
+    const metricsGridVisible = metrics.length || rowReadOnly;
+    const metricsGridStyle = `align-items:end;${metricsGridVisible ? '' : 'display:none'}`;
+
     const actionsText = cfg('text.actions', {});
     const okLabel = actionsText.ok ?? 'OK';
     const delLabel = actionsText.delete ?? 'Törlés';
-    const roundLabelText = cfg('items.round_field.label', 'Kör');
+    const actionRowHtml = CAN_EDIT ? `
+        <div class="grid" style="margin-top:6px;">
+          <div></div>
+          <div class="btns">
+            <button class="ok">${esc(okLabel)}</button>
+            <button class="del">${esc(delLabel)}</button>
+          </div>
+        </div>` : '';
 
     const rawLabelValue = labelFieldId ? (it[labelFieldId] ?? '') : '';
     const labelString = rawLabelValue != null ? String(rawLabelValue).trim() : '';
@@ -2620,25 +2719,11 @@
         <div class="form-grid">
           ${fieldHtml}
         </div>
-        <div class="metrics-grid" style="align-items:end;${metrics.length?'':'display:none'}">
-          <div class="f" style="max-width:140px">
-            <label for="round_${cssId(it.id)}">${esc(roundLabelText)}</label>
-            <select id="round_${cssId(it.id)}" class="select-round">
-              ${Array.from(ROUND_MAP.values()).map(r => {
-                const sel = (+it.round===+r.id) ? 'selected' : '';
-                return `<option value="${r.id}" ${sel}>${esc(r.label)}</option>`;
-              }).join('')}
-            </select>
-          </div>
+        <div class="metrics-grid" style="${metricsGridStyle}">
+          ${roundControlHtml}
           ${metricsHtml}
         </div>
-        <div class="grid" style="margin-top:6px;">
-          <div></div>
-          <div class="btns">
-            <button class="ok">${esc(okLabel)}</button>
-            <button class="del">${esc(delLabel)}</button>
-          </div>
-        </div>
+        ${actionRowHtml}
       </div>
     `;
 
@@ -2709,117 +2794,125 @@
 
     const fieldInputs = new Map();
     const metricInputs = new Map();
-    const fieldsMap = new Map(fields.map(f=>[f.id, f]));
-    fields.forEach(field => {
-      const el = row.querySelector(`[data-field="${field.id}"]`);
-      if (el) fieldInputs.set(field.id, el);
-    });
-    metrics.forEach(metric => {
-      const el = row.querySelector(`[data-field="${metric.id}"]`);
-      if (el) metricInputs.set(metric.id, el);
-    });
-    const roundS = row.querySelector('#round_'+cssId(it.id));
-    const okBtn  = row.querySelector('.ok');
-    const delBtn = row.querySelector('.del');
+    if (CAN_EDIT) {
+      const fieldsMap = new Map(fields.map(f=>[f.id, f]));
+      fields.forEach(field => {
+        const el = row.querySelector(`[data-field="${field.id}"]`);
+        if (el) fieldInputs.set(field.id, el);
+      });
+      metrics.forEach(metric => {
+        const el = row.querySelector(`[data-field="${metric.id}"]`);
+        if (el) metricInputs.set(metric.id, el);
+      });
+      const roundS = row.querySelector('#round_'+cssId(it.id));
+      const okBtn  = row.querySelector('.ok');
+      const delBtn = row.querySelector('.del');
 
-    fieldInputs.forEach((inp, fid)=>{
-      inp.addEventListener('change', ()=>{
-        const idx = state.items.findIndex(x=>x.id===it.id);
-        if (idx<0) return;
-        pushSnapshot();
-        const def = fieldsMap.get(fid) || {};
-        let val;
-        if (def.type === 'number'){
-          const trimmed = inp.value.trim();
-          const num = parseFloat(trimmed);
-          val = trimmed==='' || !Number.isFinite(num) ? null : num;
-        } else {
-          val = inp.value.trim();
-        }
-        state.items[idx][fid] = val;
-        if (fid === addressFieldId){
-          const cityNow = cityFromDisplay(state.items[idx][fid], state.items[idx].city);
-          state.items[idx].city = cityNow;
-          const cityEl = row.querySelector('[data-city]');
-          if (cityEl){
-            cityEl.textContent = cityNow || '—';
-            cityEl.setAttribute('title', cityNow || '—');
+      fieldInputs.forEach((inp, fid)=>{
+        inp.addEventListener('change', ()=>{
+          const idx = state.items.findIndex(x=>x.id===it.id);
+          if (idx<0) return;
+          pushSnapshot();
+          const def = fieldsMap.get(fid) || {};
+          let val;
+          if (def.type === 'number'){
+            const trimmed = inp.value.trim();
+            const num = parseFloat(trimmed);
+            val = trimmed==='' || !Number.isFinite(num) ? null : num;
+          } else {
+            val = inp.value.trim();
           }
-          refreshDeleteButtonState(row, state.items[idx]);
-        }
-        updateRowPlaceholderState(row, state.items[idx]);
-        updateRowHeaderLabel(row, state.items[idx]);
-        if (fid === deadlineFieldId){
-          updateDeadlineIndicator(row, state.items[idx]);
-        }
-        upsertMarker(state.items[idx], idx);
-        saveAll();
-        updateRowHeaderMeta(row, state.items[idx]);
+          state.items[idx][fid] = val;
+          if (fid === addressFieldId){
+            const cityNow = cityFromDisplay(state.items[idx][fid], state.items[idx].city);
+            state.items[idx].city = cityNow;
+            const cityEl = row.querySelector('[data-city]');
+            if (cityEl){
+              cityEl.textContent = cityNow || '—';
+              cityEl.setAttribute('title', cityNow || '—');
+            }
+            refreshDeleteButtonState(row, state.items[idx]);
+          }
+          updateRowPlaceholderState(row, state.items[idx]);
+          updateRowHeaderLabel(row, state.items[idx]);
+          if (fid === deadlineFieldId){
+            updateDeadlineIndicator(row, state.items[idx]);
+          }
+          upsertMarker(state.items[idx], idx);
+          saveAll();
+          updateRowHeaderMeta(row, state.items[idx]);
+        });
       });
-    });
 
-    metricInputs.forEach((inp, fid)=>{
-      inp.addEventListener('change', ()=>{
-        const idx = state.items.findIndex(x=>x.id===it.id);
-        if (idx<0) return;
-        pushSnapshot();
-        const raw = inp.value.trim();
-        if (raw==='') state.items[idx][fid] = null;
-        else {
-          const num = parseFloat(raw);
-          state.items[idx][fid] = Number.isFinite(num) ? num : null;
-        }
-        updateRowPlaceholderState(row, state.items[idx]);
-        updateRowHeaderLabel(row, state.items[idx]);
-        upsertMarker(state.items[idx], idx);
-        saveAll();
-        renderGroupHeaderTotalsForRound(+state.items[idx].round||0);
-        updateRowHeaderMeta(row, state.items[idx]);
+      metricInputs.forEach((inp, fid)=>{
+        inp.addEventListener('change', ()=>{
+          const idx = state.items.findIndex(x=>x.id===it.id);
+          if (idx<0) return;
+          pushSnapshot();
+          const raw = inp.value.trim();
+          if (raw==='') state.items[idx][fid] = null;
+          else {
+            const num = parseFloat(raw);
+            state.items[idx][fid] = Number.isFinite(num) ? num : null;
+          }
+          updateRowPlaceholderState(row, state.items[idx]);
+          updateRowHeaderLabel(row, state.items[idx]);
+          upsertMarker(state.items[idx], idx);
+          saveAll();
+          renderGroupHeaderTotalsForRound(+state.items[idx].round||0);
+          updateRowHeaderMeta(row, state.items[idx]);
+        });
       });
-    });
 
-    roundS.addEventListener('change', async ()=>{
-      const idx = state.items.findIndex(x=>x.id===it.id); if (idx<0) return;
-      const selRound = +roundS.value;
-      const addrVal = state.items[idx][addressFieldId];
-      const hasAddress = !!(addrVal && addrVal.toString().trim());
-      const hasPin = (state.items[idx].lat!=null && state.items[idx].lon!=null);
+      if (roundS) {
+        roundS.addEventListener('change', async ()=>{
+          const idx = state.items.findIndex(x=>x.id===it.id); if (idx<0) return;
+          const selRound = +roundS.value;
+          const addrVal = state.items[idx][addressFieldId];
+          const hasAddress = !!(addrVal && addrVal.toString().trim());
+          const hasPin = (state.items[idx].lat!=null && state.items[idx].lon!=null);
 
-      if (!hasAddress) { state.items[idx]._pendingRound = selRound; return; }
-      if (!hasPin) {
-        try{ await doOk(state.items[idx].id, selRound); }
-        catch(e){ console.error(e); alert(text('messages.geocode_failed', 'Geokódolás sikertelen.')); roundS.value = String(state.items[idx].round ?? 0); }
-        return;
+          if (!hasAddress) { state.items[idx]._pendingRound = selRound; return; }
+          if (!hasPin) {
+            try{ await doOk(state.items[idx].id, selRound); }
+            catch(e){ console.error(e); alert(text('messages.geocode_failed', 'Geokódolás sikertelen.')); roundS.value = String(state.items[idx].round ?? 0); }
+            return;
+          }
+          const prevRound = +state.items[idx].round||0;
+          pushSnapshot();
+          state.items[idx].round = selRound;
+          removeItemFromCustomOrder(prevRound, it.id);
+          maybeAddItemToCustomOrder(selRound, it.id);
+          await saveAll();
+          renderEverything();
+          renderGroupHeaderTotalsForRound(prevRound);
+          renderGroupHeaderTotalsForRound(selRound);
+        });
       }
-      const prevRound = +state.items[idx].round||0;
-      pushSnapshot();
-      state.items[idx].round = selRound;
-      removeItemFromCustomOrder(prevRound, it.id);
-      maybeAddItemToCustomOrder(selRound, it.id);
-      await saveAll();
-      renderEverything();
-      renderGroupHeaderTotalsForRound(prevRound);
-      renderGroupHeaderTotalsForRound(selRound);
-    });
 
-    okBtn.addEventListener('click', async ()=>{ try{ await doOk(it.id, null); } catch(e){ console.error(e); alert(text('messages.geocode_failed_detailed', 'Geokódolás sikertelen. Próbáld pontosítani a címet.')); } });
-
-    delBtn.addEventListener('click', ()=>{
-      if (delBtn.disabled) return;
-      const idx = state.items.findIndex(x=>x.id===it.id);
-      if (idx>=0) {
-        pushSnapshot();
-        const rPrev = +state.items[idx].round||0;
-        state.items.splice(idx,1);
-        removeItemFromCustomOrder(rPrev, it.id);
-        clearCollapsePref(it.id);
-        renderGroupHeaderTotalsForRound(rPrev);
+      if (okBtn) {
+        okBtn.addEventListener('click', async ()=>{ try{ await doOk(it.id, null); } catch(e){ console.error(e); alert(text('messages.geocode_failed_detailed', 'Geokódolás sikertelen. Próbáld pontosítani a címet.')); } });
       }
-      const mk = state.markersById.get(it.id);
-      if (mk){ markerLayer.removeLayer(mk); state.markersById.delete(it.id); updatePinCount(); requestMarkerOverlapRefresh(); }
-      saveAll();
-      renderEverything();
-    });
+
+      if (delBtn) {
+        delBtn.addEventListener('click', ()=>{
+          if (delBtn.disabled) return;
+          const idx = state.items.findIndex(x=>x.id===it.id);
+          if (idx>=0) {
+            pushSnapshot();
+            const rPrev = +state.items[idx].round||0;
+            state.items.splice(idx,1);
+            removeItemFromCustomOrder(rPrev, it.id);
+            clearCollapsePref(it.id);
+            renderGroupHeaderTotalsForRound(rPrev);
+          }
+          const mk = state.markersById.get(it.id);
+          if (mk){ markerLayer.removeLayer(mk); state.markersById.delete(it.id); updatePinCount(); requestMarkerOverlapRefresh(); }
+          saveAll();
+          renderEverything();
+        });
+      }
+    }
 
     updateRowHeaderMeta(row, it);
     state.rowsById.set(it.id, row);
@@ -3035,7 +3128,7 @@
       placeholderItem = item;
       if ((+item.round || 0) === 0) break;
     }
-    if (newAddressEl && placeholderItem) {
+    if (!READ_ONLY && newAddressEl && placeholderItem) {
       const placeholderRow = renderRow(placeholderItem, 0, {suppressNumber: true, newAddress: true});
       if (placeholderRow) {
         newAddressEl.appendChild(placeholderRow);
@@ -3147,7 +3240,7 @@
       if (btnNav) btnNav.addEventListener('click', ()=>{ openGmapsForRound(rid); });
 
       const plannedDateInput = groupEl.querySelector('.planned-date-input');
-      if (plannedDateInput) {
+      if (CAN_CHANGE_ROUND_META && plannedDateInput) {
         plannedDateInput.addEventListener('change', async ()=>{
           const newVal = plannedDateInput.value.trim();
           const prevVal = getPlannedDateForRound(rid);
@@ -3163,7 +3256,7 @@
       }
 
       const plannedTimeInput = groupEl.querySelector('.planned-time-input');
-      if (plannedTimeInput) {
+      if (CAN_CHANGE_ROUND_META && plannedTimeInput) {
         plannedTimeInput.addEventListener('change', async ()=>{
           const newVal = plannedTimeInput.value.trim();
           const prevVal = getPlannedTimeForRound(rid);
@@ -3179,7 +3272,7 @@
       }
 
       const sortSelect = groupEl.querySelector('.round-sort-mode');
-      if (sortSelect) {
+      if (CAN_SORT && sortSelect) {
         sortSelect.addEventListener('change', async ()=>{
           const newMode = sortSelect.value === 'custom' ? 'custom' : 'default';
           const prevMode = getRoundSortMode(rid);
