@@ -33,6 +33,14 @@ Ezek a fájlok a `config.json`-ban a `files` szekcióban átnevezhetők.
 | `api.php?action=revision` | GET | Csak az aktuális revíziószám. Gyors fallback ellenőrzéshez. |
 | `api.php?action=changes&since=<rev>&exclude_actor=<client>` | GET | Hosszú lekérdezés (long-poll) a változásnaplóra. Maximum 25 másodpercig vár, és csak más kliens által generált eseményeket ad vissza. 204-es státusszal tér vissza, ha nem történt változás. |
 
+## Hitelesítés és biztonság
+
+- Az alkalmazás minden oldala és API végpontja bejelentkezést igényel. Az első indításkor automatikusan létrejön az `admin` felhasználó `admin` jelszóval, amelyet az első sikeres belépés után kötelező megváltoztatni.
+- A felhasználói adatok az SQLite adatbázis `users` táblájában tárolódnak, a jelszavak Argon2id (vagy a környezetben elérhető legerősebb) hashsel kerülnek mentésre.
+- A munkamenet HttpOnly sütiben (`GFSESSID`) tárolódik, és a szerver a hitelesítés ellenőrzése után azonnal lezárja a sessiont, így a hosszú lekérések sem tartanak fenn fájlrögzítést.
+- Minden módosító kéréshez szükséges a `GF-CSRF` sütiből származó értéket `X-CSRF-Token` fejlécként továbbítani (a kliensoldali `fetch` hívások ezt automatikusan megteszik).
+- A kilépés a `logout.php` végpont POST metódusával történik, amely szintén CSRF védelemmel rendelkezik.
+
 ### Kötelező fejlécek író végpontokhoz
 
 - `X-Client-ID`: a `session` végponttól kapott azonosító.

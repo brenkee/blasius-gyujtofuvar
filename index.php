@@ -1,4 +1,8 @@
-<?php require __DIR__ . '/common.php'; ?>
+<?php
+require __DIR__ . '/common.php';
+$CURRENT_USER = auth_require_login();
+$LOGOUT_TOKEN = csrf_get_token();
+?>
 <!doctype html>
 <html lang="hu">
 <head>
@@ -57,6 +61,18 @@
   <aside class="panel">
     <div id="panelTop" class="panel-top">
       <h1><?= htmlspecialchars($CFG['app']['title']) ?></h1>
+      <div class="user-info-bar">
+        <span class="user-info-name" title="<?= htmlspecialchars($CURRENT_USER['email'] ?? '') ?>">
+          <?= htmlspecialchars($CURRENT_USER['username'] ?? 'felhasználó') ?>
+        </span>
+        <span class="user-info-actions">
+          <a class="user-info-link" href="<?= htmlspecialchars(app_url_path('password.php'), ENT_QUOTES) ?>">Jelszó módosítása</a>
+          <form method="post" action="<?= htmlspecialchars(app_url_path('logout.php'), ENT_QUOTES) ?>" class="user-info-logout">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($LOGOUT_TOKEN, ENT_QUOTES) ?>">
+            <button type="submit" class="user-info-link user-info-logout-btn">Kilépés</button>
+          </form>
+        </span>
+      </div>
       <?php
         $toolbarFeatures = $CFG['features']['toolbar'] ?? [];
         $toolbarText = $CFG['text']['toolbar'] ?? [];

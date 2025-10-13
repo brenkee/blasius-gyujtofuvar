@@ -1,6 +1,58 @@
 <?php
 // Közös betöltések: konfiguráció, körök, fájlok, segédfüggvények
 
+if (!isset($GLOBALS['APP_PERF'])) {
+  $GLOBALS['APP_PERF'] = [
+    'start' => microtime(true),
+    'db' => 0.0,
+  ];
+}
+
+if (!function_exists('app_perf_track_db')) {
+  function app_perf_track_db($start, $end = null) {
+    $endTime = $end ?? microtime(true);
+    if (!is_float($start)) {
+      return;
+    }
+    $delta = $endTime - $start;
+    if (!is_float($delta) || $delta < 0) {
+      return;
+    }
+    $GLOBALS['APP_PERF']['db'] = ($GLOBALS['APP_PERF']['db'] ?? 0.0) + $delta;
+  }
+}
+
+if (!function_exists('app_perf_register_shutdown')) {
+  function app_perf_register_shutdown() {
+    static $registered = false;
+    if ($registered) {
+      return;
+    }
+    $registered = true;
+    register_shutdown_function(function () {
+      if (headers_sent()) {
+        return;
+      }
+      $perf = $GLOBALS['APP_PERF'] ?? [];
+      $start = isset($perf['start']) && is_float($perf['start']) ? $perf['start'] : microtime(true);
+      $total = microtime(true) - $start;
+      $db = isset($perf['db']) && is_float($perf['db']) ? $perf['db'] : 0.0;
+      header(sprintf('X-App-Perf-Total: %.5f', max(0, $total)));
+      header(sprintf('X-App-Perf-DB: %.5f', max(0, $db)));
+    });
+  }
+}
+
+app_perf_register_shutdown();
+
+if (!defined('APP_SESSION_NAME')) {
+  define('APP_SESSION_NAME', 'GFSESSID');
+}
+
+if (!defined('APP_CSRF_COOKIE')) {
+  define('APP_CSRF_COOKIE', 'GF-CSRF');
+}
+
 $CONFIG_FILE = __DIR__ . '/config.json';
 $CFG_DEFAULT = [
   "base_url" => "/",
@@ -402,6 +454,43 @@ if (!function_exists('base_url')) {
   }
 }
 
+if (!function_exists('app_is_https')) {
+  function app_is_https() {
+    if (!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off') {
+      return true;
+    }
+    $proto = strtolower((string)($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? ''));
+    if ($proto === 'https') {
+      return true;
+    }
+    return false;
+  }
+}
+
+if (!function_exists('app_base_path')) {
+  function app_base_path() {
+    global $APP_BASE_PATH;
+    return $APP_BASE_PATH ?? '/';
+  }
+}
+
+if (!function_exists('app_url_path')) {
+  function app_url_path($relative = '') {
+    $base = app_base_path();
+    if (!is_string($relative) || $relative === '' || $relative === '/') {
+      return $base;
+    }
+    return $base . ltrim((string)$relative, '/');
+  }
+}
+
+if (!function_exists('app_cookie_path')) {
+  function app_cookie_path() {
+    $base = app_base_path();
+    return $base !== '' ? rtrim($base, '/') . '/' : '/';
+  }
+}
+
 $CFG = $CFG_DEFAULT;
 if (is_file($CONFIG_FILE)) {
   $raw = file_get_contents($CONFIG_FILE);
@@ -409,6 +498,13 @@ if (is_file($CONFIG_FILE)) {
   if (is_array($json)) $CFG = array_replace_recursive($CFG_DEFAULT, $json);
 }
 $CFG['base_url'] = normalize_base_url($CFG['base_url'] ?? '/');
+$APP_BASE_PATH = parse_url($CFG['base_url'], PHP_URL_PATH);
+if (!is_string($APP_BASE_PATH) || $APP_BASE_PATH === '') {
+  $APP_BASE_PATH = '/';
+}
+if (substr($APP_BASE_PATH, -1) !== '/') {
+  $APP_BASE_PATH .= '/';
+}
 if (empty($CFG['rounds'])) {
   $CFG['rounds'] = [
     ["id"=>0,"label"=>"Alap (0)","color"=>"#9aa0a6"],
@@ -934,11 +1030,15 @@ function data_store_is_sqlite($file) {
 }
 
 function data_store_sqlite_is_empty(PDO $pdo) {
+  $dbStart = microtime(true);
   $count = (int)$pdo->query('SELECT COUNT(*) AS c FROM items')->fetchColumn();
+  app_perf_track_db($dbStart);
   if ($count > 0) {
     return false;
   }
+  $dbStart = microtime(true);
   $count = (int)$pdo->query('SELECT COUNT(*) AS c FROM round_meta')->fetchColumn();
+  app_perf_track_db($dbStart);
   return $count === 0;
 }
 
@@ -953,13 +1053,21 @@ function data_store_sqlite_open($file) {
   }
   $bootstrap = $DATA_BOOTSTRAP_INFO[$file] ?? null;
   $isNew = is_array($bootstrap) ? !empty($bootstrap['created']) : !is_file($file);
+  $dbStart = microtime(true);
   $pdo = new PDO('sqlite:' . $file);
+  app_perf_track_db($dbStart);
   $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
   $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
   $pdo->setAttribute(PDO::ATTR_TIMEOUT, 5);
+  $dbStart = microtime(true);
   $pdo->exec('PRAGMA foreign_keys = ON');
+  app_perf_track_db($dbStart);
+  $dbStart = microtime(true);
   $pdo->exec('PRAGMA journal_mode = WAL');
+  app_perf_track_db($dbStart);
+  $dbStart = microtime(true);
   $pdo->exec('PRAGMA synchronous = NORMAL');
+  app_perf_track_db($dbStart);
   return [$pdo, $isNew];
 }
 
@@ -1020,7 +1128,9 @@ function data_store_read_sqlite($file) {
 
   try {
     $items = [];
+    $dbStart = microtime(true);
     $stmt = $pdo->query('SELECT data FROM items ORDER BY position ASC, id ASC');
+    app_perf_track_db($dbStart);
     if ($stmt) {
       foreach ($stmt as $row) {
         if (!is_array($row)) continue;
@@ -1033,7 +1143,9 @@ function data_store_read_sqlite($file) {
       }
     }
     $roundMetaRaw = [];
+    $dbStart = microtime(true);
     $stmt = $pdo->query('SELECT round_id, data FROM round_meta');
+    app_perf_track_db($dbStart);
     if ($stmt) {
       foreach ($stmt as $row) {
         if (!is_array($row)) continue;
@@ -1060,9 +1172,15 @@ function data_store_write_sqlite_conn(PDO $pdo, array $items, array $roundMeta) 
   $normalizedItems = normalize_items($items);
   $normalizedMeta = normalize_round_meta($roundMeta);
 
+  $dbStart = microtime(true);
   $pdo->beginTransaction();
+  app_perf_track_db($dbStart);
+  $dbStart = microtime(true);
   $pdo->exec('DELETE FROM items');
+  app_perf_track_db($dbStart);
+  $dbStart = microtime(true);
   $pdo->exec('DELETE FROM round_meta');
+  app_perf_track_db($dbStart);
 
   if (!empty($normalizedItems)) {
     $insertItem = $pdo->prepare('INSERT INTO items (id, position, data) VALUES (:id, :position, :data)');
@@ -1075,11 +1193,13 @@ function data_store_write_sqlite_conn(PDO $pdo, array $items, array $roundMeta) 
       if ($json === false) {
         throw new RuntimeException('JSON kódolási hiba elem írásakor.');
       }
+      $dbStart = microtime(true);
       $insertItem->execute([
         ':id' => $id,
         ':position' => (int)$position,
         ':data' => $json
       ]);
+      app_perf_track_db($dbStart);
     }
   }
 
@@ -1094,14 +1214,18 @@ function data_store_write_sqlite_conn(PDO $pdo, array $items, array $roundMeta) 
       if ($json === false) {
         throw new RuntimeException('JSON kódolási hiba kör meta írásakor.');
       }
+      $dbStart = microtime(true);
       $insertMeta->execute([
         ':round_id' => $roundKey,
         ':data' => $json
       ]);
+      app_perf_track_db($dbStart);
     }
   }
 
+  $dbStart = microtime(true);
   $pdo->commit();
+  app_perf_track_db($dbStart);
   return true;
 }
 
@@ -1405,6 +1529,402 @@ function read_change_log_entries() {
   return $entries;
 }
 
+if (!function_exists('app_session_start')) {
+  function app_session_start() {
+    if (session_status() === PHP_SESSION_ACTIVE) {
+      return;
+    }
+    session_name(APP_SESSION_NAME);
+    session_cache_limiter('');
+    $cookieParams = [
+      'lifetime' => 0,
+      'path' => app_cookie_path(),
+      'secure' => app_is_https(),
+      'httponly' => true,
+      'samesite' => 'Strict',
+    ];
+    session_set_cookie_params($cookieParams);
+    session_start();
+  }
+}
+
+if (!function_exists('app_session_close')) {
+  function app_session_close() {
+    if (session_status() === PHP_SESSION_ACTIVE) {
+      session_write_close();
+    }
+  }
+}
+
+if (!function_exists('auth_session_snapshot')) {
+  function auth_session_snapshot() {
+    app_session_start();
+    $userId = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : 0;
+    $mustChange = !empty($_SESSION['must_change_password']);
+    app_session_close();
+    return [
+      'user_id' => $userId > 0 ? $userId : null,
+      'must_change' => (bool)$mustChange,
+    ];
+  }
+}
+
+if (!function_exists('auth_store_session')) {
+  function auth_store_session($userId, $mustChangePassword) {
+    app_session_start();
+    $_SESSION['user_id'] = (int)$userId;
+    $_SESSION['must_change_password'] = $mustChangePassword ? 1 : 0;
+    app_session_close();
+  }
+}
+
+if (!function_exists('auth_clear_session')) {
+  function auth_clear_session() {
+    app_session_start();
+    $_SESSION = [];
+    if (session_id() !== '') {
+      setcookie(session_name(), '', [
+        'expires' => time() - 3600,
+        'path' => app_cookie_path(),
+        'secure' => app_is_https(),
+        'httponly' => true,
+        'samesite' => 'Strict',
+      ]);
+    }
+    session_destroy();
+    app_session_close();
+  }
+}
+
+if (!function_exists('auth_set_session_must_change')) {
+  function auth_set_session_must_change($mustChange) {
+    app_session_start();
+    if (isset($_SESSION['user_id'])) {
+      $_SESSION['must_change_password'] = $mustChange ? 1 : 0;
+    }
+    app_session_close();
+  }
+}
+
+if (!function_exists('csrf_token_from_request')) {
+  function csrf_token_from_request() {
+    $header = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? null;
+    if (is_string($header) && $header !== '') {
+      return $header;
+    }
+    $postToken = $_POST['csrf_token'] ?? null;
+    if (is_array($postToken)) {
+      $postToken = reset($postToken);
+    }
+    if (is_string($postToken) && $postToken !== '') {
+      return $postToken;
+    }
+    return null;
+  }
+}
+
+if (!function_exists('csrf_get_token')) {
+  function csrf_get_token() {
+    $name = APP_CSRF_COOKIE;
+    $token = isset($_COOKIE[$name]) ? (string)$_COOKIE[$name] : '';
+    if ($token !== '' && preg_match('/^[A-Za-z0-9_-]{32,}$/', $token)) {
+      return $token;
+    }
+    $bytes = random_bytes(32);
+    $token = rtrim(strtr(base64_encode($bytes), '+/', '-_'), '=');
+    setcookie($name, $token, [
+      'expires' => time() + 86400 * 30,
+      'path' => app_cookie_path(),
+      'secure' => app_is_https(),
+      'httponly' => false,
+      'samesite' => 'Strict',
+    ]);
+    $_COOKIE[$name] = $token;
+    return $token;
+  }
+}
+
+if (!function_exists('csrf_validate')) {
+  function csrf_validate($token) {
+    $cookie = isset($_COOKIE[APP_CSRF_COOKIE]) ? (string)$_COOKIE[APP_CSRF_COOKIE] : '';
+    if ($cookie === '' || !is_string($token) || $token === '') {
+      return false;
+    }
+    return hash_equals($cookie, $token);
+  }
+}
+
+if (!function_exists('csrf_require_token_from_request')) {
+  function csrf_require_token_from_request($responseType = 'html') {
+    $method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+    if (in_array($method, ['GET', 'HEAD', 'OPTIONS'], true)) {
+      return true;
+    }
+    $token = csrf_token_from_request();
+    if ($token !== null && csrf_validate($token)) {
+      return true;
+    }
+    if ($responseType === 'json') {
+      header('Content-Type: application/json; charset=utf-8');
+      http_response_code(419);
+      echo json_encode(['ok' => false, 'error' => 'invalid_csrf'], JSON_UNESCAPED_UNICODE);
+    } else {
+      header('Content-Type: text/html; charset=utf-8');
+      http_response_code(400);
+      echo '<h1>Érvénytelen kérés</h1><p>Biztonsági ellenőrzés sikertelen (CSRF).</p>';
+    }
+    exit;
+  }
+}
+
+if (!function_exists('auth_db')) {
+  function auth_db() {
+    static $pdo = null;
+    if ($pdo instanceof PDO) {
+      return $pdo;
+    }
+    global $DATA_FILE;
+    [$pdo] = data_store_sqlite_open($DATA_FILE);
+    return $pdo;
+  }
+}
+
+if (!function_exists('auth_password_hash')) {
+  function auth_password_hash($password) {
+    if (defined('PASSWORD_ARGON2ID')) {
+      return password_hash($password, PASSWORD_ARGON2ID);
+    }
+    return password_hash($password, PASSWORD_DEFAULT);
+  }
+}
+
+if (!function_exists('auth_verify_password')) {
+  function auth_verify_password($password, $hash) {
+    if (!is_string($hash) || $hash === '') {
+      return false;
+    }
+    return password_verify($password, $hash);
+  }
+}
+
+if (!function_exists('auth_find_user_by_id')) {
+  function auth_find_user_by_id($id) {
+    $userId = (int)$id;
+    if ($userId <= 0) {
+      return null;
+    }
+    try {
+      $pdo = auth_db();
+      $stmt = $pdo->prepare('SELECT id, username, email, password_hash, must_change_password, created_at, updated_at FROM users WHERE id = :id LIMIT 1');
+      $dbStart = microtime(true);
+      $stmt->execute([':id' => $userId]);
+      app_perf_track_db($dbStart);
+      $row = $stmt->fetch(PDO::FETCH_ASSOC);
+      if (!is_array($row)) {
+        return null;
+      }
+      $row['must_change_password'] = !empty($row['must_change_password']);
+      return $row;
+    } catch (Throwable $e) {
+      error_log('Felhasználó lekérdezési hiba: ' . $e->getMessage());
+      return null;
+    }
+  }
+}
+
+if (!function_exists('auth_find_user_by_username')) {
+  function auth_find_user_by_username($username) {
+    $name = trim((string)$username);
+    if ($name === '') {
+      return null;
+    }
+    try {
+      $pdo = auth_db();
+      $stmt = $pdo->prepare('SELECT id, username, email, password_hash, must_change_password, created_at, updated_at FROM users WHERE username = :username LIMIT 1');
+      $dbStart = microtime(true);
+      $stmt->execute([':username' => $name]);
+      app_perf_track_db($dbStart);
+      $row = $stmt->fetch(PDO::FETCH_ASSOC);
+      if (!is_array($row)) {
+        return null;
+      }
+      $row['must_change_password'] = !empty($row['must_change_password']);
+      return $row;
+    } catch (Throwable $e) {
+      error_log('Felhasználó keresési hiba: ' . $e->getMessage());
+      return null;
+    }
+  }
+}
+
+if (!function_exists('auth_update_user_password')) {
+  function auth_update_user_password($userId, $passwordHash, $forceChange = false) {
+    try {
+      $pdo = auth_db();
+      $stmt = $pdo->prepare('UPDATE users SET password_hash = :hash, must_change_password = :must_change, updated_at = :updated_at WHERE id = :id');
+      $dbStart = microtime(true);
+      $stmt->execute([
+        ':hash' => $passwordHash,
+        ':must_change' => $forceChange ? 1 : 0,
+        ':updated_at' => gmdate('c'),
+        ':id' => (int)$userId,
+      ]);
+      app_perf_track_db($dbStart);
+      return $stmt->rowCount() > 0;
+    } catch (Throwable $e) {
+      error_log('Jelszó frissítési hiba: ' . $e->getMessage());
+      return false;
+    }
+  }
+}
+
+if (!function_exists('auth_ensure_admin_user')) {
+  function auth_ensure_admin_user() {
+    static $ensured = false;
+    if ($ensured) {
+      return;
+    }
+    $ensured = true;
+    try {
+      $pdo = auth_db();
+      $dbStart = microtime(true);
+      $stmt = $pdo->query("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='users'");
+      app_perf_track_db($dbStart);
+      $exists = $stmt ? (int)$stmt->fetchColumn() : 0;
+      if ($exists === 0) {
+        return;
+      }
+      $dbStart = microtime(true);
+      $countStmt = $pdo->query('SELECT COUNT(*) FROM users');
+      app_perf_track_db($dbStart);
+      $count = $countStmt ? (int)$countStmt->fetchColumn() : 0;
+      if ($count === 0) {
+        $hash = auth_password_hash('admin');
+        $now = gmdate('c');
+        $stmt = $pdo->prepare('INSERT INTO users (username, email, password_hash, must_change_password, created_at, updated_at) VALUES (:username, :email, :hash, 1, :created, :created)');
+        $dbStart = microtime(true);
+        $stmt->execute([
+          ':username' => 'admin',
+          ':email' => '',
+          ':hash' => $hash,
+          ':created' => $now,
+        ]);
+        app_perf_track_db($dbStart);
+      }
+    } catch (Throwable $e) {
+      error_log('Admin felhasználó inicializálása nem sikerült: ' . $e->getMessage());
+    }
+  }
+}
+
+if (!function_exists('auth_normalize_return_to')) {
+  function auth_normalize_return_to($value = null) {
+    $candidate = is_string($value) && $value !== '' ? $value : (string)($_SERVER['REQUEST_URI'] ?? '');
+    if ($candidate === '') {
+      return app_url_path('');
+    }
+    $candidate = trim($candidate);
+    if (preg_match('~^https?://~i', $candidate)) {
+      return app_url_path('');
+    }
+    if ($candidate[0] !== '/') {
+      $candidate = '/' . ltrim($candidate, '/');
+    }
+    $base = app_base_path();
+    if ($base !== '/' && strpos($candidate, $base) !== 0) {
+      return app_url_path('');
+    }
+    return $candidate;
+  }
+}
+
+if (!function_exists('auth_redirect_to_login')) {
+  function auth_redirect_to_login($returnTo = null) {
+    $target = app_url_path('login.php');
+    $returnPath = $returnTo ? auth_normalize_return_to($returnTo) : null;
+    if ($returnPath && $returnPath !== $target) {
+      $target .= (strpos($target, '?') === false ? '?' : '&') . 'return_to=' . rawurlencode($returnPath);
+    }
+    header('Location: ' . $target);
+    exit;
+  }
+}
+
+if (!function_exists('auth_redirect_to_password_change')) {
+  function auth_redirect_to_password_change($returnTo = null) {
+    $target = app_url_path('password.php');
+    $returnPath = $returnTo ? auth_normalize_return_to($returnTo) : null;
+    if ($returnPath && $returnPath !== $target) {
+      $target .= (strpos($target, '?') === false ? '?' : '&') . 'return_to=' . rawurlencode($returnPath);
+    }
+    header('Location: ' . $target);
+    exit;
+  }
+}
+
+if (!function_exists('auth_get_current_user')) {
+  function auth_get_current_user() {
+    static $cacheInitialized = false;
+    static $cachedUser = null;
+    if ($cacheInitialized) {
+      return $cachedUser;
+    }
+    $cacheInitialized = true;
+    auth_ensure_admin_user();
+    $snapshot = auth_session_snapshot();
+    if (empty($snapshot['user_id'])) {
+      $cachedUser = null;
+      return null;
+    }
+    $user = auth_find_user_by_id((int)$snapshot['user_id']);
+    if (!$user) {
+      auth_clear_session();
+      $cachedUser = null;
+      return null;
+    }
+    if (!empty($snapshot['must_change']) && empty($user['must_change_password'])) {
+      auth_set_session_must_change(false);
+    }
+    $cachedUser = $user;
+    return $user;
+  }
+}
+
+if (!function_exists('auth_require_login')) {
+  function auth_require_login(array $options = []) {
+    $response = isset($options['response']) ? strtolower((string)$options['response']) : 'redirect';
+    $allowPasswordChange = !empty($options['allow_password_change']);
+    $returnTo = auth_normalize_return_to($options['return_to'] ?? null);
+    $user = auth_get_current_user();
+    if (!$user) {
+      if ($response === 'json') {
+        header('Content-Type: application/json; charset=utf-8');
+        http_response_code(401);
+        echo json_encode(['ok' => false, 'error' => 'auth_required'], JSON_UNESCAPED_UNICODE);
+        exit;
+      }
+      auth_redirect_to_login($returnTo);
+    }
+    if (!empty($user['must_change_password']) && !$allowPasswordChange) {
+      if ($response === 'json') {
+        header('Content-Type: application/json; charset=utf-8');
+        http_response_code(409);
+        echo json_encode(['ok' => false, 'error' => 'password_change_required'], JSON_UNESCAPED_UNICODE);
+        exit;
+      }
+      auth_redirect_to_password_change($returnTo);
+    }
+    csrf_get_token();
+    return $user;
+  }
+}
+
+if (!function_exists('auth_bootstrap_users')) {
+  function auth_bootstrap_users() {
+    auth_ensure_admin_user();
+  }
+}
+
 function bootstrap_data_store_if_needed() {
   global $DATA_FILE, $DATA_BOOTSTRAP_INFO, $DATA_INIT_ERROR;
 
@@ -1446,3 +1966,4 @@ function bootstrap_data_store_if_needed() {
 }
 
 bootstrap_data_store_if_needed();
+auth_bootstrap_users();

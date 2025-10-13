@@ -53,6 +53,35 @@
     return 'batch_' + Math.random().toString(36).slice(2, 14);
   }
 
+  const CSRF_COOKIE_NAME = 'GF-CSRF';
+
+  function readCookie(name){
+    if (typeof document === 'undefined' || !document.cookie) {
+      return null;
+    }
+    const parts = document.cookie.split(';');
+    for (const part of parts) {
+      const trimmed = part.trim();
+      if (!trimmed) continue;
+      const eq = trimmed.indexOf('=');
+      const key = eq === -1 ? trimmed : trimmed.slice(0, eq);
+      if (key === name) {
+        const value = eq === -1 ? '' : trimmed.slice(eq + 1);
+        try {
+          return decodeURIComponent(value);
+        } catch (err) {
+          return value;
+        }
+      }
+    }
+    return null;
+  }
+
+  function getCsrfToken(){
+    const token = readCookie(CSRF_COOKIE_NAME);
+    return token && token.length > 0 ? token : null;
+  }
+
   function buildHeaders(raw){
     const headers = new Headers();
     if (raw instanceof Headers) {
@@ -65,6 +94,10 @@
     }
     if (state.clientId) {
       headers.set('X-Client-ID', state.clientId);
+    }
+    const csrf = getCsrfToken();
+    if (csrf) {
+      headers.set('X-CSRF-Token', csrf);
     }
     return headers;
   }
