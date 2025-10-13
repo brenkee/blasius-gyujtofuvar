@@ -26,6 +26,13 @@ body.import-busy .app{filter:blur(4px);pointer-events:none;user-select:none}
 .auth-info{background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.35);color:#14532d;border-radius:10px;padding:10px 12px}
 .auth-link{color:var(--accent);text-decoration:none;font-weight:600;display:block;text-align:center;margin-top:6px}
 .auth-link:hover{text-decoration:underline}
+.auth-forgot{display:grid;gap:12px;margin-top:8px}
+.auth-forgot-toggle{background:none;border:none;color:inherit;padding:0;font:inherit;cursor:pointer}
+.auth-forgot-section{display:grid;gap:12px}
+.auth-forgot-section hr{border:none;border-top:1px solid var(--border);margin:0}
+.auth-forgot-section h2{margin:0;font-size:16px;text-align:center;color:var(--muted)}
+.auth-submit-secondary{background:var(--border);color:var(--text)}
+.auth-submit-secondary:hover{background:var(--muted);color:#fff}
 @media (max-width:600px){.auth-card{padding:24px 20px}}
 .init-error-banner{background:#fee2e2;color:#7f1d1d;border:1px solid #fecaca;border-radius:12px;padding:14px 18px;margin:12px auto;max-width:920px;box-shadow:0 8px 20px rgba(220,38,38,0.18)}
 .init-error-banner strong{display:block;font-size:16px;margin-bottom:6px}

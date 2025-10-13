@@ -186,7 +186,7 @@ $LOGOUT_TOKEN = csrf_get_token();
                 <?php if ($menuSectionRendered): ?>
                   <hr class="toolbar-menu-separator" role="presentation" />
                 <?php endif; ?>
-                <a class="toolbar-menu-link" href="<?= htmlspecialchars(app_url_path('password.php'), ENT_QUOTES) ?>">Jelszó módosítása</a>
+                <a class="toolbar-menu-link" href="<?= htmlspecialchars(app_url_path('password.php'), ENT_QUOTES) ?>">Profilom</a>
                 <form method="post" action="<?= htmlspecialchars(app_url_path('logout.php'), ENT_QUOTES) ?>" class="toolbar-menu-form">
                   <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($LOGOUT_TOKEN, ENT_QUOTES) ?>">
                   <button type="submit">Kilépés</button>

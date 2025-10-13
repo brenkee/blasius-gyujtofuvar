@@ -2109,6 +2109,28 @@ if (!function_exists('auth_update_user')) {
   }
 }
 
+if (!function_exists('auth_delete_user')) {
+  function auth_delete_user($userId, &$error = null) {
+    $id = (int)$userId;
+    if ($id <= 0) {
+      $error = 'invalid_id';
+      return false;
+    }
+    try {
+      $pdo = auth_db();
+      $stmt = $pdo->prepare('DELETE FROM users WHERE id = :id');
+      $dbStart = microtime(true);
+      $stmt->execute([':id' => $id]);
+      app_perf_track_db($dbStart);
+      return $stmt->rowCount() > 0;
+    } catch (Throwable $e) {
+      $error = 'db_error';
+      error_log('Felhasználó törlési hiba: ' . $e->getMessage());
+      return false;
+    }
+  }
+}
+
 if (!function_exists('auth_generate_random_password')) {
   function auth_generate_random_password($length = 12) {
     $length = max(8, (int)$length);
