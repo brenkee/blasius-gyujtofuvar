@@ -64,13 +64,35 @@ $LOGOUT_TOKEN = csrf_get_token();
 <div class="app">
   <aside class="panel">
     <div id="panelTop" class="panel-top">
-      <h1><?= htmlspecialchars($CFG['app']['title']) ?></h1>
-      <div class="user-info-bar">
-        <span class="user-info-name" title="<?= htmlspecialchars($CURRENT_USER['email'] ?? '') ?>">
-          <?= htmlspecialchars($CURRENT_USER['username'] ?? 'felhasználó') ?>
-        </span>
-      </div>
       <?php
+        $appTitle = $CFG['app']['title'] ?? '';
+        $logoCfg = $CFG['app']['logo'] ?? null;
+        $logoData = null;
+        if (is_string($logoCfg) && trim($logoCfg) !== '') {
+          $logoData = ['src' => trim($logoCfg)];
+        } elseif (is_array($logoCfg)) {
+          $logoData = $logoCfg;
+        }
+        $logoSrc = '';
+        $logoAlt = $appTitle;
+        $logoWidthAttr = '';
+        $logoHeightAttr = '';
+        if (is_array($logoData)) {
+          $rawSrc = trim((string)($logoData['src'] ?? ''));
+          if ($rawSrc !== '') {
+            $logoSrc = htmlspecialchars(base_url($rawSrc), ENT_QUOTES);
+            $logoAlt = (string)($logoData['alt'] ?? $logoAlt);
+            $widthVal = $logoData['width'] ?? null;
+            if ($widthVal !== null && $widthVal !== '') {
+              $logoWidthAttr = ' width="' . htmlspecialchars((string)$widthVal, ENT_QUOTES) . '"';
+            }
+            $heightVal = $logoData['height'] ?? null;
+            if ($heightVal !== null && $heightVal !== '') {
+              $logoHeightAttr = ' height="' . htmlspecialchars((string)$heightVal, ENT_QUOTES) . '"';
+            }
+          }
+        }
+
         $toolbarFeatures = $FEATURES['toolbar'] ?? [];
         $toolbarText = $CFG['text']['toolbar'] ?? [];
         $badgeText = $CFG['text']['badges']['pin_counter_label'] ?? 'Pin-ek:';
@@ -110,19 +132,17 @@ $LOGOUT_TOKEN = csrf_get_token();
         $hasUtilityMenuItems = $hasImportAll || $hasExportAll || $hasPrintAll || $hasDownloadArchive || $hasThemeToggle;
         $hasUserMenuItems = true;
         $toolbarMenuHasItems = $hasUtilityMenuItems || $hasAdminMenuItem || $hasUserMenuItems;
-      ?>
-      <div class="toolbar">
-        <?php if (!empty($toolbarFeatures['expand_all'])): ?>
-          <button id="expandAll" title="<?= htmlspecialchars($toolbarText['expand_all']['title'] ?? '') ?>">
-            <?= htmlspecialchars($toolbarText['expand_all']['label'] ?? 'Összes kinyit') ?>
-          </button>
-        <?php endif; ?>
-        <?php if (!empty($toolbarFeatures['collapse_all'])): ?>
-          <button id="collapseAll" title="<?= htmlspecialchars($toolbarText['collapse_all']['title'] ?? '') ?>">
-            <?= htmlspecialchars($toolbarText['collapse_all']['label'] ?? 'Összes összezár') ?>
-          </button>
-        <?php endif; ?>
-        <?php if ($toolbarMenuHasItems): ?>
+
+        $toolbarItems = [];
+        if (!empty($toolbarFeatures['expand_all'])) {
+          $toolbarItems['expand_all'] = '<button id="expandAll" title="' . htmlspecialchars($toolbarText['expand_all']['title'] ?? '', ENT_QUOTES) . '">' . htmlspecialchars($toolbarText['expand_all']['label'] ?? 'Összes kinyit', ENT_QUOTES) . '</button>';
+        }
+        if (!empty($toolbarFeatures['collapse_all'])) {
+          $toolbarItems['collapse_all'] = '<button id="collapseAll" title="' . htmlspecialchars($toolbarText['collapse_all']['title'] ?? '', ENT_QUOTES) . '">' . htmlspecialchars($toolbarText['collapse_all']['label'] ?? 'Összes összezár', ENT_QUOTES) . '</button>';
+        }
+        if ($toolbarMenuHasItems) {
+          ob_start();
+          ?>
           <div class="toolbar-menu-container">
             <button
               id="toolbarMenuToggle"
@@ -195,15 +215,53 @@ $LOGOUT_TOKEN = csrf_get_token();
               <?php endif; ?>
             </div>
           </div>
+          <?php
+          $toolbarItems['menu'] = trim(ob_get_clean());
+        }
+        if (!empty($toolbarFeatures['undo']) && !empty($CFG['history']['undo_enabled'])) {
+          $toolbarItems['undo'] = '<button id="undoBtn" title="' . htmlspecialchars($toolbarText['undo']['title'] ?? '', ENT_QUOTES) . '" disabled>' . htmlspecialchars($toolbarText['undo']['label'] ?? 'Visszavonás', ENT_QUOTES) . '</button>';
+        }
+        $toolbarItems['pin_counter'] = '<span class="toolbar-pin-counter" title="' . htmlspecialchars($badgeTitle, ENT_QUOTES) . '">' . htmlspecialchars($badgeText, ENT_QUOTES) . ' <span id="pinCount" class="badge">0</span></span>';
+
+        $validToolbarKeys = ['expand_all', 'collapse_all', 'menu', 'undo', 'pin_counter'];
+        $toolbarOrderCfg = $CFG['ui']['toolbar']['order'] ?? [];
+        $toolbarOrder = [];
+        if (is_array($toolbarOrderCfg)) {
+          foreach ($toolbarOrderCfg as $candidate) {
+            $key = is_string($candidate) ? strtolower(trim($candidate)) : '';
+            if ($key !== '' && in_array($key, $validToolbarKeys, true) && !in_array($key, $toolbarOrder, true)) {
+              $toolbarOrder[] = $key;
+            }
+          }
+        }
+        foreach ($validToolbarKeys as $key) {
+          if (!in_array($key, $toolbarOrder, true)) {
+            $toolbarOrder[] = $key;
+          }
+        }
+        $orderedToolbarItems = [];
+        foreach ($toolbarOrder as $orderKey) {
+          if (isset($toolbarItems[$orderKey])) {
+            $orderedToolbarItems[] = $toolbarItems[$orderKey];
+          }
+        }
+        $hasToolbarItems = !empty($orderedToolbarItems);
+      ?>
+      <div class="panel-top-header">
+        <div class="panel-brand">
+          <?php if ($logoSrc !== ''): ?>
+            <img src="<?= $logoSrc ?>" alt="<?= htmlspecialchars($logoAlt, ENT_QUOTES) ?>" class="panel-brand-logo"<?= $logoWidthAttr ?><?= $logoHeightAttr ?>>
+          <?php else: ?>
+            <h1 class="panel-title"><?= htmlspecialchars($appTitle) ?></h1>
+          <?php endif; ?>
+        </div>
+        <?php if ($hasToolbarItems): ?>
+          <div class="toolbar">
+            <?php foreach ($orderedToolbarItems as $toolbarItemHtml): ?>
+              <?= $toolbarItemHtml ?>
+            <?php endforeach; ?>
+          </div>
         <?php endif; ?>
-        <?php if (!empty($toolbarFeatures['undo']) && !empty($CFG['history']['undo_enabled'])): ?>
-          <button id="undoBtn" title="<?= htmlspecialchars($toolbarText['undo']['title'] ?? '') ?>" disabled>
-            <?= htmlspecialchars($toolbarText['undo']['label'] ?? 'Visszavonás') ?>
-          </button>
-        <?php endif; ?>
-        <span title="<?= htmlspecialchars($badgeTitle) ?>">
-          <?= htmlspecialchars($badgeText) ?> <span id="pinCount" class="badge">0</span>
-        </span>
       </div>
     </div>
     <div id="newAddress" class="new-address-container"></div>
