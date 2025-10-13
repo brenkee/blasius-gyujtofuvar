@@ -7,30 +7,43 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title><?= htmlspecialchars($CFG['app']['title']) ?></title>
-<link rel="icon" type="image/png" href="favicon.png" />
+<link rel="icon" type="image/png" href="<?= htmlspecialchars(base_url('favicon.png'), ENT_QUOTES) ?>" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-<link rel="stylesheet" href="public/styles.css">
+<link rel="stylesheet" href="<?= htmlspecialchars(base_url('public/styles.css'), ENT_QUOTES) ?>">
+<?php
+  $endpointPaths = [
+    'cfg' => 'api.php?action=cfg',
+    'load' => 'api.php?action=load',
+    'save' => 'api.php?action=save',
+    'session' => 'api.php?action=session',
+    'revision' => 'api.php?action=revision',
+    'changes' => 'api.php?action=changes',
+    'geocode' => 'api.php?action=geocode',
+    'importCsv' => 'api.php?action=import_csv',
+    'exportAll' => 'api.php?action=export',
+    'deleteRound' => 'api.php?action=delete_round',
+    'downloadArchive' => 'api.php?action=download_archive',
+    'printAll' => 'print.php',
+  ];
+  $bootstrapEndpoints = [];
+  foreach ($endpointPaths as $key => $path) {
+    $bootstrapEndpoints[$key] = base_url($path);
+  }
+  $printRoundBase = base_url('print.php');
+?>
 <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin></script>
 <script>
-  window.APP_BOOTSTRAP = {
-    endpoints: {
-      cfg: 'api.php?action=cfg',
-      load: 'api.php?action=load',
-      save: 'api.php?action=save',
-      session: 'api.php?action=session',
-      revision: 'api.php?action=revision',
-      changes: 'api.php?action=changes',
-      geocode: 'api.php?action=geocode',
-      importCsv: 'api.php?action=import_csv',
-      exportAll: 'api.php?action=export',
-      deleteRound: 'api.php?action=delete_round',
-      downloadArchive: 'api.php?action=download_archive',
-      printAll: 'print.php',
-      printRound: (rid)=>'print.php?round='+encodeURIComponent(rid)
-    }
+  window.APP_BOOTSTRAP = <?= json_encode([
+    'baseUrl' => $CFG['base_url'],
+    'endpoints' => $bootstrapEndpoints,
+  ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+  window.APP_BOOTSTRAP.endpoints.printRound = function(rid){
+    const base = <?= json_encode($printRoundBase, JSON_UNESCAPED_SLASHES) ?>;
+    const separator = base.indexOf('?') === -1 ? '?' : '&';
+    return base + separator + 'round=' + encodeURIComponent(rid);
   };
 </script>
-<script defer src="public/app.js"></script>
+<script defer src="<?= htmlspecialchars(base_url('public/app.js'), ENT_QUOTES) ?>"></script>
 </head>
 <body>
 <?php if (!empty($DATA_INIT_ERROR)): ?>
