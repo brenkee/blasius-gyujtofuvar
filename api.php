@@ -14,6 +14,8 @@ if (!empty($DATA_INIT_ERROR)) {
   exit;
 }
 
+$API_USER = auth_require_login(['respond_json' => true]);
+
 $action = $_GET['action'] ?? null;
 if (!$action) { http_response_code(400); echo 'Missing action'; exit; }
 

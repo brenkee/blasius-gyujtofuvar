@@ -1,4 +1,11 @@
-<?php require __DIR__ . '/common.php'; ?>
+<?php
+require __DIR__ . '/common.php';
+$CURRENT_USER = auth_require_login();
+$CURRENT_URI = $_SERVER['REQUEST_URI'] ?? null;
+$CURRENT_REDIRECT = auth_normalize_redirect($CURRENT_URI);
+$CHANGE_PASSWORD_URL = auth_build_password_change_url($CURRENT_REDIRECT);
+$LOGOUT_URL = base_url('logout.php');
+?>
 <!doctype html>
 <html lang="hu">
 <head>
@@ -36,6 +43,8 @@
   window.APP_BOOTSTRAP = <?= json_encode([
     'baseUrl' => $CFG['base_url'],
     'endpoints' => $bootstrapEndpoints,
+    'loginUrl' => base_url('login.php'),
+    'passwordChangeUrl' => base_url('change-password.php'),
   ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
   window.APP_BOOTSTRAP.endpoints.printRound = function(rid){
     const base = <?= json_encode($printRoundBase, JSON_UNESCAPED_SLASHES) ?>;
@@ -57,6 +66,13 @@
   <aside class="panel">
     <div id="panelTop" class="panel-top">
       <h1><?= htmlspecialchars($CFG['app']['title']) ?></h1>
+      <div class="auth-controls">
+        <span class="auth-user" title="Bejelentkezett felhasználó">
+          👤 <?= htmlspecialchars($CURRENT_USER['username']) ?>
+        </span>
+        <a class="auth-link" href="<?= htmlspecialchars($CHANGE_PASSWORD_URL, ENT_QUOTES) ?>">Jelszó módosítása</a>
+        <a class="auth-link" href="<?= htmlspecialchars($LOGOUT_URL, ENT_QUOTES) ?>">Kilépés</a>
+      </div>
       <?php
         $toolbarFeatures = $CFG['features']['toolbar'] ?? [];
         $toolbarText = $CFG['text']['toolbar'] ?? [];

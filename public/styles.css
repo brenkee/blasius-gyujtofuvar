@@ -20,6 +20,10 @@ body.import-busy .app{filter:blur(4px);pointer-events:none;user-select:none}
 .panel-top{position:relative;margin-bottom:12px}
 .panel-top.sticky{position:sticky;top:0;background:var(--panel);z-index:5;padding:12px;box-shadow:0 14px 28px rgba(15,23,42,0.12)}
 h1{font-size:18px;margin:0 0 6px}
+.auth-controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:6px 0 12px;font-size:14px;color:var(--muted)}
+.auth-controls .auth-user{font-weight:600;color:var(--text);display:inline-flex;align-items:center;gap:6px}
+.auth-controls .auth-link{color:var(--accent);text-decoration:none;font-weight:600}
+.auth-controls .auth-link:hover,.auth-controls .auth-link:focus{ text-decoration:underline; }
 .toolbar{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
 .toolbar-menu-container{position:relative}
 .toolbar-menu-toggle{display:inline-flex;align-items:center;justify-content:center;padding:8px;gap:0}

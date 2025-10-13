@@ -13,6 +13,12 @@ Ez a projekt egy fájlalapú gyűjtőfuvar-tervező eszköz, amely mostantól gl
 
 > **Megjegyzés:** Az alkalmazás minden útvonala a `config.json` `base_url` kulcsát használja. Alapértelmezés szerint ez `/github/blasius/blasius-gyujtofuvar/`, lokális futtatáshoz állítsd `"/"` értékre.
 
+## Bejelentkezés
+
+- Az alkalmazás minden oldalához bejelentkezés szükséges. Az első indításkor automatikusan létrejön az `admin` felhasználó `admin` jelszóval.
+- Az első belépés után kötelező azonnal új jelszót megadni. A jelszó legalább 8 karakter hosszú legyen; ajánlott kis- és nagybetűket, számot és speciális jelet is tartalmaznia.
+- A munkamenet HttpOnly süti alapú, a kijelentkezés a jobb felső sarokban érhető el.
+
 A háttér a `data/app.db` SQLite-adatbázisban tárolja az adatokat. Az adatbázist a `scripts/init-db.php` script hozza létre és frissíti, amelyet az alkalmazás induláskor automatikusan meghív, ha a fájl hiányzik. A revíziókezeléshez további fájlok jönnek létre:
 
 - `fuvar_revision.json` – az aktuális globális revíziószám.

@@ -25,6 +25,26 @@
   let importRollbackSnapshot = null;
   const undoBtn = document.getElementById('undoBtn');
 
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = async function(resource, options) {
+    const response = await originalFetch(resource, options);
+    if (response && response.status === 401) {
+      const loginUrl = window.APP_BOOTSTRAP?.loginUrl || '/login.php';
+      const dest = window.location.pathname + window.location.search;
+      const separator = loginUrl.includes('?') ? '&' : '?';
+      window.location.href = loginUrl + separator + 'redirect=' + encodeURIComponent(dest);
+      return response;
+    }
+    if (response && response.status === 409) {
+      const changeUrl = window.APP_BOOTSTRAP?.passwordChangeUrl || '/change-password.php';
+      const dest = window.location.pathname + window.location.search;
+      const separator = changeUrl.includes('?') ? '&' : '?';
+      window.location.href = changeUrl + separator + 'redirect=' + encodeURIComponent(dest);
+      return response;
+    }
+    return response;
+  };
+
   const newAddressEl = document.getElementById('newAddress');
   const groupsEl = document.getElementById('groups');
   const pinCountEl = document.getElementById('pinCount');

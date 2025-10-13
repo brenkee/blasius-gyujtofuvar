@@ -10,6 +10,8 @@ if (!empty($initError)) {
   exit;
 }
 
+$PRINT_USER = auth_require_login();
+
 $roundFilter = isset($_GET['round']) ? (int)$_GET['round'] : null;
 
 $itemsCfg = $CFG['items'] ?? [];

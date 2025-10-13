@@ -1433,3 +1433,257 @@ function bootstrap_data_store_if_needed() {
 }
 
 bootstrap_data_store_if_needed();
+
+if (!function_exists('auth_session_start')) {
+  function auth_session_start(): void {
+    if (PHP_SAPI === 'cli') {
+      return;
+    }
+    static $started = false;
+    if ($started && session_status() === PHP_SESSION_ACTIVE) {
+      return;
+    }
+    if (session_status() === PHP_SESSION_NONE) {
+      ini_set('session.use_strict_mode', '1');
+      ini_set('session.use_only_cookies', '1');
+      $secure = (!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off');
+      $params = session_get_cookie_params();
+      $cookieParams = [
+        'lifetime' => 0,
+        'path' => $params['path'] ?? '/',
+        'domain' => $params['domain'] ?? '',
+        'secure' => $secure,
+        'httponly' => true,
+        'samesite' => 'Lax',
+      ];
+      if (PHP_VERSION_ID >= 70300) {
+        session_set_cookie_params($cookieParams);
+      } else {
+        session_set_cookie_params(
+          $cookieParams['lifetime'],
+          $cookieParams['path'] . '; samesite=' . $cookieParams['samesite'],
+          $cookieParams['domain'],
+          $cookieParams['secure'],
+          $cookieParams['httponly']
+        );
+      }
+      if (session_name() !== 'GYUJTOFUVARSESSID') {
+        session_name('GYUJTOFUVARSESSID');
+      }
+      session_start();
+      $started = true;
+    }
+  }
+}
+
+if (!function_exists('auth_get_pdo')) {
+  function auth_get_pdo(): ?PDO {
+    static $pdo = null;
+    if ($pdo instanceof PDO) {
+      return $pdo;
+    }
+    global $DATA_FILE;
+    if (!data_store_is_sqlite($DATA_FILE)) {
+      return null;
+    }
+    try {
+      $pdo = new PDO('sqlite:' . $DATA_FILE);
+      $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+      $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+      $pdo->setAttribute(PDO::ATTR_TIMEOUT, 5);
+      $pdo->exec('PRAGMA foreign_keys = ON');
+    } catch (Throwable $e) {
+      error_log('Autentikációs adatbázis hiba: ' . $e->getMessage());
+      return null;
+    }
+    return $pdo;
+  }
+}
+
+if (!function_exists('auth_ensure_default_admin')) {
+  function auth_ensure_default_admin(): void {
+    static $checked = false;
+    if ($checked) {
+      return;
+    }
+    $checked = true;
+    $pdo = auth_get_pdo();
+    if (!$pdo instanceof PDO) {
+      return;
+    }
+    try {
+      $existsStmt = $pdo->query("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='users'");
+      if ($existsStmt === false || (int)$existsStmt->fetchColumn() === 0) {
+        return;
+      }
+      $countStmt = $pdo->query('SELECT COUNT(*) FROM users');
+      if ($countStmt !== false && (int)$countStmt->fetchColumn() === 0) {
+        $now = gmdate('c');
+        $passwordHash = password_hash('admin', PASSWORD_DEFAULT);
+        $insert = $pdo->prepare('INSERT INTO users (username, email, password_hash, created_at, updated_at) VALUES (:username, :email, :hash, :created, :updated)');
+        $insert->execute([
+          ':username' => 'admin',
+          ':email' => null,
+          ':hash' => $passwordHash,
+          ':created' => $now,
+          ':updated' => $now,
+        ]);
+      }
+    } catch (Throwable $e) {
+      error_log('Alap admin létrehozási hiba: ' . $e->getMessage());
+    }
+  }
+}
+
+if (!function_exists('auth_session_user')) {
+  function auth_session_user(): ?array {
+    auth_session_start();
+    if (empty($_SESSION['auth_user']) || !is_array($_SESSION['auth_user'])) {
+      return null;
+    }
+    $user = $_SESSION['auth_user'];
+    $required = ['id', 'username'];
+    foreach ($required as $field) {
+      if (!array_key_exists($field, $user)) {
+        return null;
+      }
+    }
+    return [
+      'id' => (int)$user['id'],
+      'username' => (string)$user['username'],
+      'email' => isset($user['email']) ? (string)$user['email'] : null,
+      'force_password_change' => !empty($user['force_password_change']),
+    ];
+  }
+}
+
+if (!function_exists('auth_store_session_user')) {
+  function auth_store_session_user(array $user, bool $forcePasswordChange = false): void {
+    auth_session_start();
+    $_SESSION['auth_user'] = [
+      'id' => (int)($user['id'] ?? 0),
+      'username' => (string)($user['username'] ?? ''),
+      'email' => isset($user['email']) ? (string)$user['email'] : null,
+      'force_password_change' => $forcePasswordChange,
+    ];
+  }
+}
+
+if (!function_exists('auth_login_user')) {
+  function auth_login_user(array $userRow, bool $forcePasswordChange = false): void {
+    auth_session_start();
+    session_regenerate_id(true);
+    auth_store_session_user($userRow, $forcePasswordChange);
+  }
+}
+
+if (!function_exists('auth_logout')) {
+  function auth_logout(): void {
+    auth_session_start();
+    $_SESSION = [];
+    if (session_status() === PHP_SESSION_ACTIVE) {
+      if (ini_get('session.use_cookies')) {
+        $params = session_get_cookie_params();
+        setcookie(session_name(), '', time() - 42000, $params['path'] ?? '/', $params['domain'] ?? '', !empty($params['secure']), !empty($params['httponly']));
+      }
+      session_destroy();
+    }
+  }
+}
+
+if (!function_exists('auth_normalize_redirect')) {
+  function auth_normalize_redirect(?string $target): ?string {
+    if (!is_string($target)) {
+      return null;
+    }
+    $target = trim($target);
+    if ($target === '') {
+      return null;
+    }
+    if (preg_match('~^(https?:)?//~i', $target)) {
+      return null;
+    }
+    if ($target[0] !== '/') {
+      $target = '/' . ltrim($target, '/');
+    }
+    return $target;
+  }
+}
+
+if (!function_exists('auth_build_login_url')) {
+  function auth_build_login_url(?string $redirect = null): string {
+    $url = base_url('login.php');
+    if ($redirect !== null && $redirect !== '') {
+      $separator = strpos($url, '?') === false ? '?' : '&';
+      $url .= $separator . 'redirect=' . rawurlencode($redirect);
+    }
+    return $url;
+  }
+}
+
+if (!function_exists('auth_build_password_change_url')) {
+  function auth_build_password_change_url(?string $redirect = null): string {
+    $url = base_url('change-password.php');
+    if ($redirect !== null && $redirect !== '') {
+      $separator = strpos($url, '?') === false ? '?' : '&';
+      $url .= $separator . 'redirect=' . rawurlencode($redirect);
+    }
+    return $url;
+  }
+}
+
+if (!function_exists('auth_resolve_redirect')) {
+  function auth_resolve_redirect(?string $target, ?string $default = null): string {
+    $normalized = auth_normalize_redirect($target);
+    if ($normalized === null) {
+      return $default !== null ? $default : base_url('index.php');
+    }
+    $path = ltrim($normalized, '/');
+    return $path === '' ? base_url() : base_url($path);
+  }
+}
+
+if (!function_exists('auth_require_login')) {
+  function auth_require_login(array $options = []): array {
+    $respondJson = !empty($options['respond_json']);
+    $allowPasswordChange = !empty($options['allow_password_change']);
+    $user = auth_session_user();
+    if ($user === null) {
+      if ($respondJson) {
+        header('Content-Type: application/json; charset=utf-8');
+        http_response_code(401);
+        echo json_encode(['ok' => false, 'error' => 'not_authenticated'], JSON_UNESCAPED_UNICODE);
+        exit;
+      }
+      $redirectTarget = auth_normalize_redirect($options['redirect'] ?? ($_SERVER['REQUEST_URI'] ?? null));
+      header('Location: ' . auth_build_login_url($redirectTarget));
+      exit;
+    }
+
+    if (!empty($user['force_password_change']) && !$allowPasswordChange) {
+      if ($respondJson) {
+        header('Content-Type: application/json; charset=utf-8');
+        http_response_code(409);
+        echo json_encode(['ok' => false, 'error' => 'password_change_required'], JSON_UNESCAPED_UNICODE);
+        exit;
+      }
+      $redirectTarget = auth_normalize_redirect($options['redirect'] ?? ($_SERVER['REQUEST_URI'] ?? null));
+      header('Location: ' . auth_build_password_change_url($redirectTarget));
+      exit;
+    }
+
+    return $user;
+  }
+}
+
+if (!function_exists('auth_bootstrap')) {
+  function auth_bootstrap(): void {
+    if (PHP_SAPI === 'cli') {
+      return;
+    }
+    auth_session_start();
+    auth_ensure_default_admin();
+  }
+}
+
+auth_bootstrap();
