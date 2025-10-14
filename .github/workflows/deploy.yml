@@ -35,7 +35,7 @@ jobs:
 
       # 3/A) FTP vagy FTPS (jelszóval)
       - name: Deploy via FTP/FTPS
-        uses: SamKirkland/FTP-Deploy-Action@v4
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.6
         with:
           server: ${{ secrets.FTP_HOST }}
           username: ${{ secrets.FTP_USER }}
