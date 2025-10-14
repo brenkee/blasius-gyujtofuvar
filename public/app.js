@@ -4317,6 +4317,7 @@
       return Promise.resolve('dismiss');
     }
     return new Promise(resolve => {
+      const disableCity = options.disableCity === true;
       const overlay = document.createElement('div');
       overlay.className = 'import-dialog-overlay';
       const box = document.createElement('div');
@@ -4350,6 +4351,9 @@
       useCityBtn.type = 'button';
       useCityBtn.className = 'primary';
       useCityBtn.textContent = text('messages.import_geocode_use_city', 'Település alapján helyezze el');
+      if (disableCity) {
+        useCityBtn.disabled = true;
+      }
       const resetBtn = document.createElement('button');
       resetBtn.type = 'button';
       resetBtn.className = 'danger';
@@ -4398,7 +4402,10 @@
         }
       });
       skipBtn.addEventListener('click', ()=> cleanup('skip'));
-      useCityBtn.addEventListener('click', ()=> cleanup('city'));
+      useCityBtn.addEventListener('click', ()=>{
+        if (useCityBtn.disabled) return;
+        cleanup('city');
+      });
       resetBtn.addEventListener('click', ()=> cleanup('reset'));
       if (options.allowReset === false) {
         resetBtn.disabled = true;
@@ -4419,14 +4426,18 @@
       box.appendChild(buttonRow);
       overlay.appendChild(box);
       document.body.appendChild(overlay);
-      useCityBtn.focus();
+      const focusOrder = [useCityBtn, copyBtn, skipBtn, resetBtn, closeBtn];
+      const firstFocusable = focusOrder.find(btn => btn instanceof HTMLElement && !btn.disabled && btn.offsetParent !== null);
+      if (firstFocusable) {
+        firstFocusable.focus();
+      }
     });
   }
 
   async function geocodeFailuresByCity(failures){
     const validEntries = Array.isArray(failures) ? failures.filter(entry => Number.isInteger(entry.index)) : [];
     if (!validEntries.length) {
-      return {changed:false, saveOk:true, attempted:0, failed:0, success:0};
+      return {changed:false, saveOk:true, attempted:0, failed:0, success:0, failures: []};
     }
     pushSnapshot();
     const addressFieldId = getAddressFieldId();
@@ -4435,6 +4446,7 @@
     let attempted = 0;
     let failed = 0;
     let success = 0;
+    const remaining = [];
     const tasks = validEntries.map(entry => {
       const idx = entry.index;
       const item = state.items[idx];
@@ -4453,10 +4465,16 @@
     await service.prefetch(tasks.map(task => task.cityQuery).filter(Boolean));
 
     for (const task of tasks) {
-      const {idx, item, cityCandidate, cityQuery} = task;
-      if (!item || typeof item !== 'object') continue;
+      const {idx, item, entry, cityCandidate, cityQuery} = task;
+      if (!item || typeof item !== 'object') {
+        if (entry) remaining.push(entry);
+        else remaining.push({index: idx});
+        continue;
+      }
       if (!cityCandidate) {
         failed += 1;
+        if (entry) remaining.push(entry);
+        else remaining.push({index: idx});
         continue;
       }
       attempted += 1;
@@ -4469,6 +4487,8 @@
         failed += 1;
         state.items[idx] = updated;
         changed = true;
+        if (entry) remaining.push(entry);
+        else remaining.push({index: idx});
         continue;
       }
       try {
@@ -4482,6 +4502,8 @@
       } catch (err) {
         console.error('city-level geocode failed for import', err);
         failed += 1;
+        if (entry) remaining.push(entry);
+        else remaining.push({index: idx});
       }
       state.items[idx] = updated;
       changed = true;
@@ -4490,7 +4512,7 @@
     if (changed) {
       saveOk = await saveAll();
     }
-    return {changed, saveOk, attempted, failed, success};
+    return {changed, saveOk, attempted, failed, success, failures: remaining};
   }
 
   const toolbarMenuToggle = document.getElementById('toolbarMenuToggle');
@@ -4626,6 +4648,38 @@
         }
         ensureLoaderRemoved();
         let successMsg = text('messages.import_success', 'Import kész.');
+        const handleGeocodeFailureDecision = async (choice, failureList) => {
+          if (!failureList || !failureList.length) {
+            return choice;
+          }
+          if (choice === 'skip') {
+            loaderCtrl = showImportProgressOverlay(text('messages.import_skip_progress', 'Címek eltávolítása…'));
+            const dropped = await dropImportFailures(failureList);
+            ensureLoaderRemoved();
+            if (!dropped.changed) {
+              alert(text('messages.import_skip_none', 'Nem történt módosítás.'));
+            } else {
+              if (!dropped.saveOk) {
+                alert(text('messages.import_skip_error', 'A címek eltávolítása nem mentődött el teljesen.'));
+              } else {
+                const skipTpl = text('messages.import_skip_result', '{count} cím kihagyva az importból.');
+                alert(format(skipTpl, {count: dropped.removed ?? 0}));
+              }
+            }
+          } else if (choice === 'reset') {
+            loaderCtrl = showImportProgressOverlay(text('messages.import_reset_progress', 'Import visszaállítása…'));
+            const resetResult = await restoreImportRollbackSnapshot();
+            ensureLoaderRemoved();
+            if (!resetResult.restored) {
+              alert(text('messages.import_reset_missing', 'Az eredeti adatok nem érhetők el.'));
+            } else if (!resetResult.saveOk) {
+              alert(text('messages.import_reset_error', 'Az import visszaállítása nem sikerült teljesen.'));
+            } else {
+              alert(text('messages.import_reset_success', 'Az import visszaállítása megtörtént.'));
+            }
+          }
+          return choice;
+        };
         if (geo.failed > 0 && geo.attempted > 0) {
           const tpl = text('messages.import_geocode_partial', 'Figyelem: {count} címet nem sikerült automatikusan térképre tenni.');
           successMsg += `\n\n${format(tpl, {count: geo.failed})}`;
@@ -4641,35 +4695,22 @@
               showSaveStatus(false);
             }
             const resultTpl = text('messages.import_city_fallback_result', 'Település-alapú geokódolás – siker: {success}, sikertelen: {failed}.');
-            alert(format(resultTpl, {
+            const summaryMessage = format(resultTpl, {
               success: fallback.success ?? 0,
               failed: fallback.failed ?? 0
-            }));
-          } else if (decision === 'skip') {
-            loaderCtrl = showImportProgressOverlay(text('messages.import_skip_progress', 'Címek eltávolítása…'));
-            const dropped = await dropImportFailures(geo.failures);
-            ensureLoaderRemoved();
-            if (!dropped.changed) {
-              alert(text('messages.import_skip_none', 'Nem történt módosítás.'));
+            });
+            if (Array.isArray(fallback.failures) && fallback.failures.length) {
+              const remainingTpl = text('messages.import_city_fallback_remaining', 'A következő címeket továbbra sem sikerült elhelyezni:');
+              const followupDecision = await showGeocodeFailureDialog(`${summaryMessage}\n\n${remainingTpl}`, fallback.failures, {
+                allowReset: hasImportRollbackSnapshot(),
+                disableCity: true
+              });
+              await handleGeocodeFailureDecision(followupDecision, fallback.failures);
             } else {
-              if (!dropped.saveOk) {
-                alert(text('messages.import_skip_error', 'A címek eltávolítása nem mentődött el teljesen.'));
-              } else {
-                const skipTpl = text('messages.import_skip_result', '{count} cím kihagyva az importból.');
-                alert(format(skipTpl, {count: dropped.removed ?? 0}));
-              }
+              alert(summaryMessage);
             }
-          } else if (decision === 'reset') {
-            loaderCtrl = showImportProgressOverlay(text('messages.import_reset_progress', 'Import visszaállítása…'));
-            const resetResult = await restoreImportRollbackSnapshot();
-            ensureLoaderRemoved();
-            if (!resetResult.restored) {
-              alert(text('messages.import_reset_missing', 'Az eredeti adatok nem érhetők el.'));
-            } else if (!resetResult.saveOk) {
-              alert(text('messages.import_reset_error', 'Az import visszaállítása nem sikerült teljesen.'));
-            } else {
-              alert(text('messages.import_reset_success', 'Az import visszaállítása megtörtént.'));
-            }
+          } else {
+            await handleGeocodeFailureDecision(decision, geo.failures);
           }
         } else {
           alert(successMsg);
