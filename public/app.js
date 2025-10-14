@@ -153,7 +153,7 @@
     return btn;
   }
 
-  function ensureViewSwitchControls(){
+  function ensureViewSwitchControls(parent){
     if (!panelTopEl) return null;
     let wrap = document.getElementById('viewSwitch');
     if (!wrap) {
@@ -167,6 +167,11 @@
       const mapLabel = text('view_switch.map', 'Térkép');
       wrap.appendChild(createViewSwitchButton(VIEW_MODES.LIST, listLabel));
       wrap.appendChild(createViewSwitchButton(VIEW_MODES.MAP, mapLabel));
+    }
+    if (parent instanceof HTMLElement && wrap.parentNode !== parent) {
+      parent.appendChild(wrap);
+    } else if (!parent && wrap.parentNode !== panelTopEl) {
+      panelTopEl.appendChild(wrap);
     }
     wrap.hidden = false;
     updateViewSwitchActive();
@@ -3275,10 +3280,7 @@
     const parent = groupsEl.parentNode;
     if (panelTopEl) {
       panelTopEl.appendChild(wrap);
-      const viewSwitch = ensureViewSwitchControls();
-      if (viewSwitch) {
-        panelTopEl.appendChild(viewSwitch);
-      }
+      ensureViewSwitchControls(wrap);
       panelTopEl.appendChild(status);
     } else {
       parent.insertBefore(wrap, groupsEl);
