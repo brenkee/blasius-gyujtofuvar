@@ -404,11 +404,9 @@ if ($action === 'geocode') {
   $jsonHeader();
   $q = trim($_GET['q'] ?? '');
   if ($q === '') { http_response_code(400); echo json_encode(['error'=>'empty']); exit; }
-  $qNorm = preg_replace('/^\s*([^,]+)\s*,\s*(.+?)\s*,\s*(\d{4})\s*$/u', '$3 $1, $2', $q);
-  if (!$qNorm) $qNorm = $q;
 
   $params = http_build_query([
-    'q'=>$qNorm,'format'=>'jsonv2','limit'=>1,'addressdetails'=>1,
+    'q'=>$q,'format'=>'jsonv2','limit'=>1,'addressdetails'=>1,
     'countrycodes'=>$CFG['geocode']['countrycodes'] ?? 'hu',
     'accept-language'=>$CFG['geocode']['language'] ?? 'hu'
   ]);
@@ -427,7 +425,7 @@ if ($action === 'geocode') {
   $best = $arr[0];
   $addr = isset($best['address']) && is_array($best['address']) ? $best['address'] : [];
   $city = $addr['city'] ?? $addr['town'] ?? $addr['village'] ?? $addr['municipality'] ?? $addr['county'] ?? '';
-  echo json_encode(['lat'=>(float)$best['lat'], 'lon'=>(float)$best['lon'], 'city'=>$city, 'normalized'=>$qNorm], JSON_UNESCAPED_UNICODE);
+  echo json_encode(['lat'=>(float)$best['lat'], 'lon'=>(float)$best['lon'], 'city'=>$city], JSON_UNESCAPED_UNICODE);
   exit;
 }
 
