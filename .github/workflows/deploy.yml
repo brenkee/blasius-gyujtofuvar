@@ -1,4 +1,4 @@
-name: 🚀 Deploy website on push
+name: 🚀 Deploy website on push or PR
 
 on: 
   push:
@@ -11,12 +11,32 @@ jobs:
     name: 🎉 Deploy
     runs-on: ubuntu-latest
     steps:
-    - name: 🚚 Get latest code
-      uses: actions/checkout@v4
-    
-    - name: 📂 Sync files
-      uses: SamKirkland/FTP-Deploy-Action@v4.3.6
-      with:
-        server: ${{ secrets.FTP_HOST }}
-        username: ${{ secrets.FTP_USER }}
-        password: ${{ secrets.FTP_PASS }}
+      - name: 🚚 Get latest code
+        uses: actions/checkout@v4
+
+      - name: 📁 Determine remote path
+        id: path
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "remote_dir=/PR/" >> $GITHUB_OUTPUT
+          else
+            echo "remote_dir=/" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 📂 Sync files
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.6
+        with:
+          server: ${{ secrets.FTP_HOST }}
+          username: ${{ secrets.FTP_USER }}
+          password: ${{ secrets.FTP_PASS }}
+          # A repo melyik mappáját szeretnéd feltölteni
+          local-dir: ./public
+          # A célkönyvtár a szerveren (main → /, PR → /PR/pr-<id>)
+          server-dir: ${{ steps.path.outputs.remote_dir }}
+          exclude: |
+            **/.git*
+            **/.github/**
+            **/node_modules/**
+            **/backups/**
+            **/data/*.db*
+            **/*.log
