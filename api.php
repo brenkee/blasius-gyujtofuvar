@@ -88,7 +88,7 @@ function optional_batch_id() {
   return normalized_batch_id($_SERVER['HTTP_X_BATCH_ID'] ?? '');
 }
 
-function append_change_events($rev, $actorId, $requestId, $batchId, array $events, array $meta = []) {
+function append_change_events($rev, $actorId, $requestId, $batchId, array $events, array $meta = [], ?array $user = null) {
   foreach ($events as $event) {
     $log = [
       'rev' => $rev,
@@ -102,6 +102,14 @@ function append_change_events($rev, $actorId, $requestId, $batchId, array $event
     if ($batchId) {
       $log['batch_id'] = $batchId;
     }
+    if (is_array($user)) {
+      if (isset($user['id']) && is_numeric($user['id'])) {
+        $log['user_id'] = (int)$user['id'];
+      }
+      if (!empty($user['username']) && is_string($user['username'])) {
+        $log['username'] = (string)$user['username'];
+      }
+    }
     $metaPayload = $event['meta'] ?? [];
     if (!empty($meta)) {
       $metaPayload = array_merge($metaPayload, $meta);
@@ -113,9 +121,9 @@ function append_change_events($rev, $actorId, $requestId, $batchId, array $event
   }
 }
 
-function commit_dataset_update(array $newItems, array $newRoundMeta, $actorId, $requestId, $batchId, $action, array $actionMeta = []) {
+function commit_dataset_update(array $newItems, array $newRoundMeta, $actorId, $requestId, $batchId, $action, array $actionMeta = [], ?array $user = null) {
   global $DATA_FILE;
-  return state_lock(function() use ($DATA_FILE, $newItems, $newRoundMeta, $actorId, $requestId, $batchId, $action, $actionMeta) {
+  return state_lock(function() use ($DATA_FILE, $newItems, $newRoundMeta, $actorId, $requestId, $batchId, $action, $actionMeta, $user) {
     [$oldItems, $oldRoundMeta] = data_store_read($DATA_FILE);
     $writeOk = data_store_write($DATA_FILE, $newItems, $newRoundMeta);
     if ($writeOk === false) {
@@ -141,7 +149,7 @@ function commit_dataset_update(array $newItems, array $newRoundMeta, $actorId, $
         return $ev;
       }, $events);
     }
-    append_change_events($newRev, $actorId, $requestId, $batchId, $events, $actionMeta);
+    append_change_events($newRev, $actorId, $requestId, $batchId, $events, $actionMeta, $user);
     return ['rev' => $newRev, 'events' => $events];
   });
 }
@@ -389,7 +397,7 @@ if ($action === 'save') {
     http_response_code(400); echo json_encode(['ok'=>false]); exit;
   }
   try {
-    $result = commit_dataset_update($items, $roundMeta, $actorId, $requestId, $batchId, 'save', ['scope' => 'full_save']);
+    $result = commit_dataset_update($items, $roundMeta, $actorId, $requestId, $batchId, 'save', ['scope' => 'full_save'], $CURRENT_USER);
   } catch (Throwable $e) {
     http_response_code(500);
     echo json_encode(['ok' => false, 'error' => 'write_failed'], JSON_UNESCAPED_UNICODE);
@@ -787,7 +795,7 @@ if ($action === 'import_csv') {
     $result = commit_dataset_update($finalItems, $roundMeta, $actorId, $requestId, $batchId ?: ('batch_'.$requestId), 'import', [
       'mode' => $importMode,
       'imported_count' => count($items)
-    ]);
+    ], $CURRENT_USER);
   } catch (Throwable $e) {
     $sendJsonError('Az importálás nem sikerült.', 500);
   }
@@ -825,69 +833,10 @@ if ($action === 'delete_round') {
   $req = json_decode($body, true);
   $rid = isset($req['round']) ? (int)$req['round'] : (int)($_GET['round'] ?? 0);
 
-  $itemsCfg = $CFG['items'] ?? [];
-  $metricsCfg = array_values(array_filter($itemsCfg['metrics'] ?? [], function($m){ return ($m['enabled'] ?? true) !== false; }));
-  $labelFieldId = $itemsCfg['label_field_id'] ?? 'label';
-  $addressFieldId = $itemsCfg['address_field_id'] ?? 'address';
-  $noteFieldId = $itemsCfg['note_field_id'] ?? 'note';
-  $sumTemplate = $CFG['text']['group']['sum_template'] ?? 'Összesen: {parts}';
-  $sumSeparator = $CFG['text']['group']['sum_separator'] ?? ' · ';
-  $formatMetric = function($metric, $value, $context='row'){
-    $precision = isset($metric['precision']) ? (int)$metric['precision'] : 0;
-    $formatted = number_format((float)$value, $precision, '.', '');
-    $unit = $metric['unit'] ?? '';
-    $label = $metric['label'] ?? '';
-    $tplKey = $context === 'row' ? 'row_format' : 'group_format';
-    if (!empty($metric[$tplKey])) {
-      return str_replace(['{value}','{sum}','{unit}','{label}'], [$formatted,$formatted,$unit,$label], $metric[$tplKey]);
-    }
-    return trim($formatted . ($unit ? ' '.$unit : ''));
-  };
-
   [$items, $roundMeta] = data_store_read($DATA_FILE);
   $kept = []; $removed = [];
   foreach ($items as $it) {
     if ((int)($it['round'] ?? 0) === $rid) $removed[] = $it; else $kept[] = $it;
-  }
-  $archiveLines = [];
-  if (count($removed) > 0) {
-    $dt = date('Y-m-d H:i:s');
-    $roundLabel = $ROUND_MAP[$rid]['label'] ?? (string)$rid;
-
-    $totalParts = [];
-    foreach ($metricsCfg as $metric){
-      $id = $metric['id'] ?? null; if (!$id) continue;
-      $sum = 0.0;
-      foreach ($removed as $t){ if (isset($t[$id]) && is_numeric($t[$id])) $sum += (float)$t[$id]; }
-      $totalParts[] = $formatMetric($metric, $sum, 'group');
-    }
-    $summary = $totalParts ? str_replace('{parts}', implode($sumSeparator, $totalParts), $sumTemplate) : '';
-    $headerLine = "[$dt] TÖRÖLT KÖR: $rid – $roundLabel";
-    $plannedLabel = $CFG['text']['round']['planned_date_label'] ?? 'Tervezett dátum';
-    $plannedKey = (string)$rid;
-    if (isset($roundMeta[$plannedKey]['planned_date'])) {
-      $plannedValue = trim((string)$roundMeta[$plannedKey]['planned_date']);
-      if ($plannedValue !== '') {
-        $headerLine .= '  | ' . $plannedLabel . ': ' . $plannedValue;
-      }
-    }
-    if ($summary) {
-      $headerLine .= '  | ' . $summary;
-    }
-    $archiveLines[] = $headerLine;
-    foreach ($removed as $t) {
-      $parts = [];
-      foreach ([$labelFieldId, $addressFieldId, $noteFieldId] as $k) {
-        if (!$k) continue;
-        $v = trim((string)($t[$k] ?? '')); if ($v!=='') $parts[] = $v;
-      }
-      foreach ($metricsCfg as $metric){
-        $id = $metric['id'] ?? null; if (!$id) continue;
-        if (isset($t[$id]) && $t[$id] !== '') $parts[] = $formatMetric($metric, $t[$id], 'row');
-      }
-      $archiveLines[] = "- " . (count($parts)? implode(' | ', $parts) : '—');
-    }
-    $archiveLines[] = "";
   }
   if (isset($roundMeta[(string)$rid])) {
     unset($roundMeta[(string)$rid]);
@@ -897,22 +846,15 @@ if ($action === 'delete_round') {
     $result = commit_dataset_update($kept, $roundMeta, $actorId, $requestId, $batchId, 'delete_round', [
       'round' => $rid,
       'deleted_count' => count($removed)
-    ]);
+    ], $CURRENT_USER);
   } catch (Throwable $e) {
     echo json_encode(['ok' => false, 'error' => 'delete_failed'], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
-  if (!empty($archiveLines)) {
-    @file_put_contents($ARCHIVE_FILE, implode(PHP_EOL,$archiveLines).PHP_EOL, FILE_APPEND|LOCK_EX);
-  }
   backup_now($CFG, $DATA_FILE);
   echo json_encode(['ok'=>true,'deleted'=>count($removed),'rev'=>$result['rev'] ?? null]);
   exit;
-}
-
-if ($action === 'download_archive') {
-  stream_file_download($ARCHIVE_FILE, 'fuvar_archive.txt', 'text/plain; charset=utf-8');
 }
 
 http_response_code(404);

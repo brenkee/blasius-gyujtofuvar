@@ -1,0 +1,18 @@
+CREATE TABLE IF NOT EXISTS change_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  rev INTEGER,
+  entity TEXT,
+  entity_id TEXT,
+  action TEXT,
+  actor_id TEXT,
+  request_id TEXT,
+  batch_id TEXT,
+  user_id INTEGER,
+  username TEXT,
+  meta TEXT,
+  ts TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_change_log_ts ON change_log(ts);
+CREATE INDEX IF NOT EXISTS idx_change_log_rev ON change_log(rev);

@@ -8,7 +8,8 @@ $TOKEN = csrf_get_token();
 
 $error = null;
 $info = null;
-$formEmail = trim((string)($CURRENT_USER['email'] ?? ''));
+$originalEmail = trim((string)($CURRENT_USER['email'] ?? ''));
+$formEmail = $originalEmail;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_require_token_from_request('html');
@@ -66,8 +67,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($changingPassword) {
                         auth_set_session_must_change(false);
                     }
-                    $CURRENT_USER = auth_find_user_by_id((int)$CURRENT_USER['id']);
-                    $formEmail = trim((string)($CURRENT_USER['email'] ?? ''));
+                    $currentUserId = (int)$CURRENT_USER['id'];
+                    $updatedUser = auth_find_user_by_id($currentUserId);
+                    if (is_array($updatedUser)) {
+                        $CURRENT_USER = $updatedUser;
+                    }
+                    $formEmail = trim((string)($CURRENT_USER['email'] ?? $formEmail));
+                    $meta = [
+                        'email_changed' => $emailChanged,
+                        'password_changed' => $changingPassword,
+                    ];
+                    if ($emailChanged) {
+                        $meta['previous_email'] = $originalEmail;
+                        $meta['new_email'] = $formEmail;
+                    }
+                    try {
+                        append_change_log_locked([
+                            'rev' => read_current_revision(),
+                            'entity' => 'user_profile',
+                            'entity_id' => (string)$currentUserId,
+                            'action' => 'updated',
+                            'user_id' => $currentUserId,
+                            'username' => $CURRENT_USER['username'] ?? null,
+                            'meta' => $meta,
+                        ]);
+                    } catch (Throwable $logError) {
+                        error_log('Profil naplózás hiba: ' . $logError->getMessage());
+                    }
                     $info = $changingPassword ? 'A jelszó sikeresen frissült.' : 'A profil adatai sikeresen frissültek.';
                     header('Location: ' . ($returnTo ?: app_url_path('')));
                     exit;
