@@ -52,11 +52,11 @@ body.import-busy .app{filter:blur(4px);pointer-events:none;user-select:none}
 }
 @media (max-width:768px){
   .panel-top-header{flex-wrap:nowrap;gap:12px}
-  .panel-title{font-size:16px}
+  .panel-title{font-size:16px !important}
   .panel{width:100%;overflow-x:hidden}
   .app[data-mobile-view="list"] .panel{max-width:100vw}
   .toolbar{flex-wrap:nowrap;gap:6px}
-  .toolbar-pin-counter-label{display:none}
+  .toolbar-pin-counter-label{display:none !important}
   .app[data-mobile-view="map"] .panel{position:relative;z-index:60}
   .app[data-mobile-view="map"] .panel-top{position:sticky;top:0;z-index:80}
   .app[data-mobile-view="list"] .panel-content,
