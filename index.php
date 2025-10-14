@@ -263,6 +263,38 @@ $LOGOUT_TOKEN = csrf_get_token();
           </div>
         <?php endif; ?>
       </div>
+      <div id="mobileViewToggle" class="mobile-view-toggle" role="group" aria-label="Nézet kiválasztása">
+        <button
+          type="button"
+          class="mobile-view-toggle__btn"
+          data-view="list"
+          aria-label="Lista nézet"
+          title="Lista nézet"
+          aria-pressed="true"
+        >
+          <span aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false" xmlns="http://www.w3.org/2000/svg">
+              <path d="M4 6.25C4 5.56 4.56 5 5.25 5h13.5c.69 0 1.25.56 1.25 1.25S19.44 7.5 18.75 7.5H5.25C4.56 7.5 4 6.94 4 6.25ZM4 12c0-.69.56-1.25 1.25-1.25h13.5c.69 0 1.25.56 1.25 1.25s-.56 1.25-1.25 1.25H5.25C4.56 13.25 4 12.69 4 12Zm0 5.75c0-.69.56-1.25 1.25-1.25h13.5c.69 0 1.25.56 1.25 1.25S19.44 19 18.75 19H5.25C4.56 19 4 18.44 4 17.75Z" />
+            </svg>
+          </span>
+          <span class="visually-hidden">Lista nézet</span>
+        </button>
+        <button
+          type="button"
+          class="mobile-view-toggle__btn"
+          data-view="map"
+          aria-label="Térkép nézet"
+          title="Térkép nézet"
+          aria-pressed="false"
+        >
+          <span aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false" xmlns="http://www.w3.org/2000/svg">
+              <path d="M9.2 4.27a.75.75 0 0 1 .58-.07l4.22 1.26 4.12-1.37A.75.75 0 0 1 19 4.8v14.93a.75.75 0 0 1-.58.73l-4.22 1.04a.75.75 0 0 1-.36 0L9.72 19.3l-3.84 1.28A.75.75 0 0 1 5 19.88V5.06a.75.75 0 0 1 .52-.72l3.68-1.07Z" />
+            </svg>
+          </span>
+          <span class="visually-hidden">Térkép nézet</span>
+        </button>
+      </div>
     </div>
     <div id="newAddress" class="new-address-container"></div>
     <div id="groups" class="groups"></div>

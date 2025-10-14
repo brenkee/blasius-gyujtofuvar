@@ -38,6 +38,7 @@
   const pinCountEl = document.getElementById('pinCount');
   const themeToggle = document.getElementById('themeToggle');
   const panelTopEl = document.getElementById('panelTop');
+  const mobileViewToggleEl = document.getElementById('mobileViewToggle');
   let quickSearchClearBtn = null;
 
   if (READ_ONLY && newAddressEl) {
@@ -1241,6 +1242,79 @@
   // ======= MAP
   const map = L.map('map',{zoomControl:true, preferCanvas:true});
   const markerLayer = L.featureGroup().addTo(map);
+  const appRoot = document.querySelector('.app');
+  const MOBILE_BREAKPOINT = 900;
+  const mobileToggleButtons = mobileViewToggleEl ? Array.from(mobileViewToggleEl.querySelectorAll('button[data-view]')) : [];
+  let activeMobileView = 'list';
+  const mobileMq = typeof window.matchMedia === 'function' ? window.matchMedia(`(max-width:${MOBILE_BREAKPOINT}px)`) : null;
+
+  function isMobileLayout(){
+    if (mobileMq) return !!mobileMq.matches;
+    return window.innerWidth <= MOBILE_BREAKPOINT;
+  }
+
+  function updateMobileToggleState(){
+    if (!mobileToggleButtons.length) return;
+    mobileToggleButtons.forEach(btn => {
+      const view = btn.dataset.view === 'map' ? 'map' : 'list';
+      const isActive = view === activeMobileView;
+      btn.classList.toggle('is-active', isActive);
+      btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
+  }
+
+  function applyMobileView(){
+    if (!appRoot) return;
+    if (!isMobileLayout()) {
+      appRoot.classList.remove('mobile-view-list', 'mobile-view-map');
+      return;
+    }
+    appRoot.classList.toggle('mobile-view-list', activeMobileView === 'list');
+    appRoot.classList.toggle('mobile-view-map', activeMobileView === 'map');
+    if (activeMobileView === 'map' && map && typeof map.invalidateSize === 'function') {
+      window.requestAnimationFrame(() => map.invalidateSize());
+    }
+  }
+
+  function setMobileView(view){
+    activeMobileView = view === 'map' ? 'map' : 'list';
+    updateMobileToggleState();
+    applyMobileView();
+  }
+
+  function handleLayoutChange(){
+    if (!appRoot) return;
+    if (isMobileLayout()) {
+      applyMobileView();
+    } else {
+      appRoot.classList.remove('mobile-view-list', 'mobile-view-map');
+      updateMobileToggleState();
+      if (map && typeof map.invalidateSize === 'function') {
+        map.invalidateSize();
+      }
+    }
+  }
+
+  if (mobileViewToggleEl && mobileToggleButtons.length) {
+    mobileToggleButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const targetView = btn.dataset.view === 'map' ? 'map' : 'list';
+        setMobileView(targetView);
+      });
+    });
+  }
+
+  if (mobileMq) {
+    const mqHandler = () => handleLayoutChange();
+    if (typeof mobileMq.addEventListener === 'function') {
+      mobileMq.addEventListener('change', mqHandler);
+    } else if (typeof mobileMq.addListener === 'function') {
+      mobileMq.addListener(mqHandler);
+    }
+  }
+
+  window.addEventListener('resize', handleLayoutChange);
+  setMobileView('list');
   let markerOverlapRefreshTimer = null;
   function updatePinCount(){ if (pinCountEl) pinCountEl.textContent = markerLayer.getLayers().length.toString(); }
 
@@ -3131,6 +3205,9 @@
     const parent = groupsEl.parentNode;
     if (panelTopEl) {
       panelTopEl.appendChild(wrap);
+      if (mobileViewToggleEl) {
+        panelTopEl.appendChild(mobileViewToggleEl);
+      }
     } else {
       parent.insertBefore(wrap, groupsEl);
     }
