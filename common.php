@@ -510,6 +510,27 @@ if (is_file($CONFIG_FILE)) {
   $json = json_decode($raw, true);
   if (is_array($json)) $CFG = array_replace_recursive($CFG_DEFAULT, $json);
 }
+
+$BASE_URL_FILES = [
+  __DIR__ . '/config/base_url.local.json',
+  __DIR__ . '/config/base_url.json',
+];
+foreach ($BASE_URL_FILES as $baseUrlFile) {
+  if (!is_file($baseUrlFile)) {
+    continue;
+  }
+  $raw = file_get_contents($baseUrlFile);
+  if ($raw === false) {
+    continue;
+  }
+  $json = json_decode($raw, true);
+  if (!is_array($json) || !isset($json['base_url'])) {
+    continue;
+  }
+  $CFG['base_url'] = $json['base_url'];
+  break;
+}
+
 $CFG['base_url'] = normalize_base_url($CFG['base_url'] ?? '/');
 $APP_BASE_PATH = parse_url($CFG['base_url'], PHP_URL_PATH);
 if (!is_string($APP_BASE_PATH) || $APP_BASE_PATH === '') {
