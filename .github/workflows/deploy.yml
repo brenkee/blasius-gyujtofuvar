@@ -1,52 +1,16 @@
-name: Deploy to (S)FTP
-
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    types: [opened, synchronize, reopened]
-  workflow_dispatch:
-    inputs:
-      ref:
-        description: 'Branch/PR ref (pl. main vagy refs/pull/123/merge)'
-        required: false
-
+on: push
+name: 🚀 Deploy website on push
 jobs:
-  deploy:
+  web-deploy:
+    name: 🎉 Deploy
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          # manuális indításnál a megadott ref-re, egyébként az aktuálisra
-          ref: ${{ github.event.inputs.ref || github.ref }}
-
-      # Válaszd le, hova menjen a feltöltés: main → /, PR → /preview/pr-<num>
-      - name: Compute remote path
-        id: path
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            echo "dir=/preview/pr-${{ github.event.number }}" >> $GITHUB_OUTPUT
-          else
-            echo "dir=/" >> $GITHUB_OUTPUT
-          fi
-
-      # --- VÁLASSZ EGYET: FTP/FTPS JELSZÓVAL VAGY SFTP KULCCSAL ---
-
-      # 3/A) FTP vagy FTPS (jelszóval)
-- name: Deploy via FTP
-  uses: SamKirkland/FTP-Deploy-Action@v4
-  with:
-    server: ${{ secrets.FTP_HOST }}
-    username: ${{ secrets.FTP_USER }}
-    password: ${{ secrets.FTP_PASS }}
-    port: ${{ secrets.FTP_PORT || '21' }}
-    local-dir: ./public
-    server-dir: ${{ steps.path.outputs.dir }}
-    exclude: |
-      **/.git*
-      **/.github/**
-      **/node_modules/**
-      **/backups/**
-      **/data/*.db*
-      **/*.log
+    - name: 🚚 Get latest code
+      uses: actions/checkout@v4
+    
+    - name: 📂 Sync files
+      uses: SamKirkland/FTP-Deploy-Action@v4.3.6
+      with:
+        server: ${{ secrets.FTP_HOST }}
+        username: ${{ secrets.FTP_USER }}
+        password: ${{ secrets.FTP_PASS }}
