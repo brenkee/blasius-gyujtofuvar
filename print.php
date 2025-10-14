@@ -84,16 +84,81 @@ $printListTitle = $CFG['print']['list_title'] ?? 'Szállítási lista';
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title><?= htmlspecialchars($CFG['app']['title'] . $printTitleSuffix) ?></title>
   <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#111;margin:20px}
-    h1{margin:0 0 10px;font-size:20px}
-    .meta{color:#555;margin-bottom:16px}
-    .round{margin:16px 0 10px;font-weight:800;border-bottom:2px solid #eee;padding-bottom:4px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
-    .planned{color:#1f2937;font-weight:700;font-size:12px}
-    .sum{color:#6b7280;font-weight:700;font-size:12px}
-    .item{padding:6px 0;border-bottom:1px dashed #e5e7eb}
-    .lbl{font-weight:700}.addr{color:#374151}.note{color:#6b7280;font-size:12px;margin-top:2px}
-    .extra{color:#334155;font-size:12px;margin-left:6px}
-    @media print{body{margin:0.8cm} a[href]:after{content:""}}
+    :root {
+      color-scheme: light;
+      font-family: "Inter", "Segoe UI", "Roboto", sans-serif;
+      --hm-text: #10163a;
+      --hm-muted: #6c7392;
+      --hm-primary: #5468ff;
+      --hm-border: #d6dbeb;
+      --hm-soft: #eef1fb;
+    }
+    body {
+      margin: 20px;
+      color: var(--hm-text);
+      background: #fff;
+      font-family: inherit;
+    }
+    h1 {
+      margin: 0 0 12px;
+      font-size: 22px;
+      color: var(--hm-text);
+    }
+    .meta {
+      color: var(--hm-muted);
+      margin-bottom: 18px;
+    }
+    .round {
+      margin: 18px 0 12px;
+      font-weight: 700;
+      border-bottom: 2px solid var(--hm-border);
+      padding-bottom: 6px;
+      display: flex;
+      gap: 12px;
+      align-items: baseline;
+      flex-wrap: wrap;
+      color: var(--hm-primary);
+    }
+    .planned {
+      color: var(--hm-text);
+      font-weight: 600;
+      font-size: 12px;
+      background: var(--hm-soft);
+      padding: 2px 8px;
+      border-radius: 12px;
+    }
+    .sum {
+      color: var(--hm-muted);
+      font-weight: 600;
+      font-size: 12px;
+    }
+    .item {
+      padding: 8px 0;
+      border-bottom: 1px dashed var(--hm-border);
+    }
+    .item:last-child {
+      border-bottom: none;
+    }
+    .lbl {
+      font-weight: 700;
+    }
+    .addr {
+      color: var(--hm-text);
+    }
+    .note {
+      color: var(--hm-muted);
+      font-size: 12px;
+      margin-top: 2px;
+    }
+    .extra {
+      color: var(--hm-muted);
+      font-size: 12px;
+      margin-left: 8px;
+    }
+    @media print {
+      body { margin: 0.8cm; }
+      a[href]:after { content: ""; }
+    }
   </style>
 </head>
 <body>

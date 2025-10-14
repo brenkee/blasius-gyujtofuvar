@@ -122,6 +122,8 @@ $showResetForm = ($resetMessage !== null) || ($resetError !== null) || (($_POST[
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title><?= htmlspecialchars($loginText('page_title')) ?> – <?= htmlspecialchars($CFG['app']['title']) ?></title>
   <link rel="icon" type="image/png" href="<?= htmlspecialchars(base_url('pic/favicon.png'), ENT_QUOTES) ?>" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/halfmoon@2.0.1/css/halfmoon.min.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/halfmoon@2.0.1/css/halfmoon-modern.min.css" />
   <link rel="stylesheet" href="<?= htmlspecialchars(base_url('public/styles.css'), ENT_QUOTES) ?>" />
 </head>
 <body class="auth-body">
@@ -144,10 +146,10 @@ $showResetForm = ($resetMessage !== null) || ($resetError !== null) || (($_POST[
           <span><?= htmlspecialchars($loginText('password_label')) ?></span>
           <input type="password" name="password" required autocomplete="current-password" />
         </label>
-        <button type="submit" class="auth-submit"><?= htmlspecialchars($loginText('login_button')) ?></button>
+        <button type="submit" class="auth-submit btn btn-primary"><?= htmlspecialchars($loginText('login_button')) ?></button>
       </form>
       <div class="auth-forgot">
-        <button type="button" class="auth-link auth-forgot-toggle" id="auth-forgot-toggle"><?= htmlspecialchars($loginText('forgot_link')) ?></button>
+        <button type="button" class="auth-link btn-link auth-forgot-toggle" id="auth-forgot-toggle"><?= htmlspecialchars($loginText('forgot_link')) ?></button>
         <section class="auth-forgot-section" id="auth-forgot-section" <?= $showResetForm ? '' : 'hidden' ?>>
           <hr aria-hidden="true" />
           <h2><?= htmlspecialchars($loginText('forgot_title')) ?></h2>
@@ -165,7 +167,7 @@ $showResetForm = ($resetMessage !== null) || ($resetError !== null) || (($_POST[
               <span><?= htmlspecialchars($loginText('forgot_identifier_label')) ?></span>
               <input type="text" name="identifier" required value="<?= htmlspecialchars($lastResetIdentifier) ?>" />
             </label>
-            <button type="submit" class="auth-submit auth-submit-secondary"><?= htmlspecialchars($loginText('forgot_button')) ?></button>
+            <button type="submit" class="auth-submit auth-submit-secondary btn btn-secondary"><?= htmlspecialchars($loginText('forgot_button')) ?></button>
           </form>
         </section>
       </div>

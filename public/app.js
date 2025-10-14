@@ -2384,7 +2384,7 @@
     if (feature('group_actions.close', true)) actionButtons.push(`<button class="iconbtn grp-close" data-round="${rid}">${esc(actionsText.close ?? 'Összezár')}</button>`);
     if (feature('group_actions.print', true)) actionButtons.push(`<button class="iconbtn grp-print" data-round="${rid}">${esc(actionsText.print ?? 'Nyomtatás')}</button>`);
     if (feature('group_actions.navigate', true)) actionButtons.push(`<button class="iconbtn grp-nav" data-round="${rid}">${esc(actionsText.navigate ?? 'Navigáció')}</button>`);
-    if (feature('group_actions.delete', true)) actionButtons.push(`<button class="iconbtn grp-del" data-round="${rid}" style="border-color:#fecaca;background:rgba(248,113,113,0.12);">${esc(actionsText.delete ?? 'Kör törlése')}</button>`);
+    if (feature('group_actions.delete', true)) actionButtons.push(`<button class="iconbtn iconbtn--danger grp-del" data-round="${rid}">${esc(actionsText.delete ?? 'Kör törlése')}</button>`);
     g.innerHTML = `
       <div class="group-header" data-group-header="${rid}" data-sort-mode="${esc(sortMode)}">
         <div class="group-title">

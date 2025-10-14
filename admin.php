@@ -143,32 +143,9 @@ $csrfToken = csrf_get_token();
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Admin – felhasználók kezelése</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/halfmoon@2.0.1/css/halfmoon.min.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/halfmoon@2.0.1/css/halfmoon-modern.min.css" />
   <link rel="stylesheet" href="<?= htmlspecialchars(base_url('public/styles.css'), ENT_QUOTES) ?>" />
-  <style>
-    .admin-page{max-width:960px;margin:24px auto;padding:0 16px;display:grid;gap:20px}
-    .admin-header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}
-    .admin-users{display:grid;gap:16px}
-    .user-card{border:1px solid var(--border);background:var(--panel);border-radius:12px;padding:16px 18px;display:grid;gap:14px}
-    .user-card h2{margin:0;font-size:18px}
-    .user-card small{color:var(--muted);display:block;margin-top:4px}
-    .user-card form{display:grid;gap:14px}
-    .user-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
-    .user-fields label{display:grid;gap:6px;font-size:13px;color:var(--muted)}
-    .user-fields input[type="text"],.user-fields input[type="email"],.user-fields input[type="password"],.user-fields select{padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text)}
-    .user-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
-    .user-actions .checkbox{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
-    .btn-primary{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:10px 16px;font-weight:600;cursor:pointer}
-    .btn-primary:hover{filter:brightness(.95)}
-    .btn-danger{background:#dc2626;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-weight:600;cursor:pointer}
-    .btn-danger:hover{filter:brightness(.9)}
-    .notice{padding:12px 16px;border-radius:10px;font-size:14px}
-    .notice-success{background:rgba(22,163,74,0.12);border:1px solid rgba(22,163,74,0.35);color:#14532d}
-    .notice-error{background:rgba(220,38,38,0.12);border:1px solid rgba(220,38,38,0.35);color:#7f1d1d}
-    .create-card{border:1px dashed var(--border);padding:18px;border-radius:12px;background:var(--panel);display:grid;gap:14px}
-    .create-card h2{margin:0;font-size:18px}
-    .back-link{color:var(--accent);text-decoration:none;font-weight:600}
-    .back-link:hover{text-decoration:underline}
-  </style>
 </head>
 <body>
   <main class="admin-page">
@@ -177,7 +154,7 @@ $csrfToken = csrf_get_token();
         <h1>Felhasználók kezelése</h1>
         <p class="admin-subtitle">Új felhasználók létrehozása és meglévők módosítása.</p>
       </div>
-      <a class="back-link" href="<?= htmlspecialchars(app_url_path('index.php'), ENT_QUOTES) ?>">&larr; Vissza az alkalmazásba</a>
+      <a class="admin-back-link btn-link" href="<?= htmlspecialchars(app_url_path('index.php'), ENT_QUOTES) ?>">&larr; Vissza az alkalmazásba</a>
     </div>
 
     <?php if ($success): ?>
@@ -220,7 +197,7 @@ $csrfToken = csrf_get_token();
           <label class="checkbox">
             <input type="checkbox" name="must_change_password" value="1" checked /> Kötelező jelszócsere az első belépéskor
           </label>
-          <button class="btn-primary" type="submit">Felhasználó létrehozása</button>
+          <button class="btn btn-primary" type="submit">Felhasználó létrehozása</button>
         </div>
       </form>
     </section>
@@ -262,7 +239,7 @@ $csrfToken = csrf_get_token();
               <label class="checkbox">
                 <input type="checkbox" name="must_change_password" value="1" <?= !empty($user['must_change_password']) ? 'checked' : '' ?> /> Kötelező jelszócsere
               </label>
-              <button class="btn-primary" type="submit">Mentés</button>
+              <button class="btn btn-primary" type="submit">Mentés</button>
             </div>
           </form>
           <?php if ((int)$user['id'] !== (int)$CURRENT_USER['id']): ?>
@@ -270,7 +247,7 @@ $csrfToken = csrf_get_token();
               <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES) ?>" />
               <input type="hidden" name="mode" value="delete" />
               <input type="hidden" name="user_id" value="<?= (int)$user['id'] ?>" />
-              <button class="btn-danger" type="submit">Felhasználó törlése</button>
+              <button class="btn btn-danger" type="submit">Felhasználó törlése</button>
             </form>
           <?php endif; ?>
         </article>
