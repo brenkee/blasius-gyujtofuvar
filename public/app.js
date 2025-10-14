@@ -1838,11 +1838,96 @@
       return false;
     }
   }
+  const STREET_TYPE_REGEX = /\b(?:utca|u\.?|út|körút|krt\.?|tér|köz|sétány|lejtő|rakpart|sor|park|fasor|dűlőút?|dűlősor|kert|határút|állomás|telep|lakótelep)\b/giu;
+  const APARTMENT_REGEXES = [
+    /\bfszt\.?\s*\d*[a-z]?\b/giu,
+    /\bföldszint\b\s*\d*[a-z]?/giu,
+    /\bem\.?\s*\d+\b/giu,
+    /\bemelet\b\s*\d+\b/giu,
+    /\bajtó\b\s*\d*[a-z]?/giu,
+    /\b[IVXLCDM]+\s*\/\s*\d+\b/giu
+  ];
+
+  function normalizeGeocodeSpacing(text){
+    return (text || '')
+      .replace(/\s+,/g, ',')
+      .replace(/,\s*,/g, ',')
+      .replace(/,\s+/g, ', ')
+      .replace(/\s{2,}/g, ' ')
+      .replace(/\s+/g, ' ')
+      .replace(/\s*,\s*$/g, '')
+      .replace(/^\s*,\s*/g, '')
+      .trim();
+  }
+
+  function reorderPostalPrefix(text){
+    return (text || '').replace(/^\s*([^,]+)\s*,\s*(.+?)\s*,\s*(\d{4})\s*$/u, '$3 $1, $2');
+  }
+
+  function cleanHungarianAddress(raw){
+    let text = typeof raw === 'string' ? raw : '';
+    if (!text) return '';
+    text = text.replace(/\bHRSZ\.?\s*\d+(?:\/\d+)?\.?/giu, '');
+    text = text.replace(/\bBudapest\s*(?:[IVXLCDM]+|\d{1,2})\.?\s*(?:ker\.?|kerület)?\b/giu, 'Budapest');
+    text = text.replace(/\b(?:[IVXLCDM]+|\d{1,2})\.?\s*(?:ker\.?|kerület)\b/giu, '');
+    text = text.replace(STREET_TYPE_REGEX, '');
+    APARTMENT_REGEXES.forEach(re => {
+      text = text.replace(re, '');
+    });
+    text = text.replace(/\b(\d+)\s*[-/]\s*[0-9A-ZÁÉÍÓÖŐÚÜŰ]+\b/giu, '$1');
+    text = text.replace(/\.+/g, '.');
+    text = normalizeGeocodeSpacing(text.replace(/\s{2,}/g, ' '));
+    return text;
+  }
+
+  function extractPostalCode(text){
+    if (typeof text !== 'string') return '';
+    const matches = text.match(/\b(\d{4})\b/g);
+    if (!matches) return '';
+    const trimmed = text.trim();
+    const preferred = matches.find(code => {
+      const idx = trimmed.indexOf(code);
+      return idx === 0 || idx === trimmed.length - code.length;
+    });
+    return preferred || matches[0];
+  }
+
   async function geocodeRobust(q){
-    const qNorm = q.replace(/^\s*([^,]+)\s*,\s*(.+?)\s*,\s*(\d{4})\s*$/u, '$3 $1, $2');
-    const url = EP.geocode + '&' + new URLSearchParams({q:qNorm});
-    async function one(){ const r = await fetch(url,{cache:'no-store'}); const t=await r.text(); let j; try{ j=JSON.parse(t);}catch(e){throw new Error('geocode_error');} if(!r.ok||j.error) throw new Error('geocode_error'); return j; }
-    try{ return await one(); } catch(_){ return await one(); }
+    const attempts = [];
+    const seen = new Set();
+    const pushAttempt = (query, cleaned)=>{
+      const normalized = normalizeGeocodeSpacing(reorderPostalPrefix(query));
+      if (!normalized) return;
+      if (seen.has(normalized)) return;
+      seen.add(normalized);
+      attempts.push({query: normalized, cleaned});
+    };
+    pushAttempt(q, false);
+    const cleaned = cleanHungarianAddress(q);
+    if (cleaned && cleaned !== q) {
+      pushAttempt(cleaned, true);
+    }
+    let lastError = null;
+    for (const attempt of attempts){
+      const url = EP.geocode + '&' + new URLSearchParams({q: attempt.query});
+      async function one(){ const r = await fetch(url,{cache:'no-store'}); const t=await r.text(); let j; try{ j=JSON.parse(t);}catch(e){throw new Error('geocode_error');} if(!r.ok||j.error) throw new Error('geocode_error'); return j; }
+      const runAttempt = async()=>{ try{ return await one(); } catch(_){ return await one(); } };
+      try{
+        const result = await runAttempt();
+        result.queryUsed = attempt.query;
+        result.cleanedAddress = attempt.cleaned ? attempt.query : null;
+        result.normalizedAddress = attempt.query;
+        result.postalCode = extractPostalCode(attempt.query);
+        return result;
+      } catch(err){
+        lastError = err;
+      }
+    }
+    const failure = lastError instanceof Error ? lastError : new Error('geocode_error');
+    failure.code = 'geocode_error';
+    failure.cleanedAddress = cleaned && cleaned !== q ? normalizeGeocodeSpacing(reorderPostalPrefix(cleaned)) : '';
+    failure.postalCode = extractPostalCode(cleaned || q);
+    throw failure;
   }
 
   async function autoGeocodeImported(targetIds){
@@ -1865,6 +1950,10 @@
       try {
         const geo = await geocodeRobust(address);
         const updated = {...item};
+        const storedAddress = geo.cleanedAddress && geo.cleanedAddress.trim() ? geo.cleanedAddress.trim() : address;
+        if (storedAddress !== item[addressFieldId]) {
+          updated[addressFieldId] = storedAddress;
+        }
         updated.lat = geo.lat;
         updated.lon = geo.lon;
         const fallbackCity = cityFromDisplay(address, item.city);
@@ -1878,14 +1967,25 @@
         const label = (item[labelFieldId] ?? '').toString().trim();
         const labelPart = label ? `${label} – ` : '';
         const fallbackCity = cityFromDisplay(address, item.city);
+        const cleanedAddress = typeof err?.cleanedAddress === 'string' ? err.cleanedAddress.trim() : '';
+        let updatedAddress = address;
+        if (cleanedAddress && cleanedAddress !== address) {
+          const updatedItem = {...item};
+          updatedItem[addressFieldId] = cleanedAddress;
+          state.items[i] = updatedItem;
+          updatedAddress = cleanedAddress;
+          changed = true;
+        }
         failures.push({
           index: i,
           id: idStr,
           label,
-          address,
+          address: updatedAddress,
           city: typeof item.city === 'string' ? item.city.trim() : '',
           fallbackCity,
-          summary: `${idPart}${labelPart}${address}`.trim() || fallbackCity || `${idPart}${label}`.trim()
+          postalCode: typeof err?.postalCode === 'string' ? err.postalCode.trim() : extractPostalCode(updatedAddress),
+          cleanedAddress,
+          summary: `${idPart}${labelPart}${updatedAddress}`.trim() || fallbackCity || `${idPart}${label}`.trim()
         });
       }
     }
@@ -2373,11 +2473,46 @@
     const addressFieldId = getAddressFieldId();
     const labelFieldId = getLabelFieldId();
     const addressInput = row?.querySelector(`[data-field="${addressFieldId}"]`);
-    const address = (addressInput ? addressInput.value : it[addressFieldId] || '').toString().trim();
-    if (!address){ alert(text('messages.address_required', 'Adj meg teljes címet!')); if (addressInput) addressInput.focus(); return; }
+    const originalAddress = (addressInput ? addressInput.value : it[addressFieldId] || '').toString().trim();
+    if (!originalAddress){ alert(text('messages.address_required', 'Adj meg teljes címet!')); if (addressInput) addressInput.focus(); return; }
     if (okBtn){ okBtn.disabled=true; okBtn.textContent='...'; }
     try{
-      const g = await geocodeRobust(address);
+      let workingAddress = originalAddress;
+      let g;
+      try {
+        g = await geocodeRobust(workingAddress);
+        if (g.cleanedAddress && g.cleanedAddress.trim()) {
+          workingAddress = g.cleanedAddress.trim();
+          if (addressInput) addressInput.value = workingAddress;
+        }
+      } catch (err) {
+        const cleanedAddress = typeof err?.cleanedAddress === 'string' ? err.cleanedAddress.trim() : '';
+        if (cleanedAddress && cleanedAddress !== workingAddress) {
+          workingAddress = cleanedAddress;
+          if (addressInput) addressInput.value = workingAddress;
+        }
+        const postal = typeof err?.postalCode === 'string' ? err.postalCode.trim() : extractPostalCode(workingAddress);
+        const fallbackCity = cityFromDisplay(workingAddress, it.city);
+        if (postal && fallbackCity) {
+          const offerTpl = text(
+            'messages.geocode_offer_postal_city',
+            'Nem sikerült geokódolni a címet. Jelöljük meg csak {city} települést az {postal} irányítószám alapján?'
+          );
+          const offerMsg = format(offerTpl, {city: fallbackCity, postal});
+          if (window.confirm(offerMsg)) {
+            try {
+              const fallbackQuery = `${postal} ${fallbackCity}`;
+              g = await geocodeRobust(fallbackQuery);
+              workingAddress = fallbackCity;
+            } catch (fallbackErr) {
+              console.error('postal city geocode failed', fallbackErr);
+            }
+          }
+        }
+        if (!g) {
+          throw err;
+        }
+      }
       const newRound = (overrideRound!=null) ? overrideRound : (typeof it._pendingRound!=='undefined' ? it._pendingRound : it.round);
       pushSnapshot();
       const updated = {...it};
@@ -2403,11 +2538,11 @@
           updated[metric.id] = Number.isFinite(num) ? num : null;
         }
       });
-      updated[addressFieldId] = address;
+      updated[addressFieldId] = workingAddress;
       if (labelFieldId && updated[labelFieldId] != null) {
         updated[labelFieldId] = updated[labelFieldId].toString().trim();
       }
-      updated.city = g.city || cityFromDisplay(address, it.city);
+      updated.city = g.city || cityFromDisplay(workingAddress, it.city);
       updated.lat = g.lat;
       updated.lon = g.lon;
       updated.round = +newRound || 0;
@@ -3720,7 +3855,9 @@
       updated.lat = null;
       updated.lon = null;
       try {
-        const geo = await geocodeRobust(cityCandidate);
+        const postal = typeof entry?.postalCode === 'string' ? entry.postalCode.trim() : extractPostalCode(entry?.address || cityCandidate);
+        const cityQuery = postal ? `${postal} ${cityCandidate}` : cityCandidate;
+        const geo = await geocodeRobust(cityQuery);
         updated.lat = geo.lat;
         updated.lon = geo.lon;
         if (geo.city) {
