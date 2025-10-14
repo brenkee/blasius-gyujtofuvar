@@ -88,34 +88,384 @@ function optional_batch_id() {
   return normalized_batch_id($_SERVER['HTTP_X_BATCH_ID'] ?? '');
 }
 
-function append_change_events($rev, $actorId, $requestId, $batchId, array $events, array $meta = []) {
-  foreach ($events as $event) {
-    $log = [
-      'rev' => $rev,
-      'entity' => $event['entity'] ?? 'dataset',
-      'entity_id' => $event['entity_id'] ?? null,
-      'action' => $event['action'] ?? 'updated',
-      'ts' => gmdate('c'),
-      'actor_id' => $actorId,
-      'request_id' => $requestId,
+function log_dataset_change_entries($rev, $actorId, $requestId, $batchId, string $action, array $events, array $actionMeta, array $oldItems, array $newItems, array $oldRoundMeta, array $newRoundMeta, ?array $user = null) {
+  global $CFG;
+
+  $actorLabel = log_actor_label($user, $user['username'] ?? ($actorId ?? null));
+  $createdItems = 0;
+  $updatedItems = 0;
+  $deletedItems = 0;
+  $roundMessages = [];
+  $itemDetailMessages = [];
+
+  $itemsCfg = isset($CFG['items']) && is_array($CFG['items']) ? $CFG['items'] : [];
+  $addressFieldId = isset($itemsCfg['address_field_id']) && is_string($itemsCfg['address_field_id']) && $itemsCfg['address_field_id'] !== ''
+    ? $itemsCfg['address_field_id']
+    : 'address';
+  $labelFieldId = isset($itemsCfg['label_field_id']) && is_string($itemsCfg['label_field_id']) && $itemsCfg['label_field_id'] !== ''
+    ? $itemsCfg['label_field_id']
+    : 'label';
+
+  $fieldLabels = [
+    'id' => 'Azonosító',
+    'round' => 'Kör',
+    'label' => 'Címke',
+    'address' => 'Cím',
+    'note' => 'Megjegyzés',
+    'deadline' => 'Kiszállítás határideje',
+    'city' => 'Település',
+    'weight' => 'Súly (kg)',
+    'volume' => 'Térfogat (m³)',
+  ];
+  if (isset($itemsCfg['fields']) && is_array($itemsCfg['fields'])) {
+    foreach ($itemsCfg['fields'] as $fieldCfg) {
+      if (!is_array($fieldCfg)) continue;
+      $fid = isset($fieldCfg['id']) ? (string)$fieldCfg['id'] : '';
+      if ($fid === '') continue;
+      $label = isset($fieldCfg['label']) ? trim((string)$fieldCfg['label']) : '';
+      if ($label === '') {
+        $label = ucfirst($fid);
+      }
+      $fieldLabels[$fid] = $label;
+    }
+  }
+  if (isset($itemsCfg['metrics']) && is_array($itemsCfg['metrics'])) {
+    foreach ($itemsCfg['metrics'] as $metricCfg) {
+      if (!is_array($metricCfg)) continue;
+      $mid = isset($metricCfg['id']) ? (string)$metricCfg['id'] : '';
+      if ($mid === '') continue;
+      $label = isset($metricCfg['label']) ? trim((string)$metricCfg['label']) : '';
+      if ($label === '') {
+        $label = ucfirst($mid);
+      }
+      $fieldLabels[$mid] = $label;
+    }
+  }
+
+  $fieldsToDescribe = [];
+  foreach (['id', $labelFieldId, $addressFieldId, 'round', 'note', 'deadline', 'city', 'weight', 'volume'] as $fid) {
+    if (!is_string($fid) || $fid === '') {
+      continue;
+    }
+    $fieldsToDescribe[$fid] = true;
+  }
+  $fieldsToDescribe = array_keys($fieldsToDescribe);
+
+  $oldItemsById = [];
+  foreach ($oldItems as $item) {
+    if (!is_array($item)) continue;
+    $id = isset($item['id']) ? (string)$item['id'] : '';
+    if ($id === '') continue;
+    $oldItemsById[$id] = $item;
+  }
+  $newItemsById = [];
+  foreach ($newItems as $item) {
+    if (!is_array($item)) continue;
+    $id = isset($item['id']) ? (string)$item['id'] : '';
+    if ($id === '') continue;
+    $newItemsById[$id] = $item;
+  }
+
+  $formatValue = function($value, string $fieldId) {
+    if ($value === null) {
+      return 'nincs megadva';
+    }
+    if (is_string($value)) {
+      $normalized = preg_replace('/\s+/u', ' ', $value);
+      if ($normalized === null) {
+        $normalized = $value;
+      }
+      $normalized = trim($normalized);
+      return $normalized === '' ? 'üres' : $normalized;
+    }
+    if (is_bool($value)) {
+      return $value ? 'igen' : 'nem';
+    }
+    if (is_int($value)) {
+      return (string)$value;
+    }
+    if (is_float($value)) {
+      $text = rtrim(rtrim(sprintf('%.4F', $value), '0'), '.');
+      return $text === '' ? '0' : $text;
+    }
+    if ($value instanceof DateTimeInterface) {
+      return $value->format(DateTimeInterface::ATOM);
+    }
+    if (is_array($value) || is_object($value)) {
+      $encoded = json_encode($value, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+      if ($encoded === false) {
+        return 'összetett adat';
+      }
+      return $encoded;
+    }
+    return (string)$value;
+  };
+
+  $formatItemIdentity = function(?array $primary, ?array $secondary, string $itemId) use ($labelFieldId, $addressFieldId) {
+    $label = '';
+    $address = '';
+    if (is_array($primary)) {
+      $label = isset($primary[$labelFieldId]) ? trim((string)$primary[$labelFieldId]) : '';
+      $address = isset($primary[$addressFieldId]) ? trim((string)$primary[$addressFieldId]) : '';
+    }
+    if ($label === '' && is_array($secondary)) {
+      $label = isset($secondary[$labelFieldId]) ? trim((string)$secondary[$labelFieldId]) : '';
+    }
+    if ($address === '' && is_array($secondary)) {
+      $address = isset($secondary[$addressFieldId]) ? trim((string)$secondary[$addressFieldId]) : '';
+    }
+    if ($label !== '' && $address !== '') {
+      return $label . ' – ' . $address;
+    }
+    if ($label !== '') {
+      return $label;
+    }
+    if ($address !== '') {
+      return $address;
+    }
+    if ($itemId !== '') {
+      return 'azonosító ' . $itemId;
+    }
+    return 'ismeretlen cím';
+  };
+
+  $describeFields = function(array $item, string $prefix) use ($fieldsToDescribe, $fieldLabels, $formatValue) {
+    $sentences = [];
+    foreach ($fieldsToDescribe as $fieldId) {
+      if (!array_key_exists($fieldId, $item)) {
+        continue;
+      }
+      $label = $fieldLabels[$fieldId] ?? ucfirst($fieldId);
+      $sentences[] = sprintf('%s %s: %s.', $prefix, $label, $formatValue($item[$fieldId], $fieldId));
+    }
+    return $sentences;
+  };
+
+  $describeComparisons = function(array $before, array $after, array $fields) use ($fieldLabels, $formatValue, $addressFieldId, $labelFieldId) {
+    $sentences = [];
+    $flags = [
+      'address' => false,
+      'label' => false,
     ];
-    if ($batchId) {
-      $log['batch_id'] = $batchId;
+    foreach ($fields as $fieldId) {
+      $beforeVal = array_key_exists($fieldId, $before) ? $before[$fieldId] : null;
+      $afterVal = array_key_exists($fieldId, $after) ? $after[$fieldId] : null;
+      if ($beforeVal === $afterVal) {
+        continue;
+      }
+      $label = $fieldLabels[$fieldId] ?? ucfirst($fieldId);
+      if ($fieldId === $addressFieldId) {
+        $flags['address'] = true;
+        $sentences[] = sprintf('Korábbi cím: %s. Új cím: %s.', $formatValue($beforeVal, $fieldId), $formatValue($afterVal, $fieldId));
+        continue;
+      }
+      if ($fieldId === $labelFieldId) {
+        $flags['label'] = true;
+        $sentences[] = sprintf('Korábbi címke: %s. Új címke: %s.', $formatValue($beforeVal, $fieldId), $formatValue($afterVal, $fieldId));
+        continue;
+      }
+      $sentences[] = sprintf('Korábbi %s: %s. Új %s: %s.', $label, $formatValue($beforeVal, $fieldId), $label, $formatValue($afterVal, $fieldId));
     }
-    $metaPayload = $event['meta'] ?? [];
-    if (!empty($meta)) {
-      $metaPayload = array_merge($metaPayload, $meta);
+    if (!$flags['address']) {
+      $sentences[] = sprintf('Korábbi cím: %s. Új cím: %s.', $formatValue(array_key_exists($addressFieldId, $before) ? $before[$addressFieldId] : null, $addressFieldId), $formatValue(array_key_exists($addressFieldId, $after) ? $after[$addressFieldId] : null, $addressFieldId));
     }
-    if (!empty($metaPayload)) {
-      $log['meta'] = $metaPayload;
+    if (!$flags['label']) {
+      $sentences[] = sprintf('Korábbi címke: %s. Új címke: %s.', $formatValue(array_key_exists($labelFieldId, $before) ? $before[$labelFieldId] : null, $labelFieldId), $formatValue(array_key_exists($labelFieldId, $after) ? $after[$labelFieldId] : null, $labelFieldId));
     }
-    append_change_log_locked($log);
+    return $sentences;
+  };
+
+  foreach ($events as $event) {
+    $entity = isset($event['entity']) ? (string)$event['entity'] : '';
+    $eventAction = isset($event['action']) ? (string)$event['action'] : '';
+    if ($entity === 'item') {
+      $itemId = isset($event['entity_id']) ? (string)$event['entity_id'] : '';
+      $beforeItem = $itemId !== '' && isset($oldItemsById[$itemId]) ? $oldItemsById[$itemId] : null;
+      $afterItem = $itemId !== '' && isset($newItemsById[$itemId]) ? $newItemsById[$itemId] : null;
+      if ($eventAction === 'created') {
+        $createdItems++;
+        if (is_array($afterItem)) {
+          $identity = $formatItemIdentity($afterItem, $beforeItem, $itemId);
+          $sentences = $describeFields($afterItem, 'Új');
+          if (empty($sentences)) {
+            $sentences[] = 'Új adatok nem állnak rendelkezésre részletezve.';
+          }
+          $itemDetailMessages[] = trim(sprintf('%s új címet vett fel: %s. %s', $actorLabel, $identity, implode(' ', $sentences)));
+        }
+      } elseif ($eventAction === 'updated') {
+        $updatedItems++;
+        $beforeData = is_array($beforeItem) ? $beforeItem : [];
+        $afterData = is_array($afterItem) ? $afterItem : [];
+        $changes = [];
+        if (isset($event['meta']['changes']) && is_array($event['meta']['changes'])) {
+          $changes = $event['meta']['changes'];
+        }
+        $sentences = [];
+        $hasAddressSentence = false;
+        $hasLabelSentence = false;
+        foreach ($changes as $fieldId => $change) {
+          $fieldKey = (string)$fieldId;
+          $beforeVal = is_array($change) && array_key_exists('before', $change) ? $change['before'] : (array_key_exists($fieldKey, $beforeData) ? $beforeData[$fieldKey] : null);
+          $afterVal = is_array($change) && array_key_exists('after', $change) ? $change['after'] : (array_key_exists($fieldKey, $afterData) ? $afterData[$fieldKey] : null);
+          $label = $fieldLabels[$fieldKey] ?? ucfirst($fieldKey);
+          if ($fieldKey === $addressFieldId) {
+            $hasAddressSentence = true;
+            $sentences[] = sprintf('Korábbi cím: %s. Új cím: %s.', $formatValue($beforeVal, $fieldKey), $formatValue($afterVal, $fieldKey));
+            continue;
+          }
+          if ($fieldKey === $labelFieldId) {
+            $hasLabelSentence = true;
+            $sentences[] = sprintf('Korábbi címke: %s. Új címke: %s.', $formatValue($beforeVal, $fieldKey), $formatValue($afterVal, $fieldKey));
+            continue;
+          }
+          $sentences[] = sprintf('Korábbi %s: %s. Új %s: %s.', $label, $formatValue($beforeVal, $fieldKey), $label, $formatValue($afterVal, $fieldKey));
+        }
+        if (!$hasAddressSentence) {
+          $sentences[] = sprintf('Korábbi cím: %s. Új cím: %s.', $formatValue(array_key_exists($addressFieldId, $beforeData) ? $beforeData[$addressFieldId] : null, $addressFieldId), $formatValue(array_key_exists($addressFieldId, $afterData) ? $afterData[$addressFieldId] : null, $addressFieldId));
+        }
+        if (!$hasLabelSentence) {
+          $sentences[] = sprintf('Korábbi címke: %s. Új címke: %s.', $formatValue(array_key_exists($labelFieldId, $beforeData) ? $beforeData[$labelFieldId] : null, $labelFieldId), $formatValue(array_key_exists($labelFieldId, $afterData) ? $afterData[$labelFieldId] : null, $labelFieldId));
+        }
+        if (empty($sentences)) {
+          $sentences = $describeComparisons($beforeData, $afterData, $fieldsToDescribe);
+        }
+        $identity = $formatItemIdentity($beforeItem ?? $afterItem, $afterItem ?? $beforeItem, $itemId);
+        $itemDetailMessages[] = trim(sprintf('%s módosította a(z) %s cím adatait. %s', $actorLabel, $identity, implode(' ', $sentences)));
+      } elseif ($eventAction === 'deleted') {
+        $deletedItems++;
+        if (is_array($beforeItem)) {
+          $identity = $formatItemIdentity($beforeItem, $afterItem, $itemId);
+          $sentences = $describeFields($beforeItem, 'Korábbi');
+          if (empty($sentences)) {
+            $sentences[] = 'Korábbi adatok nem voltak elérhetők részletekben.';
+          }
+          $itemDetailMessages[] = trim(sprintf('%s törölte a következő címet: %s. %s', $actorLabel, $identity, implode(' ', $sentences)));
+        }
+      }
+      continue;
+    }
+    if ($entity === 'round_meta') {
+      $roundId = $event['entity_id'] ?? null;
+      $before = [];
+      $after = [];
+      if (isset($event['meta']['before']) && is_array($event['meta']['before'])) {
+        $before = $event['meta']['before'];
+      }
+      if (isset($event['meta']['after']) && is_array($event['meta']['after'])) {
+        $after = $event['meta']['after'];
+      }
+      $beforeNote = isset($before['note']) ? trim((string)$before['note']) : '';
+      $afterNote = isset($after['note']) ? trim((string)$after['note']) : '';
+      if ($beforeNote !== $afterNote) {
+        $roundLabel = log_round_label($roundId);
+        if ($afterNote === '') {
+          $roundMessages[] = sprintf('%s törölte a(z) %s kör megjegyzését.', $actorLabel, $roundLabel);
+        } elseif ($beforeNote === '') {
+          $roundMessages[] = sprintf('%s megjegyzést adott a következő körhöz: %s – "%s".', $actorLabel, $roundLabel, $afterNote);
+        } else {
+          $roundMessages[] = sprintf('%s módosította a(z) %s kör megjegyzését: "%s".', $actorLabel, $roundLabel, $afterNote);
+        }
+      }
+    }
+  }
+
+  $summaryMessages = [];
+  $summaryMessages = array_merge($summaryMessages, $roundMessages);
+
+  $totalItems = count(array_filter($newItems, 'is_array'));
+
+  if ($action === 'import') {
+    $importMode = isset($actionMeta['mode']) && $actionMeta['mode'] === 'append' ? 'append' : 'replace';
+    $imported = isset($actionMeta['imported_count']) && is_numeric($actionMeta['imported_count']) ? (int)$actionMeta['imported_count'] : ($createdItems + $updatedItems);
+    if ($imported < 0) {
+      $imported = 0;
+    }
+    $successful = max(0, $createdItems + $updatedItems);
+    if ($importMode === 'append') {
+      $summaryMessages[] = sprintf(
+        '%s importált egy fájlt %d címmel, ebből %d került hozzáadásra vagy frissítésre. Új összesen: %d cím.',
+        $actorLabel,
+        $imported,
+        $successful,
+        $totalItems
+      );
+    } else {
+      $summaryMessages[] = sprintf(
+        '%s felülírta az előző adatokat importtal: %d cím érkezett, ebből %d sikeresen feldolgozva. Új összesen: %d cím.',
+        $actorLabel,
+        $imported,
+        $successful,
+        $totalItems
+      );
+    }
+  } elseif ($action === 'delete_round') {
+    $roundId = $actionMeta['round'] ?? null;
+    $roundLabel = log_round_label($roundId);
+    $deletedCount = isset($actionMeta['deleted_count']) && is_numeric($actionMeta['deleted_count']) ? (int)$actionMeta['deleted_count'] : $deletedItems;
+    $summaryMessages[] = sprintf('%s törölte a következő kört: %s (%d cím).', $actorLabel, $roundLabel, max(0, $deletedCount));
+  } else {
+    $parts = [];
+    $createdPhrase = log_format_count_phrase($createdItems, 'új cím');
+    if ($createdPhrase) {
+      $parts[] = $createdPhrase;
+    }
+    $updatedPhrase = log_format_count_phrase($updatedItems, 'módosított cím');
+    if ($updatedPhrase) {
+      $parts[] = $updatedPhrase;
+    }
+    $deletedPhrase = log_format_count_phrase($deletedItems, 'törölt cím');
+    if ($deletedPhrase) {
+      $parts[] = $deletedPhrase;
+    }
+    if (!empty($parts)) {
+      if (count($parts) > 1) {
+        $last = array_pop($parts);
+        $summaryChanges = implode(', ', $parts) . ' és ' . $last;
+      } else {
+        $summaryChanges = $parts[0];
+      }
+      $summaryMessages[] = sprintf('%s módosította a címlistát: %s.', $actorLabel, $summaryChanges);
+    } elseif (empty($roundMessages)) {
+      $summaryMessages[] = sprintf('%s mentette a címlistát.', $actorLabel);
+    }
+  }
+
+  if (empty($summaryMessages)) {
+    $summaryMessages[] = sprintf('%s változtatásokat hajtott végre.', $actorLabel);
+  }
+
+  $messages = array_merge($itemDetailMessages, $summaryMessages);
+  if (empty($messages)) {
+    $messages[] = sprintf('%s változtatásokat hajtott végre.', $actorLabel);
+  }
+
+  $baseEntry = [
+    'rev' => $rev,
+    'actor_id' => $actorId,
+    'request_id' => $requestId,
+  ];
+  if ($batchId) {
+    $baseEntry['batch_id'] = $batchId;
+  }
+  if (is_array($user)) {
+    if (isset($user['id']) && is_numeric($user['id'])) {
+      $baseEntry['user_id'] = (int)$user['id'];
+    }
+    if (!empty($user['username']) && is_string($user['username'])) {
+      $baseEntry['username'] = (string)$user['username'];
+    }
+  }
+
+  foreach ($messages as $message) {
+    $entry = $baseEntry;
+    $entry['message'] = $message;
+    append_change_log_locked($entry);
   }
 }
 
-function commit_dataset_update(array $newItems, array $newRoundMeta, $actorId, $requestId, $batchId, $action, array $actionMeta = []) {
+function commit_dataset_update(array $newItems, array $newRoundMeta, $actorId, $requestId, $batchId, $action, array $actionMeta = [], ?array $user = null) {
   global $DATA_FILE;
-  return state_lock(function() use ($DATA_FILE, $newItems, $newRoundMeta, $actorId, $requestId, $batchId, $action, $actionMeta) {
+  return state_lock(function() use ($DATA_FILE, $newItems, $newRoundMeta, $actorId, $requestId, $batchId, $action, $actionMeta, $user) {
     [$oldItems, $oldRoundMeta] = data_store_read($DATA_FILE);
     $writeOk = data_store_write($DATA_FILE, $newItems, $newRoundMeta);
     if ($writeOk === false) {
@@ -141,7 +491,7 @@ function commit_dataset_update(array $newItems, array $newRoundMeta, $actorId, $
         return $ev;
       }, $events);
     }
-    append_change_events($newRev, $actorId, $requestId, $batchId, $events, $actionMeta);
+    log_dataset_change_entries($newRev, $actorId, $requestId, $batchId, $action, $events, $actionMeta, $oldItems, $newItems, $oldRoundMeta, $newRoundMeta, $user);
     return ['rev' => $newRev, 'events' => $events];
   });
 }
@@ -389,7 +739,7 @@ if ($action === 'save') {
     http_response_code(400); echo json_encode(['ok'=>false]); exit;
   }
   try {
-    $result = commit_dataset_update($items, $roundMeta, $actorId, $requestId, $batchId, 'save', ['scope' => 'full_save']);
+    $result = commit_dataset_update($items, $roundMeta, $actorId, $requestId, $batchId, 'save', ['scope' => 'full_save'], $CURRENT_USER);
   } catch (Throwable $e) {
     http_response_code(500);
     echo json_encode(['ok' => false, 'error' => 'write_failed'], JSON_UNESCAPED_UNICODE);
@@ -787,7 +1137,7 @@ if ($action === 'import_csv') {
     $result = commit_dataset_update($finalItems, $roundMeta, $actorId, $requestId, $batchId ?: ('batch_'.$requestId), 'import', [
       'mode' => $importMode,
       'imported_count' => count($items)
-    ]);
+    ], $CURRENT_USER);
   } catch (Throwable $e) {
     $sendJsonError('Az importálás nem sikerült.', 500);
   }
@@ -825,69 +1175,10 @@ if ($action === 'delete_round') {
   $req = json_decode($body, true);
   $rid = isset($req['round']) ? (int)$req['round'] : (int)($_GET['round'] ?? 0);
 
-  $itemsCfg = $CFG['items'] ?? [];
-  $metricsCfg = array_values(array_filter($itemsCfg['metrics'] ?? [], function($m){ return ($m['enabled'] ?? true) !== false; }));
-  $labelFieldId = $itemsCfg['label_field_id'] ?? 'label';
-  $addressFieldId = $itemsCfg['address_field_id'] ?? 'address';
-  $noteFieldId = $itemsCfg['note_field_id'] ?? 'note';
-  $sumTemplate = $CFG['text']['group']['sum_template'] ?? 'Összesen: {parts}';
-  $sumSeparator = $CFG['text']['group']['sum_separator'] ?? ' · ';
-  $formatMetric = function($metric, $value, $context='row'){
-    $precision = isset($metric['precision']) ? (int)$metric['precision'] : 0;
-    $formatted = number_format((float)$value, $precision, '.', '');
-    $unit = $metric['unit'] ?? '';
-    $label = $metric['label'] ?? '';
-    $tplKey = $context === 'row' ? 'row_format' : 'group_format';
-    if (!empty($metric[$tplKey])) {
-      return str_replace(['{value}','{sum}','{unit}','{label}'], [$formatted,$formatted,$unit,$label], $metric[$tplKey]);
-    }
-    return trim($formatted . ($unit ? ' '.$unit : ''));
-  };
-
   [$items, $roundMeta] = data_store_read($DATA_FILE);
   $kept = []; $removed = [];
   foreach ($items as $it) {
     if ((int)($it['round'] ?? 0) === $rid) $removed[] = $it; else $kept[] = $it;
-  }
-  $archiveLines = [];
-  if (count($removed) > 0) {
-    $dt = date('Y-m-d H:i:s');
-    $roundLabel = $ROUND_MAP[$rid]['label'] ?? (string)$rid;
-
-    $totalParts = [];
-    foreach ($metricsCfg as $metric){
-      $id = $metric['id'] ?? null; if (!$id) continue;
-      $sum = 0.0;
-      foreach ($removed as $t){ if (isset($t[$id]) && is_numeric($t[$id])) $sum += (float)$t[$id]; }
-      $totalParts[] = $formatMetric($metric, $sum, 'group');
-    }
-    $summary = $totalParts ? str_replace('{parts}', implode($sumSeparator, $totalParts), $sumTemplate) : '';
-    $headerLine = "[$dt] TÖRÖLT KÖR: $rid – $roundLabel";
-    $plannedLabel = $CFG['text']['round']['planned_date_label'] ?? 'Tervezett dátum';
-    $plannedKey = (string)$rid;
-    if (isset($roundMeta[$plannedKey]['planned_date'])) {
-      $plannedValue = trim((string)$roundMeta[$plannedKey]['planned_date']);
-      if ($plannedValue !== '') {
-        $headerLine .= '  | ' . $plannedLabel . ': ' . $plannedValue;
-      }
-    }
-    if ($summary) {
-      $headerLine .= '  | ' . $summary;
-    }
-    $archiveLines[] = $headerLine;
-    foreach ($removed as $t) {
-      $parts = [];
-      foreach ([$labelFieldId, $addressFieldId, $noteFieldId] as $k) {
-        if (!$k) continue;
-        $v = trim((string)($t[$k] ?? '')); if ($v!=='') $parts[] = $v;
-      }
-      foreach ($metricsCfg as $metric){
-        $id = $metric['id'] ?? null; if (!$id) continue;
-        if (isset($t[$id]) && $t[$id] !== '') $parts[] = $formatMetric($metric, $t[$id], 'row');
-      }
-      $archiveLines[] = "- " . (count($parts)? implode(' | ', $parts) : '—');
-    }
-    $archiveLines[] = "";
   }
   if (isset($roundMeta[(string)$rid])) {
     unset($roundMeta[(string)$rid]);
@@ -897,22 +1188,15 @@ if ($action === 'delete_round') {
     $result = commit_dataset_update($kept, $roundMeta, $actorId, $requestId, $batchId, 'delete_round', [
       'round' => $rid,
       'deleted_count' => count($removed)
-    ]);
+    ], $CURRENT_USER);
   } catch (Throwable $e) {
     echo json_encode(['ok' => false, 'error' => 'delete_failed'], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
-  if (!empty($archiveLines)) {
-    @file_put_contents($ARCHIVE_FILE, implode(PHP_EOL,$archiveLines).PHP_EOL, FILE_APPEND|LOCK_EX);
-  }
   backup_now($CFG, $DATA_FILE);
   echo json_encode(['ok'=>true,'deleted'=>count($removed),'rev'=>$result['rev'] ?? null]);
   exit;
-}
-
-if ($action === 'download_archive') {
-  stream_file_download($ARCHIVE_FILE, 'fuvar_archive.txt', 'text/plain; charset=utf-8');
 }
 
 http_response_code(404);

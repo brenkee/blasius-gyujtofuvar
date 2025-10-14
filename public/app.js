@@ -4221,8 +4221,6 @@
   if (exportBtn) exportBtn.addEventListener('click', ()=>{ window.open(EP.exportAll, '_blank'); });
   const printBtn = document.getElementById('printBtn');
   if (printBtn) printBtn.addEventListener('click', ()=>{ window.open(EP.printAll, '_blank'); });
-  const archiveBtn = document.getElementById('downloadArchiveBtn');
-  if (archiveBtn) archiveBtn.addEventListener('click', ()=>{ window.open(EP.downloadArchive, '_blank'); });
   function expandAllRows(){
     groupsEl.querySelectorAll('.row').forEach(rowEl => {
       const body = rowEl.querySelector('.body');

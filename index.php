@@ -28,7 +28,6 @@ $LOGOUT_TOKEN = csrf_get_token();
     'importCsv' => 'api.php?action=import_csv',
     'exportAll' => 'api.php?action=export',
     'deleteRound' => 'api.php?action=delete_round',
-    'downloadArchive' => 'api.php?action=download_archive',
     'printAll' => 'print.php',
   ];
   $bootstrapEndpoints = [];
@@ -126,10 +125,9 @@ $LOGOUT_TOKEN = csrf_get_token();
         $hasImportAll = !empty($toolbarFeatures['import_all']);
         $hasExportAll = !empty($toolbarFeatures['export_all']);
         $hasPrintAll = !empty($toolbarFeatures['print_all']);
-        $hasDownloadArchive = !empty($toolbarFeatures['download_archive']);
         $hasThemeToggle = !empty($toolbarFeatures['theme_toggle']);
         $hasAdminMenuItem = !empty($PERMISSIONS['canManageUsers']);
-        $hasUtilityMenuItems = $hasImportAll || $hasExportAll || $hasPrintAll || $hasDownloadArchive || $hasThemeToggle;
+        $hasUtilityMenuItems = $hasImportAll || $hasExportAll || $hasPrintAll || $hasThemeToggle;
         $hasUserMenuItems = true;
         $toolbarMenuHasItems = $hasUtilityMenuItems || $hasAdminMenuItem || $hasUserMenuItems;
 
@@ -183,12 +181,6 @@ $LOGOUT_TOKEN = csrf_get_token();
                 </button>
                 <?php $menuSectionRendered = true; ?>
               <?php endif; ?>
-              <?php if ($hasDownloadArchive): ?>
-                <button id="downloadArchiveBtn" type="button" title="<?= htmlspecialchars($toolbarText['download_archive']['title'] ?? '') ?>">
-                  <?= htmlspecialchars($toolbarText['download_archive']['label'] ?? 'Archívum letöltése') ?>
-                </button>
-                <?php $menuSectionRendered = true; ?>
-              <?php endif; ?>
               <?php if ($hasThemeToggle): ?>
                 <button id="themeToggle" type="button" title="<?= htmlspecialchars($toolbarText['theme_toggle']['title'] ?? '') ?>">
                   <?= htmlspecialchars($toolbarText['theme_toggle']['label'] ?? '🌙 / ☀️') ?>
@@ -200,6 +192,7 @@ $LOGOUT_TOKEN = csrf_get_token();
                   <hr class="toolbar-menu-separator" role="presentation" />
                 <?php endif; ?>
                 <a class="toolbar-menu-link" href="<?= htmlspecialchars(app_url_path('admin.php'), ENT_QUOTES) ?>">Admin</a>
+                <a class="toolbar-menu-link" href="<?= htmlspecialchars(app_url_path('log.php'), ENT_QUOTES) ?>">Napló</a>
                 <?php $menuSectionRendered = true; ?>
               <?php endif; ?>
               <?php if ($hasUserMenuItems): ?>
