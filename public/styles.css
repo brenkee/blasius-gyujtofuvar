@@ -8,7 +8,7 @@
   --accent:#60a5fa; --ok:#34d399; --err:#f87171; --highlight:#1e293b;
 }
 *{box-sizing:border-box}
-html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);overflow-x:hidden}
+html,body{height:100%; margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);overflow-x:hidden}
 body.import-busy{overflow:hidden}
 body.import-busy .app{filter:blur(4px);pointer-events:none;user-select:none}
 .auth-body{background:var(--bg);margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center}
