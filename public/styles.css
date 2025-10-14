@@ -182,6 +182,9 @@ h1{font-size:18px;margin:0 0 6px}
 .title-label-row{display:flex;align-items:center;gap:6px;min-width:0}
 .title-label{font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .title-label.placeholder{color:var(--muted);font-style:italic;font-weight:600}
+.geocode-warning{display:none;align-items:center;justify-content:center;color:#dc2626;width:18px;height:18px;margin-left:2px}
+.geocode-warning svg{width:18px;height:18px;display:block}
+.geocode-warning[data-visible="true"]{display:inline-flex}
 .title-city{color:var(--muted);font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .deadline-indicator{width:0;height:0;background-color:var(--deadline-color,currentColor);-webkit-mask:url('../pic/hatarido.svg') center/contain no-repeat;mask:url('../pic/hatarido.svg') center/contain no-repeat;display:inline-flex;flex-shrink:0;opacity:0;transition:opacity .2s ease}
 .deadline-indicator[data-visible="true"]{width:var(--deadline-icon-size,16px);height:var(--deadline-icon-size,16px);opacity:1}

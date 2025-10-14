@@ -1805,6 +1805,28 @@
     }
   }
 
+  function updateGeocodeWarning(row, it){
+    const indicator = row?.querySelector('[data-geocode-warning]');
+    if (!indicator) return;
+    const needs = !!(it && it.needs_geocode);
+    if (needs) {
+      const title = text('messages.geocode_missing', 'A cím nincs geokódolva. Írd át más formátumban, majd mentsd újra.');
+      indicator.dataset.visible = 'true';
+      indicator.style.display = '';
+      indicator.setAttribute('title', title);
+      indicator.setAttribute('aria-label', title);
+      indicator.setAttribute('role', 'img');
+      indicator.setAttribute('aria-hidden', 'false');
+    } else {
+      indicator.dataset.visible = 'false';
+      indicator.style.display = '';
+      indicator.removeAttribute('title');
+      indicator.removeAttribute('aria-label');
+      indicator.removeAttribute('role');
+      indicator.setAttribute('aria-hidden', 'true');
+    }
+  }
+
   function updateDeadlineIndicator(row, it){
     const indicator = row?.querySelector('[data-deadline-indicator]');
     if (!indicator) return;
@@ -1997,96 +2019,31 @@
       return false;
     }
   }
-  const STREET_TYPE_REGEX = /\b(?:utca|u\.?|út|körút|krt\.?|tér|köz|sétány|lejtő|rakpart|sor|park|fasor|dűlőút?|dűlősor|kert|határút|állomás|telep|lakótelep)\b/giu;
-  const APARTMENT_REGEXES = [
-    /\bfszt\.?\s*\d*[a-z]?\b/giu,
-    /\bföldszint\b\s*\d*[a-z]?/giu,
-    /\bem\.?\s*\d+\b/giu,
-    /\bemelet\b\s*\d+\b/giu,
-    /\bajtó\b\s*\d*[a-z]?/giu,
-    /\b[IVXLCDM]+\s*\/\s*\d+\b/giu
-  ];
-
-  function normalizeGeocodeSpacing(text){
-    return (text || '')
-      .replace(/\s+,/g, ',')
-      .replace(/,\s*,/g, ',')
-      .replace(/,\s+/g, ', ')
-      .replace(/\s{2,}/g, ' ')
-      .replace(/\s+/g, ' ')
-      .replace(/\s*,\s*$/g, '')
-      .replace(/^\s*,\s*/g, '')
-      .trim();
-  }
-
-  function reorderPostalPrefix(text){
-    return (text || '').replace(/^\s*([^,]+)\s*,\s*(.+?)\s*,\s*(\d{4})\s*$/u, '$3 $1, $2');
-  }
-
-  function cleanHungarianAddress(raw){
-    let text = typeof raw === 'string' ? raw : '';
-    if (!text) return '';
-    text = text.replace(/\bHRSZ\.?\s*\d+(?:\/\d+)?\.?/giu, '');
-    text = text.replace(/\bBudapest\s*(?:[IVXLCDM]+|\d{1,2})\.?\s*(?:ker\.?|kerület)?\b/giu, 'Budapest');
-    text = text.replace(/\b(?:[IVXLCDM]+|\d{1,2})\.?\s*(?:ker\.?|kerület)\b/giu, '');
-    text = text.replace(STREET_TYPE_REGEX, '');
-    APARTMENT_REGEXES.forEach(re => {
-      text = text.replace(re, '');
-    });
-    text = text.replace(/\b(\d+)\s*[-/]\s*[0-9A-ZÁÉÍÓÖŐÚÜŰ]+\b/giu, '$1');
-    text = text.replace(/\.+/g, '.');
-    text = normalizeGeocodeSpacing(text.replace(/\s{2,}/g, ' '));
-    return text;
-  }
-
-  function extractPostalCode(text){
-    if (typeof text !== 'string') return '';
-    const matches = text.match(/\b(\d{4})\b/g);
-    if (!matches) return '';
-    const trimmed = text.trim();
-    const preferred = matches.find(code => {
-      const idx = trimmed.indexOf(code);
-      return idx === 0 || idx === trimmed.length - code.length;
-    });
-    return preferred || matches[0];
-  }
-
-  async function geocodeRobust(q){
-    const attempts = [];
-    const seen = new Set();
-    const pushAttempt = (query, cleaned)=>{
-      const normalized = normalizeGeocodeSpacing(reorderPostalPrefix(query));
-      if (!normalized) return;
-      if (seen.has(normalized)) return;
-      seen.add(normalized);
-      attempts.push({query: normalized, cleaned});
-    };
-    pushAttempt(q, false);
-    const cleaned = cleanHungarianAddress(q);
-    if (cleaned && cleaned !== q) {
-      pushAttempt(cleaned, true);
+  async function geocodeRobust(rawQuery){
+    const query = typeof rawQuery === 'string' ? rawQuery.trim() : '';
+    if (!query) {
+      throw Object.assign(new Error('geocode_error'), {code: 'geocode_error'});
     }
-    let lastError = null;
-    for (const attempt of attempts){
-      const url = EP.geocode + '&' + new URLSearchParams({q: attempt.query});
-      async function one(){ const r = await fetch(url,{cache:'no-store'}); const t=await r.text(); let j; try{ j=JSON.parse(t);}catch(e){throw new Error('geocode_error');} if(!r.ok||j.error) throw new Error('geocode_error'); return j; }
-      const runAttempt = async()=>{ try{ return await one(); } catch(_){ return await one(); } };
-      try{
-        const result = await runAttempt();
-        result.queryUsed = attempt.query;
-        result.cleanedAddress = attempt.cleaned ? attempt.query : null;
-        result.normalizedAddress = attempt.query;
-        result.postalCode = extractPostalCode(attempt.query);
-        return result;
-      } catch(err){
-        lastError = err;
+    const url = EP.geocode + '&' + new URLSearchParams({q: query});
+    try {
+      const response = await fetch(url, {cache: 'no-store'});
+      const text = await response.text();
+      let parsed;
+      try {
+        parsed = JSON.parse(text);
+      } catch (err) {
+        throw Object.assign(new Error('geocode_error'), {code: 'geocode_error'});
       }
+      if (!response.ok || parsed?.error) {
+        throw Object.assign(new Error('geocode_error'), {code: 'geocode_error'});
+      }
+      parsed.queryUsed = query;
+      return parsed;
+    } catch (error) {
+      const failure = error instanceof Error ? error : new Error('geocode_error');
+      if (!failure.code) failure.code = 'geocode_error';
+      throw failure;
     }
-    const failure = lastError instanceof Error ? lastError : new Error('geocode_error');
-    failure.code = 'geocode_error';
-    failure.cleanedAddress = cleaned && cleaned !== q ? normalizeGeocodeSpacing(reorderPostalPrefix(cleaned)) : '';
-    failure.postalCode = extractPostalCode(cleaned || q);
-    throw failure;
   }
 
   async function autoGeocodeImported(targetIds){
@@ -2109,42 +2066,29 @@
       try {
         const geo = await geocodeRobust(address);
         const updated = {...item};
-        const storedAddress = geo.cleanedAddress && geo.cleanedAddress.trim() ? geo.cleanedAddress.trim() : address;
-        if (storedAddress !== item[addressFieldId]) {
-          updated[addressFieldId] = storedAddress;
-        }
+        updated[addressFieldId] = address;
         updated.lat = geo.lat;
         updated.lon = geo.lon;
         const fallbackCity = cityFromDisplay(address, item.city);
+        if ('needs_geocode' in updated) {
+          delete updated.needs_geocode;
+        }
         updated.city = geo.city || fallbackCity;
         state.items[i] = updated;
         changed = true;
       } catch (err) {
         console.error('auto geocode failed for import', err);
         failed += 1;
-        const idPart = item.id != null ? `#${item.id} ` : '';
         const label = (item[labelFieldId] ?? '').toString().trim();
+        const idPart = item.id != null ? `#${item.id} ` : '';
         const labelPart = label ? `${label} – ` : '';
-        const fallbackCity = cityFromDisplay(address, item.city);
-        const cleanedAddress = typeof err?.cleanedAddress === 'string' ? err.cleanedAddress.trim() : '';
-        let updatedAddress = address;
-        if (cleanedAddress && cleanedAddress !== address) {
-          const updatedItem = {...item};
-          updatedItem[addressFieldId] = cleanedAddress;
-          state.items[i] = updatedItem;
-          updatedAddress = cleanedAddress;
-          changed = true;
-        }
         failures.push({
           index: i,
           id: idStr,
           label,
-          address: updatedAddress,
+          address,
           city: typeof item.city === 'string' ? item.city.trim() : '',
-          fallbackCity,
-          postalCode: typeof err?.postalCode === 'string' ? err.postalCode.trim() : extractPostalCode(updatedAddress),
-          cleanedAddress,
-          summary: `${idPart}${labelPart}${updatedAddress}`.trim() || fallbackCity || `${idPart}${label}`.trim()
+          summary: `${idPart}${labelPart}${address}`.trim() || `${idPart}${label}`.trim()
         });
       }
     }
@@ -2176,8 +2120,8 @@
     }
 
     const hasCoords = (entry)=>{
-      const {lat, lon} = entry.it;
-      return lat !== '' && lon !== '' && lat != null && lon != null;
+      const {lat, lon, needs_geocode} = entry.it;
+      return lat !== '' && lon !== '' && lat != null && lon != null && !needs_geocode;
     };
 
     const ordered = [];
@@ -2458,10 +2402,20 @@
   }
 
   function upsertMarker(it, index){
-    if (it.lat==null || it.lon==null) return;
+    const blocked = !!(it && it.needs_geocode);
+    const hasCoords = it.lat!=null && it.lon!=null;
+    let mk = it?.id != null ? state.markersById.get(it.id) : null;
+    if (!hasCoords || blocked) {
+      if (mk) {
+        markerLayer.removeLayer(mk);
+        state.markersById.delete(it.id);
+        updatePinCount();
+        requestMarkerOverlapRefresh();
+      }
+      return;
+    }
     const iconIndex = displayIndexZeroBased(it, index);
     const icon = iconForItem(it, iconIndex);
-    let mk = state.markersById.get(it.id);
     if (!mk){
       mk = L.marker([it.lat, it.lon], {icon}).addTo(markerLayer);
       mk.on('click', ()=>{
@@ -2636,41 +2590,12 @@
     if (!originalAddress){ alert(text('messages.address_required', 'Adj meg teljes címet!')); if (addressInput) addressInput.focus(); return; }
     if (okBtn){ okBtn.disabled=true; okBtn.textContent='...'; }
     try{
-      let workingAddress = originalAddress;
+      const workingAddress = originalAddress;
       let g;
       try {
         g = await geocodeRobust(workingAddress);
-        if (g.cleanedAddress && g.cleanedAddress.trim()) {
-          workingAddress = g.cleanedAddress.trim();
-          if (addressInput) addressInput.value = workingAddress;
-        }
       } catch (err) {
-        const cleanedAddress = typeof err?.cleanedAddress === 'string' ? err.cleanedAddress.trim() : '';
-        if (cleanedAddress && cleanedAddress !== workingAddress) {
-          workingAddress = cleanedAddress;
-          if (addressInput) addressInput.value = workingAddress;
-        }
-        const postal = typeof err?.postalCode === 'string' ? err.postalCode.trim() : extractPostalCode(workingAddress);
-        const fallbackCity = cityFromDisplay(workingAddress, it.city);
-        if (postal && fallbackCity) {
-          const offerTpl = text(
-            'messages.geocode_offer_postal_city',
-            'Nem sikerült geokódolni a címet. Jelöljük meg csak {city} települést az {postal} irányítószám alapján?'
-          );
-          const offerMsg = format(offerTpl, {city: fallbackCity, postal});
-          if (window.confirm(offerMsg)) {
-            try {
-              const fallbackQuery = `${postal} ${fallbackCity}`;
-              g = await geocodeRobust(fallbackQuery);
-              workingAddress = fallbackCity;
-            } catch (fallbackErr) {
-              console.error('postal city geocode failed', fallbackErr);
-            }
-          }
-        }
-        if (!g) {
-          throw err;
-        }
+        throw err;
       }
       const newRound = (overrideRound!=null) ? overrideRound : (typeof it._pendingRound!=='undefined' ? it._pendingRound : it.round);
       pushSnapshot();
@@ -2701,6 +2626,9 @@
       if (labelFieldId && updated[labelFieldId] != null) {
         updated[labelFieldId] = updated[labelFieldId].toString().trim();
       }
+      if ('needs_geocode' in updated) {
+        delete updated.needs_geocode;
+      }
       updated.city = g.city || cityFromDisplay(workingAddress, it.city);
       updated.lat = g.lat;
       updated.lon = g.lon;
@@ -2713,7 +2641,10 @@
       ensureBlankRowInDefaultRound();
       setCollapsePref(state.items[idx].id, false);
       await saveAll();
-      if (row) updateRowHeaderMeta(row, state.items[idx]);
+      if (row) {
+        updateRowHeaderMeta(row, state.items[idx]);
+        updateGeocodeWarning(row, state.items[idx]);
+      }
       renderEverything();
     } finally{
       if (okBtn){ okBtn.disabled=false; okBtn.textContent='OK'; }
@@ -3002,6 +2933,11 @@
         <div class="header-main">
           <div class="title-label-row">
             <span class="title-label${labelString ? '' : ' placeholder'}" data-label-display title="${esc(labelString || labelPlaceholder)}">${esc(labelString || labelPlaceholder)}</span>
+            <span class="geocode-warning" data-geocode-warning aria-hidden="true">
+              <svg viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false">
+                <path fill="currentColor" d="M12 2a6.5 6.5 0 00-6.5 6.5c0 4.7 5.5 11.32 6.04 11.93.25.29.67.29.92 0 .53-.61 6.04-7.23 6.04-11.93A6.5 6.5 0 0012 2zm0 9.25a2.75 2.75 0 112.75-2.75A2.75 2.75 0 0112 11.25z" />
+              </svg>
+            </span>
             <span class="deadline-indicator" data-deadline-indicator style="--deadline-icon-size:${deadlineSize}px;${deadlineEnabled?'':'display:none;'}" aria-hidden="true"></span>
           </div>
           <div class="title-city" data-city title="${esc(city||'—')}">${esc(city || '—')}</div>
@@ -3048,6 +2984,7 @@
     updateRowHeaderMeta(row, it);
     updateRowPlaceholderState(row, it, isPlaceholderItem);
     updateRowHeaderLabel(row, it);
+    updateGeocodeWarning(row, it);
     updateDeadlineIndicator(row, it);
 
     // Lista → Térkép fókusz: kattintás és fókusz események
@@ -3115,7 +3052,7 @@
           } catch (e) {
             console.error(e);
             addressDirty = true;
-            alert(text('messages.geocode_failed_detailed', 'Geokódolás sikertelen. Próbáld pontosítani a címet.'));
+            alert(text('messages.geocode_failed_detailed', 'Geokódolás sikertelen. Írd át a címet más formátumban, majd próbáld újra.'));
           } finally {
             addressAutoSaving = false;
           }
@@ -3158,6 +3095,7 @@
           }
           updateRowPlaceholderState(row, state.items[idx]);
           updateRowHeaderLabel(row, state.items[idx]);
+          updateGeocodeWarning(row, state.items[idx]);
           if (fid === deadlineFieldId){
             updateDeadlineIndicator(row, state.items[idx]);
           }
@@ -3180,6 +3118,7 @@
           }
           updateRowPlaceholderState(row, state.items[idx]);
           updateRowHeaderLabel(row, state.items[idx]);
+          updateGeocodeWarning(row, state.items[idx]);
           upsertMarker(state.items[idx], idx);
           saveAll();
           renderGroupHeaderTotalsForRound(+state.items[idx].round||0);
@@ -3214,7 +3153,7 @@
       }
 
       if (okBtn) {
-        okBtn.addEventListener('click', async ()=>{ try{ await doOk(it.id, null); } catch(e){ console.error(e); alert(text('messages.geocode_failed_detailed', 'Geokódolás sikertelen. Próbáld pontosítani a címet.')); } });
+        okBtn.addEventListener('click', async ()=>{ try{ await doOk(it.id, null); } catch(e){ console.error(e); alert(text('messages.geocode_failed_detailed', 'Geokódolás sikertelen. Írd át a címet más formátumban, majd próbáld újra.')); } });
       }
 
       if (delBtn) {
@@ -3922,6 +3861,54 @@
     return {changed: true, removed, saveOk};
   }
 
+  async function markImportFailuresAsPending(failures){
+    const indices = Array.isArray(failures)
+      ? failures
+          .map(entry => (Number.isInteger(entry?.index) && entry.index >= 0 ? entry.index : null))
+          .filter(idx => idx != null)
+      : [];
+    if (!indices.length) {
+      return {changed: false, saveOk: true};
+    }
+    const unique = Array.from(new Set(indices)).sort((a, b) => a - b);
+    pushSnapshot();
+    const addressFieldId = getAddressFieldId();
+    let changed = false;
+    unique.forEach(idx => {
+      if (idx < 0 || idx >= state.items.length) return;
+      const item = state.items[idx];
+      if (!item || typeof item !== 'object') return;
+      const updated = {...item};
+      if (addressFieldId) {
+        const rawAddress = updated[addressFieldId];
+        updated[addressFieldId] = rawAddress != null ? rawAddress.toString().trim() : '';
+      }
+      updated.lat = null;
+      updated.lon = null;
+      updated.needs_geocode = true;
+      state.items[idx] = updated;
+      if (updated.id != null) {
+        const marker = state.markersById.get(updated.id);
+        if (marker) {
+          markerLayer.removeLayer(marker);
+          state.markersById.delete(updated.id);
+          updatePinCount();
+          requestMarkerOverlapRefresh();
+        }
+      }
+      changed = true;
+    });
+    if (!changed) {
+      return {changed: false, saveOk: true};
+    }
+    renderEverything();
+    const saveOk = await saveAll();
+    if (!saveOk) {
+      showSaveStatus(false);
+    }
+    return {changed: true, saveOk};
+  }
+
   function showGeocodeFailureDialog(message, failures, options = {}){
     if (!Array.isArray(failures) || failures.length === 0) {
       alert(message);
@@ -3953,14 +3940,14 @@
       copyBtn.type = 'button';
       copyBtn.className = 'ghost';
       copyBtn.textContent = text('messages.import_geocode_copy', 'Címek másolása');
+      const keepBtn = document.createElement('button');
+      keepBtn.type = 'button';
+      keepBtn.className = 'primary';
+      keepBtn.textContent = text('messages.import_geocode_keep', 'Címek hozzáadása geokódolás nélkül');
       const skipBtn = document.createElement('button');
       skipBtn.type = 'button';
       skipBtn.className = 'secondary';
-      skipBtn.textContent = text('messages.import_geocode_skip_addresses', 'Címek kihagyása');
-      const useCityBtn = document.createElement('button');
-      useCityBtn.type = 'button';
-      useCityBtn.className = 'primary';
-      useCityBtn.textContent = text('messages.import_geocode_use_city', 'Település alapján helyezze el');
+      skipBtn.textContent = text('messages.import_geocode_skip_addresses', 'Hibás címek kihagyása');
       const resetBtn = document.createElement('button');
       resetBtn.type = 'button';
       resetBtn.className = 'danger';
@@ -4008,8 +3995,8 @@
           alert(text('messages.import_geocode_copy_error', 'Nem sikerült a másolás.'));
         }
       });
+      keepBtn.addEventListener('click', ()=> cleanup('keep'));
       skipBtn.addEventListener('click', ()=> cleanup('skip'));
-      useCityBtn.addEventListener('click', ()=> cleanup('city'));
       resetBtn.addEventListener('click', ()=> cleanup('reset'));
       if (options.allowReset === false) {
         resetBtn.disabled = true;
@@ -4019,8 +4006,8 @@
       document.addEventListener('keydown', escListener);
 
       buttonRow.appendChild(copyBtn);
+      buttonRow.appendChild(keepBtn);
       buttonRow.appendChild(skipBtn);
-      buttonRow.appendChild(useCityBtn);
       buttonRow.appendChild(resetBtn);
       buttonRow.appendChild(closeBtn);
 
@@ -4030,58 +4017,8 @@
       box.appendChild(buttonRow);
       overlay.appendChild(box);
       document.body.appendChild(overlay);
-      useCityBtn.focus();
+      keepBtn.focus();
     });
-  }
-
-  async function geocodeFailuresByCity(failures){
-    const validEntries = Array.isArray(failures) ? failures.filter(entry => Number.isInteger(entry.index)) : [];
-    if (!validEntries.length) {
-      return {changed:false, saveOk:true, attempted:0, failed:0, success:0};
-    }
-    pushSnapshot();
-    const addressFieldId = getAddressFieldId();
-    let changed = false;
-    let attempted = 0;
-    let failed = 0;
-    let success = 0;
-    for (const entry of validEntries) {
-      const idx = entry.index;
-      const item = state.items[idx];
-      if (!item || typeof item !== 'object') continue;
-      const cityCandidate = (entry.city && entry.city.trim()) || (entry.fallbackCity && entry.fallbackCity.trim());
-      if (!cityCandidate) {
-        failed += 1;
-        continue;
-      }
-      attempted += 1;
-      const updated = {...item};
-      updated[addressFieldId] = cityCandidate;
-      updated.city = cityCandidate;
-      updated.lat = null;
-      updated.lon = null;
-      try {
-        const postal = typeof entry?.postalCode === 'string' ? entry.postalCode.trim() : extractPostalCode(entry?.address || cityCandidate);
-        const cityQuery = postal ? `${postal} ${cityCandidate}` : cityCandidate;
-        const geo = await geocodeRobust(cityQuery);
-        updated.lat = geo.lat;
-        updated.lon = geo.lon;
-        if (geo.city) {
-          updated.city = geo.city;
-        }
-        success += 1;
-      } catch (err) {
-        console.error('city-level geocode failed for import', err);
-        failed += 1;
-      }
-      state.items[idx] = updated;
-      changed = true;
-    }
-    let saveOk = true;
-    if (changed) {
-      saveOk = await saveAll();
-    }
-    return {changed, saveOk, attempted, failed, success};
   }
 
   const toolbarMenuToggle = document.getElementById('toolbarMenuToggle');
@@ -4218,24 +4155,20 @@
         ensureLoaderRemoved();
         let successMsg = text('messages.import_success', 'Import kész.');
         if (geo.failed > 0 && geo.attempted > 0) {
-          const tpl = text('messages.import_geocode_partial', 'Figyelem: {count} címet nem sikerült automatikusan térképre tenni.');
+          const tpl = text('messages.import_geocode_partial', 'Figyelem: {count} címet nem sikerült geokódolni. Válassz a lehetőségek közül.');
           successMsg += `\n\n${format(tpl, {count: geo.failed})}`;
           const decision = await showGeocodeFailureDialog(successMsg, geo.failures, {
             allowReset: hasImportRollbackSnapshot()
           });
-          if (decision === 'city') {
-            loaderCtrl = showImportProgressOverlay(text('messages.import_city_fallback_progress', 'Települések geokódolása…'));
-            const fallback = await geocodeFailuresByCity(geo.failures);
-            ensureLoaderRemoved();
-            renderEverything();
-            if (fallback.changed && !fallback.saveOk) {
-              showSaveStatus(false);
+          if (decision === 'keep') {
+            const marked = await markImportFailuresAsPending(geo.failures);
+            if (!marked.changed) {
+              alert(text('messages.import_geocode_keep_none', 'Nem történt módosítás.'));
+            } else if (!marked.saveOk) {
+              alert(text('messages.import_geocode_keep_error', 'A hibás címek jelölése nem mentődött el teljesen.'));
+            } else {
+              alert(text('messages.import_geocode_keep_result', 'A hibás címek geokódolás nélkül kerültek be. Keresd a piros térkép ikont.'));
             }
-            const resultTpl = text('messages.import_city_fallback_result', 'Település-alapú geokódolás – siker: {success}, sikertelen: {failed}.');
-            alert(format(resultTpl, {
-              success: fallback.success ?? 0,
-              failed: fallback.failed ?? 0
-            }));
           } else if (decision === 'skip') {
             loaderCtrl = showImportProgressOverlay(text('messages.import_skip_progress', 'Címek eltávolítása…'));
             const dropped = await dropImportFailures(geo.failures);
