@@ -67,6 +67,16 @@ body.import-busy .app{filter:blur(4px);pointer-events:none;user-select:none}
   .panel-top .quick-search-wrapper .quick-search-form{flex:1 1 auto;min-width:0}
   .panel-top .quick-search-wrapper .view-switch{display:inline-flex}
   .panel-top .quick-search-wrapper .view-switch-btn{width:38px;height:38px;padding:8px}
+  .group-controls{flex-wrap:wrap;gap:10px}
+  .group-planned-date,
+  .group-planned-time,
+  .group-sort{width:100%;flex-wrap:wrap;gap:6px}
+  .group-planned-date input,
+  .group-planned-time input,
+  .group-sort select{width:100%}
+  .form-grid,
+  .metrics-grid,
+  .grid{grid-template-columns:1fr}
 }
 .panel{background:var(--panel);border-right:1px solid var(--border);padding:0px;overflow:auto;max-width:100%;display:flex;flex-direction:column}
 .panel-top{position:relative;margin-bottom:12px;padding:18px 18px 12px;display:grid;gap:12px;border-bottom:1px solid var(--border)}
