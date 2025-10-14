@@ -127,7 +127,10 @@ $CFG_DEFAULT = [
   "geocode" => [
     "countrycodes" => "hu",
     "language" => "hu",
-    "user_agent" => "fuvarszervezo-internal/1.5 (+contact@example.com)"
+    "user_agent" => "fuvarszervezo-internal/1.5 (+contact@example.com)",
+    "cache_ttl_hours" => 24,
+    "rate_limit_per_minute" => 45,
+    "service_url" => "https://nominatim.openstreetmap.org/search"
   ],
   "smtp" => [
     "host" => "",

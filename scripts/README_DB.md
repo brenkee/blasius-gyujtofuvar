@@ -35,3 +35,18 @@ Ez a kapcsoló törli a meglévő `data/app.db` fájlt (és a kapcsolódó WAL/S
 Az alkalmazás induláskor automatikusan meghívja az inicializáló scriptet, ha a `data/app.db` nem létezik. Sikertelen inicializáció esetén figyelmeztető üzenet jelenik meg az UI-ban, és az API 503-as hibát ad vissza.
 
 Legacy JSON adatfájl (`fuvar_data.json`) esetén az inicializálás kihagyja a mintadataid betöltését, és az első sikeres olvasáskor automatikusan importálja a JSON tartalmát az új adatbázisba.
+
+## Geokód cache karbantartás
+
+A `geocode_cache` tábla időnként lejárt vagy hibás bejegyzéseket tartalmazhat. Ezek tisztításához és az esetleges hibás találatok újrapróbálásához futtasd a karbantartó scriptet:
+
+```bash
+php scripts/maintain-geocode-cache.php
+```
+
+Alapértelmezés szerint a script törli a lejárt rekordokat, majd újra megpróbálja lekérni azokat a címeket, amelyek korábban hibával tértek vissza. A következő opciók érhetők el:
+
+- `--dry-run`: csak kiírja, hogy mit tenne, de nem módosítja az adatbázist.
+- `--no-retry`: kihagyja a sikertelen címek újra lekérdezését, és csak takarítja a lejárt rekordokat.
+
+Érdemes a karbantartást ütemezett feladattal (cron) heti vagy napi rendszerességgel futtatni, különösen nagy mennyiségű geokódolási művelet esetén.

@@ -1,5 +1,6 @@
 <?php
 require __DIR__ . '/common.php';
+require_once __DIR__ . '/common-geocode.php';
 $CURRENT_USER = auth_require_login(['response' => 'json']);
 $PERMISSIONS = auth_build_permissions($CURRENT_USER);
 $FEATURES = app_features_for_user($CFG['features'] ?? [], $PERMISSIONS);
@@ -402,32 +403,103 @@ if ($action === 'save') {
 
 if ($action === 'geocode') {
   $jsonHeader();
-  $q = trim($_GET['q'] ?? '');
-  if ($q === '') { http_response_code(400); echo json_encode(['error'=>'empty']); exit; }
-  $qNorm = preg_replace('/^\s*([^,]+)\s*,\s*(.+?)\s*,\s*(\d{4})\s*$/u', '$3 $1, $2', $q);
-  if (!$qNorm) $qNorm = $q;
+  $q = trim((string)($_GET['q'] ?? ''));
+  if ($q === '') {
+    http_response_code(400);
+    echo json_encode(['error' => 'empty_query'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
 
-  $params = http_build_query([
-    'q'=>$qNorm,'format'=>'jsonv2','limit'=>1,'addressdetails'=>1,
-    'countrycodes'=>$CFG['geocode']['countrycodes'] ?? 'hu',
-    'accept-language'=>$CFG['geocode']['language'] ?? 'hu'
-  ]);
-  $ctx = stream_context_create(['http'=>[
-    'method'=>'GET',
-    'header'=>[
-      'User-Agent: '.($CFG['geocode']['user_agent'] ?? 'fuvarszervezo-internal/1.5'),
-      'Accept: application/json'
+  $result = geocode_lookup_or_fetch($q);
+  $status = $result['status'] ?? 'error';
+
+  if ($status === 'success') {
+    $payload = is_array($result['result'] ?? null) ? $result['result'] : [];
+    if (isset($payload['raw'])) {
+      unset($payload['raw']);
+    }
+    $normalized = $payload['normalized'] ?? ($result['normalized'] ?? geocode_normalize_query($q));
+    $response = [
+      'lat' => isset($payload['lat']) ? (float)$payload['lat'] : 0.0,
+      'lon' => isset($payload['lon']) ? (float)$payload['lon'] : 0.0,
+      'city' => isset($payload['city']) ? (string)$payload['city'] : '',
+      'normalized' => $normalized,
+      'cached' => !empty($result['cached']),
+      'attempts' => $result['attempts'] ?? 1,
+    ];
+    echo json_encode($response, JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
+  $error = $result['error'] ?? 'geocode_error';
+  $httpCode = 500;
+  if ($error === 'empty_query' || $error === 'invalid_query') {
+    $httpCode = 400;
+  } elseif ($error === 'noresult') {
+    $httpCode = 404;
+  } elseif (in_array($error, ['fetch', 'invalid_response', 'invalid_result'], true)) {
+    $httpCode = 502;
+  }
+  $response = [
+    'error' => $error,
+    'cached' => !empty($result['cached']),
+    'normalized' => $result['normalized'] ?? geocode_normalize_query($q),
+    'attempts' => $result['attempts'] ?? 1,
+  ];
+  if (!empty($result['message'])) {
+    $response['message'] = $result['message'];
+  }
+  http_response_code($httpCode);
+  echo json_encode($response, JSON_UNESCAPED_UNICODE);
+  exit;
+}
+
+if ($action === 'geocode_batch') {
+  if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    $sendJsonError('invalid_method', 405);
+  }
+  $jsonHeader();
+  $body = file_get_contents('php://input');
+  $decoded = json_decode($body ?: '[]', true);
+  $queries = [];
+  if (is_array($decoded)) {
+    if (isset($decoded['queries']) && is_array($decoded['queries'])) {
+      $queries = $decoded['queries'];
+    } elseif (is_list_array($decoded)) {
+      $queries = $decoded;
+    }
+  }
+  if (!is_array($queries)) {
+    $queries = [];
+  }
+
+  $results = geocode_batch_lookup($queries);
+  $responseResults = [];
+  $cacheHits = 0;
+  $successCount = 0;
+  foreach ($results as $entry) {
+    $clean = $entry;
+    if (isset($clean['result']) && is_array($clean['result']) && array_key_exists('raw', $clean['result'])) {
+      unset($clean['result']['raw']);
+    }
+    if (!empty($clean['cached'])) {
+      $cacheHits += 1;
+    }
+    if (($clean['status'] ?? '') === 'success') {
+      $successCount += 1;
+    }
+    $responseResults[] = $clean;
+  }
+
+  echo json_encode([
+    'ok' => true,
+    'results' => $responseResults,
+    'summary' => [
+      'count' => count($responseResults),
+      'success' => $successCount,
+      'cache_hits' => $cacheHits,
     ],
-    'timeout'=>10
-  ]]);
-  $resp = @file_get_contents("https://nominatim.openstreetmap.org/search?$params", false, $ctx);
-  if ($resp === false) { http_response_code(502); echo json_encode(['error'=>'fetch']); exit; }
-  $arr = json_decode($resp, true);
-  if (!is_array($arr) || !count($arr)) { http_response_code(404); echo json_encode(['error'=>'noresult']); exit; }
-  $best = $arr[0];
-  $addr = isset($best['address']) && is_array($best['address']) ? $best['address'] : [];
-  $city = $addr['city'] ?? $addr['town'] ?? $addr['village'] ?? $addr['municipality'] ?? $addr['county'] ?? '';
-  echo json_encode(['lat'=>(float)$best['lat'], 'lon'=>(float)$best['lon'], 'city'=>$city, 'normalized'=>$qNorm], JSON_UNESCAPED_UNICODE);
+  ], JSON_UNESCAPED_UNICODE);
   exit;
 }
 

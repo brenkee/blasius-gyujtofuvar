@@ -2051,52 +2051,428 @@
     return preferred || matches[0];
   }
 
-  async function geocodeRobust(q){
-    const attempts = [];
-    const seen = new Set();
-    const pushAttempt = (query, cleaned)=>{
-      const normalized = normalizeGeocodeSpacing(reorderPostalPrefix(query));
-      if (!normalized) return;
-      if (seen.has(normalized)) return;
-      seen.add(normalized);
-      attempts.push({query: normalized, cleaned});
-    };
-    pushAttempt(q, false);
-    const cleaned = cleanHungarianAddress(q);
-    if (cleaned && cleaned !== q) {
-      pushAttempt(cleaned, true);
+  // GeocodeService: batches backend lookups, caches pending promises, and reuses cached
+  // responses so that identical addresses only hit the API once per session. The service
+  // talks to the new geocode_batch endpoint when available and falls back to the legacy
+  // single-query API otherwise.
+  class GeocodeService {
+    constructor(){
+      this.pending = new Map();
+      this.cache = new Map();
+      this.endpointBatch = EP.geocodeBatch || null;
+      this.endpointSingle = EP.geocode || null;
     }
-    let lastError = null;
-    for (const attempt of attempts){
-      const url = EP.geocode + '&' + new URLSearchParams({q: attempt.query});
-      async function one(){ const r = await fetch(url,{cache:'no-store'}); const t=await r.text(); let j; try{ j=JSON.parse(t);}catch(e){throw new Error('geocode_error');} if(!r.ok||j.error) throw new Error('geocode_error'); return j; }
-      const runAttempt = async()=>{ try{ return await one(); } catch(_){ return await one(); } };
-      try{
-        const result = await runAttempt();
-        result.queryUsed = attempt.query;
-        result.cleanedAddress = attempt.cleaned ? attempt.query : null;
-        result.normalizedAddress = attempt.query;
-        result.postalCode = extractPostalCode(attempt.query);
-        return result;
-      } catch(err){
-        lastError = err;
+
+    static getInstance(){
+      if (!GeocodeService._instance) {
+        GeocodeService._instance = new GeocodeService();
+      }
+      return GeocodeService._instance;
+    }
+
+    normalize(raw){
+      if (typeof raw !== 'string') return '';
+      return normalizeGeocodeSpacing(reorderPostalPrefix(raw));
+    }
+
+    buildAttempts(raw){
+      const attempts = [];
+      const seen = new Set();
+      const pushAttempt = (text, cleaned)=>{
+        const normalized = this.normalize(text);
+        if (!normalized || seen.has(normalized)) return;
+        seen.add(normalized);
+        attempts.push({normalized, cleaned: !!cleaned});
+      };
+      pushAttempt(raw, false);
+      const cleaned = cleanHungarianAddress(raw);
+      if (cleaned && cleaned !== raw) {
+        pushAttempt(cleaned, true);
+      }
+      return attempts;
+    }
+
+    createError(code, message){
+      const err = new Error(message || 'geocode_error');
+      err.code = code || 'geocode_error';
+      return err;
+    }
+
+    getCached(normalized){
+      const entry = this.cache.get(normalized);
+      if (!entry) return null;
+      if (entry.status === 'success') {
+        return {
+          status: 'success',
+          result: {...entry.result},
+          cached: entry.cached,
+          attempts: entry.attempts,
+        };
+      }
+      if (entry.status === 'error') {
+        const err = entry.error instanceof Error ? entry.error : this.createError('geocode_error');
+        err.cached = entry.cached;
+        err.attempts = entry.attempts;
+        err.normalized = normalized;
+        return {status: 'error', error: err, cached: entry.cached, attempts: entry.attempts};
+      }
+      return null;
+    }
+
+    storeSuccess(normalized, entry){
+      const payload = entry?.result && typeof entry.result === 'object' ? entry.result : entry;
+      const lat = Number(payload?.lat);
+      const lon = Number(payload?.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+        return this.storeError(normalized, {
+          error: 'geocode_error',
+          message: 'A geokódolási válasz érvénytelen.',
+          cached: entry?.cached,
+          attempts: entry?.attempts,
+        });
+      }
+      const city = typeof payload?.city === 'string' ? payload.city : '';
+      const normalizedValue = typeof payload?.normalized === 'string' && payload.normalized !== ''
+        ? payload.normalized
+        : normalized;
+      const stored = {
+        status: 'success',
+        result: {
+          lat,
+          lon,
+          city,
+          normalized: normalizedValue,
+        },
+        cached: !!entry?.cached,
+        attempts: Number.isFinite(entry?.attempts) ? Number(entry.attempts) : (entry?.cached ? 0 : 1),
+      };
+      this.cache.set(normalized, stored);
+      return stored;
+    }
+
+    storeError(normalized, entry){
+      const err = entry?.originalError instanceof Error
+        ? entry.originalError
+        : this.createError(entry?.error || 'geocode_error', entry?.message);
+      err.code = entry?.error || err.code || 'geocode_error';
+      if (entry?.message) {
+        err.message = entry.message;
+      }
+      err.cached = !!entry?.cached;
+      err.attempts = Number.isFinite(entry?.attempts) ? Number(entry.attempts) : 1;
+      err.normalized = normalized;
+      const stored = {
+        status: 'error',
+        error: err,
+        cached: err.cached,
+        attempts: err.attempts,
+      };
+      this.cache.set(normalized, stored);
+      return stored;
+    }
+
+    async fetchFromServer(queries){
+      const unique = Array.from(new Set((queries || []).filter(q => typeof q === 'string' && q !== '')));
+      const map = new Map();
+      if (!unique.length) {
+        return map;
+      }
+
+      if (this.endpointBatch) {
+        let resp;
+        try {
+          resp = await fetch(this.endpointBatch, {
+            method: 'POST',
+            headers: buildHeaders({'Content-Type': 'application/json'}),
+            body: JSON.stringify({queries: unique}),
+            cache: 'no-store',
+          });
+        } catch (err) {
+          throw this.createError('geocode_error', 'A geokódolási szolgáltatás nem érhető el.');
+        }
+        const text = await resp.text();
+        let json;
+        try {
+          json = JSON.parse(text);
+        } catch (_err) {
+          throw this.createError('geocode_error', 'A geokódolási válasz nem értelmezhető.');
+        }
+        if (!resp.ok || (json && json.ok === false && !Array.isArray(json?.results))) {
+          const message = typeof json?.message === 'string' ? json.message : 'A geokódolási kérés nem sikerült.';
+          throw this.createError(json?.error || 'geocode_error', message);
+        }
+        const list = Array.isArray(json?.results) ? json.results : [];
+        list.forEach(entry => {
+          const norm = typeof entry?.normalized === 'string' && entry.normalized !== ''
+            ? entry.normalized
+            : this.normalize(entry?.query ?? '');
+          if (!norm) return;
+          map.set(norm, entry);
+        });
+        return map;
+      }
+
+      for (const norm of unique) {
+        if (!this.endpointSingle) {
+          map.set(norm, {status: 'error', error: 'geocode_error'});
+          continue;
+        }
+        const params = new URLSearchParams({q: norm});
+        let resp;
+        try {
+          resp = await fetch(`${this.endpointSingle}&${params.toString()}`, {
+            method: 'GET',
+            headers: buildHeaders(),
+            cache: 'no-store',
+          });
+        } catch (err) {
+          map.set(norm, {status: 'error', error: 'geocode_error', message: 'A geokódolási kérés sikertelen.'});
+          continue;
+        }
+        const text = await resp.text();
+        let json;
+        try {
+          json = JSON.parse(text);
+        } catch (_err) {
+          json = null;
+        }
+        if (resp.ok && json && !json.error) {
+          map.set(norm, {
+            status: 'success',
+            result: json,
+            cached: !!json.cached,
+            attempts: json.attempts ?? 1,
+          });
+        } else {
+          map.set(norm, {
+            status: 'error',
+            error: json?.error || 'geocode_error',
+            message: json?.message,
+            cached: json?.cached ?? false,
+            attempts: json?.attempts ?? 1,
+          });
+        }
+      }
+      return map;
+    }
+
+    async fetchAndStore(queries){
+      const needFetch = [];
+      const resultMap = new Map();
+      for (const norm of queries) {
+        if (typeof norm !== 'string' || norm === '') continue;
+        const cached = this.getCached(norm);
+        if (cached) {
+          resultMap.set(norm, cached);
+          continue;
+        }
+        if (!needFetch.includes(norm)) {
+          needFetch.push(norm);
+        }
+      }
+      if (!needFetch.length) {
+        return resultMap;
+      }
+      let serverMap;
+      try {
+        serverMap = await this.fetchFromServer(needFetch);
+      } catch (err) {
+        needFetch.forEach(norm => {
+          resultMap.set(norm, this.storeError(norm, {
+            originalError: err instanceof Error ? err : null,
+            error: err?.code || 'geocode_error',
+            message: err?.message,
+            cached: false,
+            attempts: 1,
+          }));
+        });
+        throw err;
+      }
+      needFetch.forEach(norm => {
+        const entry = serverMap.get(norm);
+        if (!entry) {
+          resultMap.set(norm, this.storeError(norm, {
+            error: 'geocode_error',
+            message: 'Hiányzó geokódolási válasz.',
+            cached: false,
+            attempts: 1,
+          }));
+          return;
+        }
+        if ((entry.status ?? '') === 'success') {
+          resultMap.set(norm, this.storeSuccess(norm, entry));
+        } else {
+          resultMap.set(norm, this.storeError(norm, entry));
+        }
+      });
+      return resultMap;
+    }
+
+    async resolveNormalized(normalized){
+      if (typeof normalized !== 'string' || normalized === '') {
+        throw this.createError('empty_query', 'Hiányzó geokódolási lekérdezés.');
+      }
+      const cached = this.getCached(normalized);
+      if (cached) {
+        if (cached.status === 'success') {
+          return {
+            ...cached.result,
+            cached: cached.cached,
+            attempts: cached.attempts,
+          };
+        }
+        const err = cached.error;
+        throw err;
+      }
+      if (this.pending.has(normalized)) {
+        return this.pending.get(normalized);
+      }
+      const promise = (async () => {
+        try {
+          await this.fetchAndStore([normalized]);
+        } catch (_err) {
+          // fetchAndStore already populated the cache with the error entry
+        }
+        const entry = this.getCached(normalized);
+        if (!entry) {
+          throw this.createError('geocode_error', 'Ismeretlen geokódolási hiba.');
+        }
+        if (entry.status === 'success') {
+          return {
+            ...entry.result,
+            cached: entry.cached,
+            attempts: entry.attempts,
+          };
+        }
+        throw entry.error;
+      })();
+      this.pending.set(normalized, promise);
+      promise.finally(() => {
+        this.pending.delete(normalized);
+      });
+      return promise;
+    }
+
+    async resolve(raw){
+      const normalized = this.normalize(raw);
+      if (!normalized) {
+        throw this.createError('empty_query', 'Hiányzó geokódolási lekérdezés.');
+      }
+      return this.resolveNormalized(normalized);
+    }
+
+    async prefetch(rawList){
+      const queries = [];
+      (rawList || []).forEach(raw => {
+        this.buildAttempts(raw).forEach(attempt => {
+          if (!attempt.normalized) return;
+          if (this.getCached(attempt.normalized)) return;
+          if (this.pending.has(attempt.normalized)) return;
+          if (!queries.includes(attempt.normalized)) {
+            queries.push(attempt.normalized);
+          }
+        });
+      });
+      if (!queries.length) return;
+      try {
+        await this.fetchAndStore(queries);
+      } catch (_err) {
+        // errors are stored per-query; continue so callers can inspect them
       }
     }
-    const failure = lastError instanceof Error ? lastError : new Error('geocode_error');
-    failure.code = 'geocode_error';
-    failure.cleanedAddress = cleaned && cleaned !== q ? normalizeGeocodeSpacing(reorderPostalPrefix(cleaned)) : '';
-    failure.postalCode = extractPostalCode(cleaned || q);
-    throw failure;
+
+    async batchResolve(rawList){
+      const tasks = Array.isArray(rawList) ? rawList : [];
+      await this.prefetch(tasks);
+      const results = new Map();
+      for (const raw of tasks) {
+        const attempts = this.buildAttempts(raw);
+        if (!attempts.length) {
+          const err = this.createError('empty_query', 'Hiányzó geokódolási lekérdezés.');
+          err.cleanedAddress = '';
+          err.postalCode = extractPostalCode(raw || '');
+          results.set(raw, {status: 'error', error: err});
+          continue;
+        }
+        let resolved = null;
+        let lastError = null;
+        for (const attempt of attempts) {
+          try {
+            const data = await this.resolveNormalized(attempt.normalized);
+            resolved = {
+              status: 'success',
+              result: {
+                ...data,
+                normalized: data.normalized || attempt.normalized,
+              },
+              attempt,
+            };
+            break;
+          } catch (err) {
+            lastError = err instanceof Error ? err : this.createError('geocode_error');
+          }
+        }
+        if (resolved) {
+          results.set(raw, resolved);
+        } else {
+          if (!lastError) {
+            lastError = this.createError('geocode_error');
+          }
+          lastError.cleanedAddress = attempts.find(a => a.cleaned)?.normalized || '';
+          lastError.postalCode = extractPostalCode(lastError.cleanedAddress || raw || '');
+          results.set(raw, {status: 'error', error: lastError});
+        }
+      }
+      return results;
+    }
+
+    async robust(raw){
+      const attempts = this.buildAttempts(raw);
+      if (!attempts.length) {
+        const err = this.createError('empty_query', 'Hiányzó geokódolási lekérdezés.');
+        err.cleanedAddress = '';
+        err.postalCode = extractPostalCode(raw || '');
+        throw err;
+      }
+      let lastError = null;
+      for (const attempt of attempts) {
+        try {
+          const data = await this.resolveNormalized(attempt.normalized);
+          return {
+            lat: data.lat,
+            lon: data.lon,
+            city: data.city,
+            normalized: data.normalized || attempt.normalized,
+            normalizedAddress: attempt.normalized,
+            queryUsed: attempt.normalized,
+            cleanedAddress: attempt.cleaned ? attempt.normalized : null,
+            postalCode: extractPostalCode(attempt.normalized),
+            cached: !!data.cached,
+            attempts: data.attempts ?? 1,
+          };
+        } catch (err) {
+          lastError = err instanceof Error ? err : this.createError('geocode_error');
+        }
+      }
+      if (!lastError) {
+        lastError = this.createError('geocode_error');
+      }
+      lastError.cleanedAddress = attempts.find(a => a.cleaned)?.normalized || '';
+      lastError.postalCode = extractPostalCode(lastError.cleanedAddress || attempts[0]?.normalized || raw || '');
+      throw lastError;
+    }
+  }
+
+  async function geocodeRobust(q){
+    return GeocodeService.getInstance().robust(q);
   }
 
   async function autoGeocodeImported(targetIds){
     const idSet = Array.isArray(targetIds) && targetIds.length ? new Set(targetIds.map(id => String(id))) : null;
     const addressFieldId = getAddressFieldId();
     const labelFieldId = getLabelFieldId();
-    let changed = false;
-    let attempted = 0;
-    let failed = 0;
-    const failures = [];
+    const service = GeocodeService.getInstance();
+    const jobs = [];
     for (let i = 0; i < state.items.length; i += 1) {
       const item = state.items[i];
       if (!item || typeof item !== 'object') continue;
@@ -2105,9 +2481,20 @@
       if (item.lat != null && item.lon != null) continue;
       const address = (item[addressFieldId] ?? '').toString().trim();
       if (!address) continue;
+      jobs.push({index: i, item, idStr, address});
+    }
+    await service.prefetch(jobs.map(job => job.address));
+
+    let changed = false;
+    let attempted = 0;
+    let failed = 0;
+    const failures = [];
+
+    for (const job of jobs) {
+      const {index, item, idStr, address} = job;
       attempted += 1;
       try {
-        const geo = await geocodeRobust(address);
+        const geo = await service.robust(address);
         const updated = {...item};
         const storedAddress = geo.cleanedAddress && geo.cleanedAddress.trim() ? geo.cleanedAddress.trim() : address;
         if (storedAddress !== item[addressFieldId]) {
@@ -2117,13 +2504,13 @@
         updated.lon = geo.lon;
         const fallbackCity = cityFromDisplay(address, item.city);
         updated.city = geo.city || fallbackCity;
-        state.items[i] = updated;
+        state.items[index] = updated;
         changed = true;
       } catch (err) {
         console.error('auto geocode failed for import', err);
         failed += 1;
-        const idPart = item.id != null ? `#${item.id} ` : '';
         const label = (item[labelFieldId] ?? '').toString().trim();
+        const idPart = item.id != null ? `#${item.id} ` : '';
         const labelPart = label ? `${label} – ` : '';
         const fallbackCity = cityFromDisplay(address, item.city);
         const cleanedAddress = typeof err?.cleanedAddress === 'string' ? err.cleanedAddress.trim() : '';
@@ -2131,12 +2518,12 @@
         if (cleanedAddress && cleanedAddress !== address) {
           const updatedItem = {...item};
           updatedItem[addressFieldId] = cleanedAddress;
-          state.items[i] = updatedItem;
+          state.items[index] = updatedItem;
           updatedAddress = cleanedAddress;
           changed = true;
         }
         failures.push({
-          index: i,
+          index,
           id: idStr,
           label,
           address: updatedAddress,
@@ -2148,6 +2535,7 @@
         });
       }
     }
+
     let saveOk = true;
     if (changed) {
       saveOk = await saveAll();
@@ -2635,11 +3023,12 @@
     const originalAddress = (addressInput ? addressInput.value : it[addressFieldId] || '').toString().trim();
     if (!originalAddress){ alert(text('messages.address_required', 'Adj meg teljes címet!')); if (addressInput) addressInput.focus(); return; }
     if (okBtn){ okBtn.disabled=true; okBtn.textContent='...'; }
+    const service = GeocodeService.getInstance();
     try{
       let workingAddress = originalAddress;
       let g;
       try {
-        g = await geocodeRobust(workingAddress);
+        g = await service.robust(workingAddress);
         if (g.cleanedAddress && g.cleanedAddress.trim()) {
           workingAddress = g.cleanedAddress.trim();
           if (addressInput) addressInput.value = workingAddress;
@@ -2661,7 +3050,7 @@
           if (window.confirm(offerMsg)) {
             try {
               const fallbackQuery = `${postal} ${fallbackCity}`;
-              g = await geocodeRobust(fallbackQuery);
+              g = await service.robust(fallbackQuery);
               workingAddress = fallbackCity;
             } catch (fallbackErr) {
               console.error('postal city geocode failed', fallbackErr);
@@ -4041,15 +4430,31 @@
     }
     pushSnapshot();
     const addressFieldId = getAddressFieldId();
+    const service = GeocodeService.getInstance();
     let changed = false;
     let attempted = 0;
     let failed = 0;
     let success = 0;
-    for (const entry of validEntries) {
+    const tasks = validEntries.map(entry => {
       const idx = entry.index;
       const item = state.items[idx];
+      if (!item || typeof item !== 'object') {
+        return {idx, item: null, entry, cityCandidate: null, cityQuery: null};
+      }
+      const cityCandidate = (entry.city && entry.city.trim()) || (entry.fallbackCity && entry.fallbackCity.trim()) || '';
+      if (!cityCandidate) {
+        return {idx, item, entry, cityCandidate: '', cityQuery: null};
+      }
+      const postal = typeof entry?.postalCode === 'string' ? entry.postalCode.trim() : extractPostalCode(entry?.address || cityCandidate);
+      const cityQuery = postal ? `${postal} ${cityCandidate}` : cityCandidate;
+      return {idx, item, entry, cityCandidate, cityQuery};
+    });
+
+    await service.prefetch(tasks.map(task => task.cityQuery).filter(Boolean));
+
+    for (const task of tasks) {
+      const {idx, item, cityCandidate, cityQuery} = task;
       if (!item || typeof item !== 'object') continue;
-      const cityCandidate = (entry.city && entry.city.trim()) || (entry.fallbackCity && entry.fallbackCity.trim());
       if (!cityCandidate) {
         failed += 1;
         continue;
@@ -4060,10 +4465,14 @@
       updated.city = cityCandidate;
       updated.lat = null;
       updated.lon = null;
+      if (!cityQuery) {
+        failed += 1;
+        state.items[idx] = updated;
+        changed = true;
+        continue;
+      }
       try {
-        const postal = typeof entry?.postalCode === 'string' ? entry.postalCode.trim() : extractPostalCode(entry?.address || cityCandidate);
-        const cityQuery = postal ? `${postal} ${cityCandidate}` : cityCandidate;
-        const geo = await geocodeRobust(cityQuery);
+        const geo = await service.robust(cityQuery);
         updated.lat = geo.lat;
         updated.lon = geo.lon;
         if (geo.city) {

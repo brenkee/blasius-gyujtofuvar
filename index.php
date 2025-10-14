@@ -25,6 +25,7 @@ $LOGOUT_TOKEN = csrf_get_token();
     'revision' => 'api.php?action=revision',
     'changes' => 'api.php?action=changes',
     'geocode' => 'api.php?action=geocode',
+    'geocodeBatch' => 'api.php?action=geocode_batch',
     'importCsv' => 'api.php?action=import_csv',
     'exportAll' => 'api.php?action=export',
     'deleteRound' => 'api.php?action=delete_round',
