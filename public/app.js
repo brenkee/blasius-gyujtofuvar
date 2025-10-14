@@ -2956,15 +2956,15 @@
               }).join('')}
             </select>
           </div>`;
-    const metricsGridVisible = metrics.length || rowReadOnly;
+    const metricsGridVisible = (metrics.length > 0) || (roundControlHtml && roundControlHtml.trim() !== '');
     const metricsGridStyle = `align-items:end;${metricsGridVisible ? '' : 'display:none'}`;
+    const metricsGridContentHtml = [metricsHtml, roundControlHtml].filter(Boolean).join('');
 
     const actionsText = cfg('text.actions', {});
     const okLabel = actionsText.ok ?? 'OK';
     const delLabel = actionsText.delete ?? 'Törlés';
     const actionRowHtml = CAN_EDIT ? `
-        <div class="grid" style="margin-top:6px;">
-          <div></div>
+        <div class="action-row">
           <div class="btns">
             <button class="ok">${esc(okLabel)}</button>
             <button class="del">${esc(delLabel)}</button>
@@ -3014,8 +3014,7 @@
           ${fieldHtml}
         </div>
         <div class="metrics-grid" style="${metricsGridStyle}">
-          ${roundControlHtml}
-          ${metricsHtml}
+          ${metricsGridContentHtml}
         </div>
         ${actionRowHtml}
       </div>
@@ -3101,6 +3100,36 @@
       const roundS = row.querySelector('#round_'+cssId(it.id));
       const okBtn  = row.querySelector('.ok');
       const delBtn = row.querySelector('.del');
+      const addressInputEl = addressFieldId ? fieldInputs.get(addressFieldId) : null;
+
+      if (addressInputEl instanceof HTMLInputElement || addressInputEl instanceof HTMLTextAreaElement) {
+        let addressDirty = false;
+        let addressAutoSaving = false;
+        const markAddressDirty = ()=>{ addressDirty = true; };
+        const attemptAutoSave = async ()=>{
+          if (!addressDirty || addressAutoSaving) return;
+          addressDirty = false;
+          addressAutoSaving = true;
+          try {
+            await doOk(it.id, null);
+          } catch (e) {
+            console.error(e);
+            addressDirty = true;
+            alert(text('messages.geocode_failed_detailed', 'Geokódolás sikertelen. Próbáld pontosítani a címet.'));
+          } finally {
+            addressAutoSaving = false;
+          }
+        };
+        addressInputEl.addEventListener('input', markAddressDirty);
+        addressInputEl.addEventListener('change', markAddressDirty);
+        addressInputEl.addEventListener('blur', ()=>{ void attemptAutoSave(); });
+        addressInputEl.addEventListener('keydown', event => {
+          if (event.key === 'Enter' && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey) {
+            event.preventDefault();
+            void attemptAutoSave();
+          }
+        });
+      }
 
       fieldInputs.forEach((inp, fid)=>{
         inp.addEventListener('change', ()=>{
@@ -4261,8 +4290,7 @@
   if (printBtn) printBtn.addEventListener('click', ()=>{ window.open(EP.printAll, '_blank'); });
   const archiveBtn = document.getElementById('downloadArchiveBtn');
   if (archiveBtn) archiveBtn.addEventListener('click', ()=>{ window.open(EP.downloadArchive, '_blank'); });
-  const expandAllBtn = document.getElementById('expandAll');
-  if (expandAllBtn) expandAllBtn.addEventListener('click', ()=>{
+  function expandAllRows(){
     groupsEl.querySelectorAll('.row').forEach(rowEl => {
       const body = rowEl.querySelector('.body');
       const toggle = rowEl.querySelector('.toggle');
@@ -4270,9 +4298,8 @@
       if (toggle instanceof HTMLButtonElement && !toggle.disabled) toggle.textContent = '▼';
     });
     state.items.filter(it => !isItemCompletelyBlank(it)).forEach(it => setCollapsePref(it.id, false));
-  });
-  const collapseAllBtn = document.getElementById('collapseAll');
-  if (collapseAllBtn) collapseAllBtn.addEventListener('click', ()=>{
+  }
+  function collapseAllRows(){
     groupsEl.querySelectorAll('.row').forEach(rowEl => {
       const body = rowEl.querySelector('.body');
       const toggle = rowEl.querySelector('.toggle');
@@ -4286,7 +4313,65 @@
       if (toggle instanceof HTMLButtonElement && !toggle.disabled) toggle.textContent = '▶';
     });
     state.items.filter(it => !isItemCompletelyBlank(it)).forEach(it => setCollapsePref(it.id, true));
-  });
+  }
+  function centerMapOnMarkers(){
+    const bounds = markerLayer.getBounds();
+    if (bounds && typeof bounds.isValid === 'function' && bounds.isValid()) {
+      map.fitBounds(bounds.pad(0.2));
+      return;
+    }
+    const origin = state.ORIGIN;
+    if (origin && Number.isFinite(origin.lat) && Number.isFinite(origin.lon)) {
+      map.setView([origin.lat, origin.lon], map.getZoom());
+    }
+  }
+  const expandAllBtn = document.getElementById('expandAll');
+  if (expandAllBtn) expandAllBtn.addEventListener('click', expandAllRows);
+  const collapseAllBtn = document.getElementById('collapseAll');
+  if (collapseAllBtn) collapseAllBtn.addEventListener('click', collapseAllRows);
+
+  function setupHotkeys(){
+    document.addEventListener('keydown', event => {
+      if (event.defaultPrevented) return;
+      if (event.altKey || event.ctrlKey || event.metaKey) return;
+      const target = event.target;
+      const targetEl = target instanceof HTMLElement ? target : null;
+      const tagName = targetEl ? targetEl.tagName : '';
+      const isEditable = targetEl && (targetEl.isContentEditable || ['INPUT','TEXTAREA','SELECT'].includes(tagName));
+      const key = typeof event.key === 'string' ? event.key : '';
+      if (!isEditable) {
+        if (key.toLowerCase() === 'c') {
+          event.preventDefault();
+          collapseAllRows();
+          return;
+        }
+        if (key.toLowerCase() === 'o') {
+          event.preventDefault();
+          expandAllRows();
+          return;
+        }
+        if (key.toLowerCase() === 'x') {
+          event.preventDefault();
+          centerMapOnMarkers();
+          return;
+        }
+      }
+      if (key === ' ' || key === 'Spacebar') {
+        if (isEditable) return;
+        if (targetEl && ['BUTTON','A'].includes(tagName)) return;
+        const quickSearch = document.getElementById('quickSearch');
+        if (quickSearch instanceof HTMLElement) {
+          event.preventDefault();
+          quickSearch.focus();
+          if (quickSearch instanceof HTMLInputElement || quickSearch instanceof HTMLTextAreaElement) {
+            quickSearch.select();
+          }
+        }
+      }
+    });
+  }
+
+  setupHotkeys();
 
   function renderEverything(){
     autoSortItems();
