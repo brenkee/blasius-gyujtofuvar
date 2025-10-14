@@ -30,7 +30,7 @@ jobs:
           username: ${{ secrets.FTP_USER }}
           password: ${{ secrets.FTP_PASS }}
           # A repo melyik mappáját szeretnéd feltölteni
-          local-dir: ./public/
+          local-dir: ./
           # A célkönyvtár a szerveren (main → /, PR → /PR/pr-<id>)
           server-dir: ${{ steps.path.outputs.remote_dir }}
           exclude: |
