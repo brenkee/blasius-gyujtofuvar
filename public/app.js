@@ -1679,12 +1679,16 @@
     return numberedIcon(color, index+1, showCount);
   }
 
-  function cityFromDisplay(address, currentCity){
-    if (currentCity && currentCity.trim()) return currentCity;
-    const bits = (address||'').split(',').map(s=>s.trim());
+  function cityFromAddress(address){
+    const bits = (address || '').split(',').map(s => s.trim());
     const m = bits[0] && bits[0].match(/\b(\d{4})\s+(.+)$/u);
     if (m) return m[2].trim();
     return bits[1] || bits[0] || '';
+  }
+
+  function cityFromDisplay(address, currentCity){
+    if (currentCity && currentCity.trim()) return currentCity;
+    return cityFromAddress(address);
   }
 
   function haversineKm(aLat,aLon,bLat,bLon){
@@ -3013,6 +3017,7 @@
     if (idx<0) return;
     const it = state.items[idx];
     const prevRound = +it.round || 0;
+    const previousCity = typeof it.city === 'string' ? it.city.trim() : '';
     const row = state.rowsById.get(id);
     const okBtn = row?.querySelector('.ok');
     const fields = getFieldDefs();
@@ -3040,7 +3045,7 @@
           if (addressInput) addressInput.value = workingAddress;
         }
         const postal = typeof err?.postalCode === 'string' ? err.postalCode.trim() : extractPostalCode(workingAddress);
-        const fallbackCity = cityFromDisplay(workingAddress, it.city);
+        const fallbackCity = cityFromAddress(workingAddress) || previousCity;
         if (postal && fallbackCity) {
           const offerTpl = text(
             'messages.geocode_offer_postal_city',
@@ -3090,7 +3095,8 @@
       if (labelFieldId && updated[labelFieldId] != null) {
         updated[labelFieldId] = updated[labelFieldId].toString().trim();
       }
-      updated.city = g.city || cityFromDisplay(workingAddress, it.city);
+      const fallbackCity = cityFromAddress(workingAddress) || previousCity;
+      updated.city = g.city || fallbackCity;
       updated.lat = g.lat;
       updated.lon = g.lon;
       updated.round = +newRound || 0;
