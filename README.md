@@ -11,7 +11,7 @@ Ez a projekt egy fájlalapú gyűjtőfuvar-tervező eszköz, amely mostantól gl
    ```
 3. Nyisd meg a böngészőben a `http://localhost:8000/index.php` címet.
 
-> **Megjegyzés:** Az alkalmazás minden útvonala a `config/config.json` `base_url` kulcsát használja. Alapértelmezés szerint ez `/github/blasius/blasius-gyujtofuvar/`, lokális futtatáshoz állítsd `"/"` értékre.
+> **Megjegyzés:** Az alkalmazás minden útvonala a konfigurált `base_url` értéket használja. Az egyedi URL-t a `config/base_url.local.json` fájlban állíthatod be (mintát a `config/base_url.example.json` fájl tartalmaz). A fájl a `.gitignore` miatt nem kerül a verziókezelésbe, hiányában az alapértelmezett `"/"` értéket használja a rendszer.
 
 A háttér a `data/app.db` SQLite-adatbázisban tárolja az adatokat. Az adatbázist a `scripts/init-db.php` script hozza létre és frissíti, amelyet az alkalmazás induláskor automatikusan meghív, ha a fájl hiányzik. A revíziókezeléshez további fájlok jönnek létre a `temp/` könyvtárban:
 
