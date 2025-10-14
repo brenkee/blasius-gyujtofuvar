@@ -264,9 +264,11 @@ $LOGOUT_TOKEN = csrf_get_token();
         <?php endif; ?>
       </div>
     </div>
-    <div id="newAddress" class="new-address-container"></div>
-    <div id="groups" class="groups"></div>
-    <img id="devlogo" src="pic/devlogo.webp">
+    <div id="panelContent" class="panel-content">
+      <div id="newAddress" class="new-address-container"></div>
+      <div id="groups" class="groups"></div>
+      <img id="devlogo" src="pic/devlogo.webp">
+    </div>
   </aside>
   <main id="map"></main>
 </div>
