@@ -9,6 +9,9 @@
         "undo_enabled": true,
         "max_steps": 10
     },
+    "change_log": {
+        "retention_days": 7
+    },
     "change_watcher": {
         "enabled": true,
         "pause_when_hidden": true,
@@ -29,7 +32,6 @@
             "import_all": true,
             "export_all": true,
             "print_all": true,
-            "download_archive": true,
             "theme_toggle": false,
             "undo": true
         },
@@ -53,8 +55,7 @@
     "files": {
         "data_file": "data/app.db",
         "export_file": "backups/fuvar_export.csv",
-        "export_download_name": "fuvar_export.csv",
-        "archive_file": "temp/fuvar_archive.log"
+        "export_download_name": "fuvar_export.csv"
     },
     "backup": {
         "enabled": true,
@@ -348,10 +349,6 @@
             "undo": {
                 "label": "↩",
                 "title": "Visszavonás"
-            },
-            "download_archive": {
-                "label": "Archívum",
-                "title": "Archívum letöltése (TXT)"
             }
         },
         "badges": {

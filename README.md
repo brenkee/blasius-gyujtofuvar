@@ -54,7 +54,7 @@ A sikeres írások során a szerver:
 3. Növeli a globális revíziót (`temp/fuvar_revision.json`).
 4. Naplózza az esemény(eke)t a `temp/fuvar_changes.log` fájlba.
 
-A naplóbejegyzések tartalma: `rev`, `entity`, `entity_id`, `action`, `ts`, `actor_id`, `request_id`, opcionálisan `batch_id` és `meta` (módosított mezők, akció típusa, stb.).
+A naplóbejegyzések tartalma: `rev`, `message`, `ts`, `actor_id`, `request_id`, opcionálisan `batch_id`, valamint a kapcsolódó `user_id` és `username` értékek.
 
 ## Kliensoldali változásfigyelés
 
@@ -69,7 +69,7 @@ A naplóbejegyzések tartalma: `rev`, `entity`, `entity_id`, `action`, `ts`, `ac
 
 A `fuvar_changes.log` JSON sorai például így néznek ki:
 ```json
-{"rev":42,"entity":"item","entity_id":"row_abcd","action":"updated","ts":"2024-05-05T12:34:56+00:00","actor_id":"cli_ab12","request_id":"req_cd34","meta":{"source_action":"save","changes":{"label":{"before":"Régi","after":"Új"}}}}
+{"rev":42,"message":"Admin felhasználó módosította a címlistát: 2 új cím és 1 módosított cím.","ts":"2024-05-05T12:34:56+00:00","actor_id":"cli_ab12","request_id":"req_cd34","batch_id":"batch_req_cd34","user_id":1,"username":"admin"}
 ```
 A kliensek a `since` paraméterrel kérhetik le a számukra releváns (más aktor által generált) eseményeket.
 

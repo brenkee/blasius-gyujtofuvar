@@ -7,6 +7,87 @@ if (!auth_user_can($CURRENT_USER, 'manage_users')) {
     exit;
 }
 
+function log_user_admin_event(array $actor, string $action, array $meta = [], $entityId = null): void {
+    try {
+        $actorLabel = log_actor_label($actor, $actor['username'] ?? null);
+        $target = isset($meta['target']) && is_array($meta['target']) ? $meta['target'] : [];
+        $targetUsername = isset($target['username']) ? trim((string)$target['username']) : '';
+        $targetId = $target['id'] ?? $entityId;
+        $targetRole = isset($target['role']) ? (string)$target['role'] : null;
+        $roleLabels = [
+            'full-admin' => 'teljes admin',
+            'editor' => 'szerkesztő',
+            'viewer' => 'megtekintő',
+        ];
+        $roleLabel = $targetRole && isset($roleLabels[$targetRole]) ? $roleLabels[$targetRole] : null;
+        $targetDisplay = $targetUsername !== '' ? ($targetUsername . ' felhasználót') : 'felhasználót';
+        if ($targetUsername === '' && $targetId !== null) {
+            $targetDisplay .= ' (#' . (string)$targetId . ')';
+        }
+
+        $message = null;
+        if ($action === 'created_user') {
+            $suffix = $roleLabel ? ' (szerepkör: ' . $roleLabel . ')' : '';
+            $message = sprintf('%s létrehozta a következő felhasználót: %s%s.', $actorLabel, $targetDisplay, $suffix);
+        } elseif ($action === 'updated_user') {
+            $changes = isset($meta['changes']) && is_array($meta['changes']) ? $meta['changes'] : [];
+            $parts = [];
+            if (isset($changes['email'])) {
+                $parts[] = 'email cím frissítve';
+            }
+            if (isset($changes['role'])) {
+                $afterRole = isset($changes['role']['after']) ? (string)$changes['role']['after'] : '';
+                $label = $afterRole && isset($roleLabels[$afterRole]) ? $roleLabels[$afterRole] : $afterRole;
+                if ($label !== '') {
+                    $parts[] = 'új szerepkör: ' . $label;
+                }
+            }
+            if (isset($changes['username'])) {
+                $parts[] = 'felhasználónév módosítva';
+            }
+            if (!empty($meta['password_changed'])) {
+                $parts[] = 'jelszó módosítva';
+            }
+            if (isset($changes['must_change_password'])) {
+                $parts[] = !empty($changes['must_change_password']['after'])
+                    ? 'kötelező jelszócsere bekapcsolva'
+                    : 'kötelező jelszócsere kikapcsolva';
+            }
+            if (empty($parts)) {
+                $parts[] = 'adatok frissítve';
+            }
+            if (count($parts) > 1) {
+                $last = array_pop($parts);
+                $changeSummary = implode(', ', $parts) . ' és ' . $last;
+            } else {
+                $changeSummary = $parts[0];
+            }
+            $message = sprintf('%s módosította %s: %s.', $actorLabel, $targetDisplay, $changeSummary);
+        } elseif ($action === 'deleted_user') {
+            $suffix = $roleLabel ? ' (szerepkör: ' . $roleLabel . ')' : '';
+            $message = sprintf('%s törölte %s%s.', $actorLabel, $targetDisplay, $suffix);
+        }
+
+        if ($message === null) {
+            $message = sprintf('%s felhasználó műveletet végzett: %s.', $actorLabel, $action);
+        }
+
+        $entry = [
+            'rev' => read_current_revision(),
+            'message' => $message,
+        ];
+        if (isset($actor['id']) && is_numeric($actor['id'])) {
+            $entry['user_id'] = (int)$actor['id'];
+        }
+        if (!empty($actor['username']) && is_string($actor['username'])) {
+            $entry['username'] = (string)$actor['username'];
+        }
+        append_change_log_locked($entry);
+    } catch (Throwable $e) {
+        error_log('Audit napló írási hiba: ' . $e->getMessage());
+    }
+}
+
 $errors = [];
 $success = null;
 
@@ -31,6 +112,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ], $err);
             if ($createOk) {
                 $success = 'Új felhasználó létrehozva.';
+                $createdUser = auth_find_user_by_username($username);
+                $targetId = $createdUser['id'] ?? null;
+                $meta = [
+                    'target' => [
+                        'id' => $targetId,
+                        'username' => $createdUser['username'] ?? $username,
+                        'role' => $createdUser['role'] ?? $role,
+                        'email' => $createdUser['email'] ?? $email,
+                    ],
+                    'must_change_password' => (bool)$mustChange,
+                ];
+                log_user_admin_event($CURRENT_USER, 'created_user', $meta, $targetId);
             } else {
                 switch ($err) {
                     case 'username_taken':
@@ -85,6 +178,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $updateOk = auth_update_user($userId, $updateData, $err);
                         if ($updateOk) {
                             $success = 'Felhasználó frissítve.';
+                            $updatedUser = auth_find_user_by_id($userId);
+                            if (!is_array($updatedUser)) {
+                                $updatedUser = [
+                                    'id' => $userId,
+                                    'username' => $username,
+                                    'email' => $email,
+                                    'role' => $role,
+                                    'must_change_password' => $mustChange,
+                                ];
+                            }
+                            $changes = [];
+                            $fieldsToTrack = ['username', 'email', 'role'];
+                            foreach ($fieldsToTrack as $field) {
+                                $beforeVal = $existing[$field] ?? null;
+                                $afterVal = $updatedUser[$field] ?? null;
+                                if ($beforeVal !== $afterVal) {
+                                    $changes[$field] = ['before' => $beforeVal, 'after' => $afterVal];
+                                }
+                            }
+                            $beforeMust = !empty($existing['must_change_password']);
+                            $afterMust = !empty($updatedUser['must_change_password']);
+                            if ($beforeMust !== $afterMust) {
+                                $changes['must_change_password'] = ['before' => $beforeMust, 'after' => $afterMust];
+                            }
+                            $meta = [
+                                'target' => [
+                                    'id' => $updatedUser['id'] ?? $userId,
+                                    'username' => $updatedUser['username'] ?? $existing['username'],
+                                    'role' => $updatedUser['role'] ?? $existing['role'],
+                                    'email' => $updatedUser['email'] ?? $existing['email'],
+                                ],
+                            ];
+                            if (!empty($changes)) {
+                                $meta['changes'] = $changes;
+                            }
+                            if ($password !== '') {
+                                $meta['password_changed'] = true;
+                            }
+                            log_user_admin_event($CURRENT_USER, 'updated_user', $meta, $updatedUser['id'] ?? $userId);
                         } else {
                             switch ($err) {
                                 case 'username_taken':
@@ -124,6 +256,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $deleteOk = auth_delete_user($userId, $deleteErr);
                     if ($deleteOk) {
                         $success = 'Felhasználó törölve.';
+                        $meta = [
+                            'target' => [
+                                'id' => $existing['id'] ?? $userId,
+                                'username' => $existing['username'] ?? '',
+                                'role' => $existing['role'] ?? null,
+                                'email' => $existing['email'] ?? null,
+                            ],
+                        ];
+                        log_user_admin_event($CURRENT_USER, 'deleted_user', $meta, $existing['id'] ?? $userId);
                     } else {
                         $errors[] = 'A felhasználó törlése nem sikerült.';
                     }

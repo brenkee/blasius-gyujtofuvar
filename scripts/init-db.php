@@ -62,79 +62,103 @@ function init_app_database(array $options = []): array {
     $pdo->exec('PRAGMA synchronous = NORMAL');
     $pdo->exec('PRAGMA foreign_keys = ON');
 
-    if (is_file($schemaFile)) {
-        execute_sql_file($pdo, $schemaFile, $logger);
+    $ownsTransaction = false;
+    $executedMigrations = [];
+    $seeded = false;
+    if (!$pdo->inTransaction()) {
+        $pdo->beginTransaction();
+        $ownsTransaction = true;
     }
 
-    $pdo->exec('CREATE TABLE IF NOT EXISTS schema_migrations (
+    try {
+        if (is_file($schemaFile)) {
+            with_sqlite_savepoint($pdo, 'schema', function () use ($pdo, $schemaFile, $logger): void {
+                execute_sql_file($pdo, $schemaFile, $logger);
+            });
+        }
+
+        with_sqlite_savepoint($pdo, 'schema_migrations_table', function () use ($pdo): void {
+            $pdo->exec('CREATE TABLE IF NOT EXISTS schema_migrations (
         migration TEXT PRIMARY KEY,
         executed_at TEXT NOT NULL DEFAULT (datetime(\'now\'))
     )');
+        });
 
-    $applied = [];
-    $stmt = $pdo->query('SELECT migration FROM schema_migrations');
-    if ($stmt !== false) {
-        foreach ($stmt as $row) {
-            if (!is_array($row)) {
-                continue;
-            }
-            $name = (string)($row['migration'] ?? '');
-            if ($name !== '') {
-                $applied[$name] = true;
-            }
-        }
-    }
-
-    $executedMigrations = [];
-    if (is_dir($migrationsDir)) {
-        $files = glob(rtrim($migrationsDir, '/\\') . '/*.sql');
-        if ($files !== false) {
-            sort($files, SORT_NATURAL);
-            foreach ($files as $file) {
-                $name = basename((string)$file);
-                if ($name === '') {
+        $applied = [];
+        $stmt = $pdo->query('SELECT migration FROM schema_migrations');
+        if ($stmt !== false) {
+            foreach ($stmt as $row) {
+                if (!is_array($row)) {
                     continue;
                 }
-                if (isset($applied[$name])) {
-                    $logger('migráció kihagyva – már rögzítve: ' . $name);
-                    continue;
-                }
-                $pdo->beginTransaction();
-                try {
-                    execute_sql_file($pdo, (string)$file, $logger);
-                    $ins = $pdo->prepare('INSERT INTO schema_migrations (migration) VALUES (:migration)');
-                    $ins->execute([':migration' => $name]);
-                    $pdo->commit();
-                    $executedMigrations[] = $name;
-                    $logger('migráció alkalmazva: ' . $name);
-                } catch (Throwable $e) {
-                    $pdo->rollBack();
-                    throw $e;
+                $name = (string)($row['migration'] ?? '');
+                if ($name !== '') {
+                    $applied[$name] = true;
                 }
             }
         }
-    }
 
-    $shouldSeed = false;
-    if ($seedPreference === true) {
-        $shouldSeed = true;
-    } elseif ($seedPreference === null) {
-        $shouldSeed = database_is_empty($pdo);
-    }
+        if (is_dir($migrationsDir)) {
+            $files = glob(rtrim($migrationsDir, '/\\') . '/*.sql');
+            if ($files !== false) {
+                sort($files, SORT_NATURAL);
+                foreach ($files as $file) {
+                    $name = basename((string)$file);
+                    if ($name === '') {
+                        continue;
+                    }
+                    if (isset($applied[$name])) {
+                        $logger('migráció kihagyva – már rögzítve: ' . $name);
+                        continue;
+                    }
 
-    $seeded = false;
-    if ($shouldSeed && is_file($seedFile) && filesize($seedFile) > 0) {
-        $pdo->beginTransaction();
-        try {
-            $logger('Minta adatok betöltése megkezdve.');
-            execute_sql_file($pdo, $seedFile, $logger);
+                    try {
+                        with_sqlite_savepoint($pdo, 'migration_' . $name, function () use ($pdo, $file, $name, $logger): void {
+                            $ins = $pdo->prepare('INSERT INTO schema_migrations (migration) VALUES (:migration)');
+                            $ins->execute([':migration' => $name]);
+                            execute_sql_file($pdo, (string)$file, $logger);
+                        });
+                        $executedMigrations[] = $name;
+                        $logger('migráció alkalmazva: ' . $name);
+                    } catch (Throwable $e) {
+                        $message = 'migráció sikertelen (' . $name . '): ' . $e->getMessage();
+                        $logger($message);
+                        throw new RuntimeException($message, 0, $e);
+                    }
+                }
+            }
+        }
+
+        $shouldSeed = false;
+        if ($seedPreference === true) {
+            $shouldSeed = true;
+        } elseif ($seedPreference === null) {
+            $shouldSeed = database_is_empty($pdo);
+        }
+
+        if ($shouldSeed && is_file($seedFile) && filesize($seedFile) > 0) {
+            try {
+                $logger('Minta adatok betöltése megkezdve.');
+                with_sqlite_savepoint($pdo, 'seed', function () use ($pdo, $seedFile, $logger): void {
+                    execute_sql_file($pdo, $seedFile, $logger);
+                });
+                $seeded = true;
+                $logger('Minta adatok betöltve.');
+            } catch (Throwable $e) {
+                $message = 'Minta adatok betöltése sikertelen: ' . $e->getMessage();
+                $logger($message);
+                throw new RuntimeException($message, 0, $e);
+            }
+        }
+
+        if ($ownsTransaction) {
             $pdo->commit();
-            $seeded = true;
-            $logger('Minta adatok betöltve.');
-        } catch (Throwable $e) {
-            $pdo->rollBack();
-            throw $e;
         }
+    } catch (Throwable $e) {
+        if ($ownsTransaction && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
     }
 
     return [
@@ -178,11 +202,73 @@ function execute_sql_file(PDO $pdo, string $file, ?callable $logger = null): arr
             continue;
         }
 
+        $normalizedTrimmed = rtrim($normalized, ";\s\n\r\t");
+        if (preg_match('/^PRAGMA\s+[^=]+=/i', $normalizedTrimmed)) {
+            $skipMessage = 'PRAGMA kihagyva (külső tranzakció kezeli): ' . $normalizedTrimmed;
+            $skipped[] = $skipMessage;
+            if ($logger !== null) {
+                $logger($skipMessage);
+            }
+            continue;
+        }
+
+        $upper = strtoupper(preg_replace('/\s+/', ' ', $normalizedTrimmed));
+        if (
+            $upper === 'BEGIN' ||
+            $upper === 'BEGIN TRANSACTION' ||
+            $upper === 'COMMIT' ||
+            $upper === 'END' ||
+            $upper === 'END TRANSACTION' ||
+            str_starts_with($upper, 'ROLLBACK')
+        ) {
+            $skipMessage = 'tranzakciós utasítás kihagyva (külső tranzakció kezeli): ' . $upper;
+            $skipped[] = $skipMessage;
+            if ($logger !== null) {
+                $logger($skipMessage);
+            }
+            continue;
+        }
+
         $pdo->exec($normalized);
         $executed[] = $normalized;
     }
 
     return ['executed' => $executed, 'skipped' => $skipped];
+}
+
+/**
+ * Execute a callback inside a SQLite SAVEPOINT and release or rollback as needed.
+ *
+ * @template T
+ * @param callable():T $callback
+ * @return T
+ */
+function with_sqlite_savepoint(PDO $pdo, string $context, callable $callback)
+{
+    if (!$pdo->inTransaction()) {
+        throw new RuntimeException('SAVEPOINT használatához aktív tranzakció szükséges.');
+    }
+
+    static $savepointCounter = 0;
+    $savepointCounter++;
+    $base = preg_replace('/[^A-Za-z0-9_]/', '_', $context);
+    if ($base === null || $base === '') {
+        $base = 'step';
+    }
+    $base = substr($base, 0, 48);
+    $name = 'sp_' . $savepointCounter . '_' . $base;
+
+    $pdo->exec('SAVEPOINT ' . $name);
+    try {
+        /** @var T $result */
+        $result = $callback();
+        $pdo->exec('RELEASE SAVEPOINT ' . $name);
+        return $result;
+    } catch (Throwable $e) {
+        $pdo->exec('ROLLBACK TO SAVEPOINT ' . $name);
+        $pdo->exec('RELEASE SAVEPOINT ' . $name);
+        throw $e;
+    }
 }
 
 /**
