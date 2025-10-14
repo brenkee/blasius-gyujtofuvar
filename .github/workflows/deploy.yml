@@ -43,7 +43,7 @@ jobs:
           password: ${{ secrets.FTP_PASS }}
           port: ${{ secrets.FTP_PORT || '21' }}
           # A repó melyik mappáját töltsd fel (állítsd a te appodhoz: pl. ./public vagy ./):
-          local-dir: ./public
+          local-dir: ./public/
           # A szerveren cél könyvtár; a webszerver gyökerétől értendő
           server-dir: ${{ steps.path.outputs.dir }}
           exclude: |
