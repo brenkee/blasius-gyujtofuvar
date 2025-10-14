@@ -67,6 +67,9 @@ $CFG_DEFAULT = [
     "undo_enabled" => true,
     "max_steps" => 3
   ],
+  "change_log" => [
+    "retention_days" => 7,
+  ],
   "change_watcher" => [
     "enabled" => true,
     "pause_when_hidden" => true,
@@ -87,7 +90,6 @@ $CFG_DEFAULT = [
       "import_all" => true,
       "export_all" => true,
       "print_all" => true,
-      "download_archive" => true,
       "theme_toggle" => true,
       "undo" => true
     ],
@@ -111,7 +113,6 @@ $CFG_DEFAULT = [
     "data_file" => "data/app.db",
     "export_file" => "backups/fuvar_export.csv",
     "export_download_name" => "fuvar_export.csv",
-    "archive_file" => "temp/fuvar_archive.log",
     "revision_file" => "temp/fuvar_revision.json",
     "change_log_file" => "temp/fuvar_changes.log",
     "lock_file" => "temp/fuvar_state.lock"
@@ -235,7 +236,6 @@ $CFG_DEFAULT = [
       "import_all" => ["label" => "Import (CSV)", "title" => "Címlista importálása CSV-ből"],
       "export_all" => ["label" => "Export (CSV)", "title" => "Címlista exportálása CSV-be"],
       "print_all" => ["label" => "Nyomtatás", "title" => "Nyomtatás"],
-      "download_archive" => ["label" => "Archívum letöltése", "title" => "Archívum letöltése (TXT)"],
       "theme_toggle" => ["label" => "🌙 / ☀️", "title" => "Téma váltása"],
       "undo" => ["label" => "Visszavonás", "title" => "Visszavonás"],
       "more_actions" => ["label" => "Menü", "title" => "További műveletek"]
@@ -572,10 +572,25 @@ sort($ROUND_IDS);
 $DATA_FILE       = __DIR__ . '/' . ($CFG['files']['data_file'] ?? 'data/app.db');
 $EXPORT_FILE     = __DIR__ . '/' . ($CFG['files']['export_file'] ?? 'backups/fuvar_export.txt');
 $EXPORT_NAME     = (string)($CFG['files']['export_download_name'] ?? 'fuvar_export.txt');
-$ARCHIVE_FILE    = __DIR__ . '/' . ($CFG['files']['archive_file'] ?? 'temp/fuvar_archive.log');
 $REVISION_FILE   = __DIR__ . '/' . ($CFG['files']['revision_file'] ?? 'temp/fuvar_revision.json');
 $CHANGE_LOG_FILE = __DIR__ . '/' . ($CFG['files']['change_log_file'] ?? 'temp/fuvar_changes.log');
 $STATE_LOCK_FILE = __DIR__ . '/' . ($CFG['files']['lock_file'] ?? 'temp/fuvar_state.lock');
+
+$changeLogCfg = isset($CFG['change_log']) && is_array($CFG['change_log']) ? $CFG['change_log'] : [];
+$retentionSeconds = null;
+if (array_key_exists('retention_seconds', $changeLogCfg) && is_numeric($changeLogCfg['retention_seconds'])) {
+  $retentionSeconds = (int)$changeLogCfg['retention_seconds'];
+} elseif (array_key_exists('retention_hours', $changeLogCfg) && is_numeric($changeLogCfg['retention_hours'])) {
+  $hours = (float)$changeLogCfg['retention_hours'];
+  $retentionSeconds = (int)round($hours * 3600);
+} elseif (array_key_exists('retention_days', $changeLogCfg) && is_numeric($changeLogCfg['retention_days'])) {
+  $days = (float)$changeLogCfg['retention_days'];
+  $retentionSeconds = (int)round($days * 86400);
+}
+if ($retentionSeconds === null || $retentionSeconds <= 0) {
+  $retentionSeconds = 7 * 86400;
+}
+$CHANGE_LOG_RETENTION_SECONDS = max(0, (int)$retentionSeconds);
 
 $DATA_BOOTSTRAP_INFO = [];
 $DATA_INIT_ERROR = null;
@@ -1371,15 +1386,75 @@ function write_revision_locked($rev) {
 }
 
 function append_change_log_locked(array $entry) {
-  global $CHANGE_LOG_FILE;
+  global $DATA_FILE, $CHANGE_LOG_FILE, $CHANGE_LOG_RETENTION_SECONDS;
 
-  if (!isset($entry['ts'])) {
+  if (!isset($entry['ts']) || !is_string($entry['ts']) || trim($entry['ts']) === '') {
     $entry['ts'] = gmdate('c');
   }
 
-  $maxAgeSeconds = 86400; // 1 day
-  $cutoff = time() - $maxAgeSeconds;
-  $newLine = json_encode($entry, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+  $tsIso = (string)$entry['ts'];
+  $rev = isset($entry['rev']) && is_numeric($entry['rev']) ? (int)$entry['rev'] : null;
+  $actorId = isset($entry['actor_id']) ? (string)$entry['actor_id'] : null;
+  $requestId = isset($entry['request_id']) ? (string)$entry['request_id'] : null;
+  $batchId = isset($entry['batch_id']) ? (string)$entry['batch_id'] : null;
+  $userId = isset($entry['user_id']) && is_numeric($entry['user_id']) ? (int)$entry['user_id'] : null;
+  $username = isset($entry['username']) ? (string)$entry['username'] : null;
+  $message = isset($entry['message']) ? trim((string)$entry['message']) : '';
+
+  if ($message === '') {
+    return;
+  }
+
+  if (data_store_is_sqlite($DATA_FILE)) {
+    [$pdo] = data_store_sqlite_open($DATA_FILE);
+    $dbStart = microtime(true);
+    try {
+      $pdo->beginTransaction();
+      $stmt = $pdo->prepare('INSERT INTO change_log (
+        rev, actor_id, request_id, batch_id, user_id, username, message, ts, created_at
+      ) VALUES (
+        :rev, :actor_id, :request_id, :batch_id, :user_id, :username, :message, :ts, :created_at
+      )');
+      $stmt->execute([
+        ':rev' => $rev,
+        ':actor_id' => $actorId,
+        ':request_id' => $requestId,
+        ':batch_id' => $batchId,
+        ':user_id' => $userId,
+        ':username' => $username,
+        ':message' => $message,
+        ':ts' => $tsIso,
+        ':created_at' => $tsIso,
+      ]);
+      if ($CHANGE_LOG_RETENTION_SECONDS > 0) {
+        $cutoffIso = gmdate('c', time() - $CHANGE_LOG_RETENTION_SECONDS);
+        $cleanup = $pdo->prepare('DELETE FROM change_log WHERE ts < :cutoff');
+        $cleanup->execute([':cutoff' => $cutoffIso]);
+      }
+      $pdo->commit();
+      app_perf_track_db($dbStart);
+    } catch (Throwable $e) {
+      $pdo->rollBack();
+      app_perf_track_db($dbStart);
+      throw $e;
+    }
+    return;
+  }
+
+  // Fallback to file-based logging if SQLite is not used.
+  $maxAgeSeconds = max(0, (int)$CHANGE_LOG_RETENTION_SECONDS);
+  $cutoff = $maxAgeSeconds > 0 ? time() - $maxAgeSeconds : null;
+  $record = [
+    'rev' => $rev,
+    'actor_id' => $actorId,
+    'request_id' => $requestId,
+    'batch_id' => $batchId,
+    'user_id' => $userId,
+    'username' => $username,
+    'message' => $message,
+    'ts' => $tsIso,
+  ];
+  $newLine = json_encode($record, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
   $fh = @fopen($CHANGE_LOG_FILE, 'c+');
   if (!$fh) {
@@ -1392,17 +1467,19 @@ function append_change_log_locked(array $entry) {
     rewind($fh);
     while (($line = fgets($fh)) !== false) {
       $line = trim($line);
-      if ($line === '') continue;
-
+      if ($line === '') {
+        continue;
+      }
       $keep = true;
-      $decoded = json_decode($line, true);
-      if (is_array($decoded) && isset($decoded['ts'])) {
-        $ts = strtotime((string)$decoded['ts']);
-        if ($ts !== false && $ts < $cutoff) {
-          $keep = false;
+      if ($cutoff !== null) {
+        $decoded = json_decode($line, true);
+        if (is_array($decoded) && isset($decoded['ts'])) {
+          $ts = strtotime((string)$decoded['ts']);
+          if ($ts !== false && $ts < $cutoff) {
+            $keep = false;
+          }
         }
       }
-
       if ($keep) {
         $retained[] = $line;
       }
@@ -1416,11 +1493,67 @@ function append_change_log_locked(array $entry) {
     fflush($fh);
     flock($fh, LOCK_UN);
   } else {
-    // Fallback if we could not acquire the lock.
     file_put_contents($CHANGE_LOG_FILE, $newLine . "\n", FILE_APPEND | LOCK_EX);
   }
 
   fclose($fh);
+}
+
+function log_actor_label(?array $user, ?string $fallbackUsername = null): string {
+  if (is_array($user)) {
+    $role = auth_user_role($user);
+    $username = isset($user['username']) ? trim((string)$user['username']) : '';
+    if ($role === 'full-admin') {
+      return 'Admin felhasználó';
+    }
+    if ($username !== '') {
+      return $username . ' felhasználó';
+    }
+    if ($role === 'editor') {
+      return 'Szerkesztő felhasználó';
+    }
+    if ($role === 'viewer') {
+      return 'Megtekintő felhasználó';
+    }
+  }
+  if (is_string($fallbackUsername)) {
+    $fallbackUsername = trim($fallbackUsername);
+    if ($fallbackUsername !== '') {
+      return $fallbackUsername . ' felhasználó';
+    }
+  }
+  return 'Ismeretlen felhasználó';
+}
+
+function log_round_label($roundId): string {
+  global $ROUND_MAP;
+  $rid = null;
+  if (is_numeric($roundId)) {
+    $rid = (int)$roundId;
+  } elseif (is_string($roundId) && $roundId !== '') {
+    $rid = (int)$roundId;
+  }
+  if ($rid !== null) {
+    if (isset($ROUND_MAP[$rid]['label'])) {
+      return (string)$ROUND_MAP[$rid]['label'];
+    }
+    if (isset($ROUND_MAP[(string)$rid]['label'])) {
+      return (string)$ROUND_MAP[(string)$rid]['label'];
+    }
+  }
+  if (is_string($roundId) && $roundId !== '') {
+    return (string)$roundId;
+  }
+  return 'ismeretlen kör';
+}
+
+function log_format_count_phrase(int $count, string $singular, ?string $plural = null): ?string {
+  if ($count <= 0) {
+    return null;
+  }
+  $pluralWord = $plural ?? $singular;
+  $word = $count === 1 ? $singular : $pluralWord;
+  return $count . ' ' . $word;
 }
 
 function normalized_actor_id($raw) {
@@ -1541,7 +1674,37 @@ function compute_round_meta_changes(array $oldMeta, array $newMeta) {
 }
 
 function read_change_log_entries() {
-  global $CHANGE_LOG_FILE;
+  global $DATA_FILE, $CHANGE_LOG_FILE;
+
+  if (data_store_is_sqlite($DATA_FILE)) {
+    [$pdo] = data_store_sqlite_open($DATA_FILE);
+    $dbStart = microtime(true);
+    $stmt = $pdo->query('SELECT id, rev, actor_id, request_id, batch_id, user_id, username, message, ts FROM change_log ORDER BY id ASC');
+    app_perf_track_db($dbStart);
+    if (!$stmt) {
+      return [];
+    }
+    $entries = [];
+    foreach ($stmt as $row) {
+      if (!is_array($row)) {
+        continue;
+      }
+      $entry = [
+        'id' => isset($row['id']) ? (int)$row['id'] : null,
+        'rev' => isset($row['rev']) ? (int)$row['rev'] : null,
+        'actor_id' => isset($row['actor_id']) ? (string)$row['actor_id'] : null,
+        'request_id' => isset($row['request_id']) ? (string)$row['request_id'] : null,
+        'batch_id' => isset($row['batch_id']) ? (string)$row['batch_id'] : null,
+        'user_id' => isset($row['user_id']) && $row['user_id'] !== null ? (int)$row['user_id'] : null,
+        'username' => isset($row['username']) ? (string)$row['username'] : null,
+        'message' => isset($row['message']) ? (string)$row['message'] : '',
+        'ts' => isset($row['ts']) ? (string)$row['ts'] : null,
+      ];
+      $entries[] = $entry;
+    }
+    return $entries;
+  }
+
   if (!is_file($CHANGE_LOG_FILE)) {
     return [];
   }
@@ -1555,7 +1718,7 @@ function read_change_log_entries() {
       $line = trim($line);
       if ($line === '') continue;
       $decoded = json_decode($line, true);
-      if (is_array($decoded) && isset($decoded['rev'])) {
+      if (is_array($decoded) && isset($decoded['message'])) {
         $entries[] = $decoded;
       }
     }
@@ -1910,9 +2073,6 @@ if (!function_exists('app_features_for_user')) {
       $toolbar['print_all'] = false;
       $groupActions['print'] = false;
     }
-    if (empty($permissions['canManageUsers'])) {
-      $toolbar['download_archive'] = $toolbar['download_archive'] ?? false;
-    }
     if (empty($permissions['canEdit'])) {
       $toolbar['undo'] = false;
       $groupActions['delete'] = false;
@@ -1921,7 +2081,6 @@ if (!function_exists('app_features_for_user')) {
     }
     if (!empty($permissions['readOnly'])) {
       $toolbar['import_all'] = false;
-      $toolbar['download_archive'] = false;
     }
 
     $result['toolbar'] = $toolbar;
