@@ -34,22 +34,19 @@ jobs:
       # --- VÁLASSZ EGYET: FTP/FTPS JELSZÓVAL VAGY SFTP KULCCSAL ---
 
       # 3/A) FTP vagy FTPS (jelszóval)
-      - name: Deploy via FTP/FTPS
-        if: ${{ secrets.FTP_PASS != '' }}
-        uses: SamKirkland/FTP-Deploy-Action@v4
-        with:
-          server: ${{ secrets.FTP_HOST }}
-          username: ${{ secrets.FTP_USER }}
-          password: ${{ secrets.FTP_PASS }}
-          port: ${{ secrets.FTP_PORT || '21' }}
-          # A repó melyik mappáját töltsd fel (állítsd a te appodhoz: pl. ./public vagy ./):
-          local-dir: ./public
-          # A szerveren cél könyvtár; a webszerver gyökerétől értendő
-          server-dir: ${{ steps.path.outputs.dir }}
-          exclude: |
-            **/.git*
-            **/.github/**
-            **/node_modules/**
-            **/backups/**
-            **/data/*.db*
-            **/*.log
+- name: Deploy via FTP
+  uses: SamKirkland/FTP-Deploy-Action@v4
+  with:
+    server: ${{ secrets.FTP_HOST }}
+    username: ${{ secrets.FTP_USER }}
+    password: ${{ secrets.FTP_PASS }}
+    port: ${{ secrets.FTP_PORT || '21' }}
+    local-dir: ./public
+    server-dir: ${{ steps.path.outputs.dir }}
+    exclude: |
+      **/.git*
+      **/.github/**
+      **/node_modules/**
+      **/backups/**
+      **/data/*.db*
+      **/*.log
