@@ -26,7 +26,8 @@
     conflictNotified: new Set(),
     conflictOverlay: null,
     markerOverlapCounts: new Map(),
-    displayIndexById: new Map()
+    displayIndexById: new Map(),
+    viewMode: 'list'
   };
 
   const history = [];
@@ -38,11 +39,147 @@
   const pinCountEl = document.getElementById('pinCount');
   const themeToggle = document.getElementById('themeToggle');
   const panelTopEl = document.getElementById('panelTop');
+  const appRootEl = document.querySelector('.app');
+  const VIEW_MODE_STORAGE_KEY = 'app_view_mode_v1';
+  const VIEW_MODES = Object.freeze({LIST:'list', MAP:'map'});
+  const QUICK_SEARCH_DEBOUNCE_MS = 250;
+  const canUseLocalStorage = (()=>{
+    try {
+      return typeof window !== 'undefined' && !!window.localStorage;
+    } catch (err) {
+      return false;
+    }
+  })();
+  const viewSwitchButtons = new Map();
+  let pendingMapResize = null;
+  let mobileLayoutFrame = null;
+  let mapRef = null;
   let quickSearchClearBtn = null;
 
   if (READ_ONLY && newAddressEl) {
     newAddressEl.style.display = 'none';
   }
+
+  function readStoredViewMode(){
+    if (!canUseLocalStorage) return VIEW_MODES.LIST;
+    try {
+      const stored = window.localStorage.getItem(VIEW_MODE_STORAGE_KEY);
+      if (stored === VIEW_MODES.MAP || stored === VIEW_MODES.LIST) {
+        return stored;
+      }
+    } catch (err) {}
+    return VIEW_MODES.LIST;
+  }
+
+  function persistViewMode(mode){
+    if (!canUseLocalStorage) return;
+    try {
+      window.localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode);
+    } catch (err) {}
+  }
+
+  function updateViewSwitchActive(){
+    viewSwitchButtons.forEach((btn, mode)=>{
+      if (!(btn instanceof HTMLElement)) return;
+      const active = mode === state.viewMode;
+      btn.classList.toggle('is-active', active);
+      btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+  }
+
+  function updateMobileLayoutMetrics(){
+    if (!panelTopEl || !appRootEl) return;
+    const rect = panelTopEl.getBoundingClientRect();
+    const height = rect && Number.isFinite(rect.height) ? Math.max(0, Math.round(rect.height)) : 0;
+    appRootEl.style.setProperty('--mobile-header-height', `${height}px`);
+  }
+
+  function scheduleMobileLayoutUpdate(){
+    if (mobileLayoutFrame != null) return;
+    mobileLayoutFrame = window.requestAnimationFrame(()=>{
+      mobileLayoutFrame = null;
+      updateMobileLayoutMetrics();
+    });
+  }
+
+  function requestMapResize(){
+    if (!mapRef || typeof mapRef.invalidateSize !== 'function') return;
+    if (pendingMapResize != null) {
+      clearTimeout(pendingMapResize);
+    }
+    pendingMapResize = window.setTimeout(()=>{
+      pendingMapResize = null;
+      try { mapRef.invalidateSize(); }
+      catch (err) {}
+    }, 180);
+  }
+
+  function applyViewMode(mode, opts = {}){
+    const next = mode === VIEW_MODES.MAP ? VIEW_MODES.MAP : VIEW_MODES.LIST;
+    const prev = state.viewMode;
+    const changed = prev !== next;
+    state.viewMode = next;
+    if (appRootEl) {
+      appRootEl.setAttribute('data-mobile-view', next);
+    }
+    if ((opts.persist ?? true) && changed) {
+      persistViewMode(next);
+    }
+    updateViewSwitchActive();
+    scheduleMobileLayoutUpdate();
+    if (next === VIEW_MODES.MAP) {
+      requestMapResize();
+    }
+  }
+
+  function createViewSwitchButton(mode, label){
+    const resolvedLabel = label != null ? String(label) : (mode === VIEW_MODES.MAP ? 'Térkép' : 'Lista');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'view-switch-btn';
+    btn.dataset.view = mode;
+    btn.setAttribute('aria-pressed', 'false');
+    btn.setAttribute('aria-label', resolvedLabel);
+    btn.title = resolvedLabel;
+    const safeLabel = esc(resolvedLabel);
+    const iconSvg = mode === VIEW_MODES.MAP
+      ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a7 7 0 00-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 00-7-7zm0 9.5a2.5 2.5 0 110-5 2.5 2.5 0 010 5z"></path></svg>'
+      : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"></path></svg>';
+    btn.innerHTML = iconSvg + `<span class="visually-hidden">${safeLabel}</span>`;
+    btn.addEventListener('click', ()=>{
+      applyViewMode(mode);
+    });
+    viewSwitchButtons.set(mode, btn);
+    return btn;
+  }
+
+  function ensureViewSwitchControls(){
+    if (!panelTopEl) return null;
+    let wrap = document.getElementById('viewSwitch');
+    if (!wrap) {
+      const groupLabel = text('view_switch.label', 'Nézetváltás');
+      wrap = document.createElement('div');
+      wrap.id = 'viewSwitch';
+      wrap.className = 'view-switch';
+      wrap.setAttribute('role', 'group');
+      wrap.setAttribute('aria-label', groupLabel);
+      const listLabel = text('view_switch.list', 'Lista');
+      const mapLabel = text('view_switch.map', 'Térkép');
+      wrap.appendChild(createViewSwitchButton(VIEW_MODES.LIST, listLabel));
+      wrap.appendChild(createViewSwitchButton(VIEW_MODES.MAP, mapLabel));
+    }
+    wrap.hidden = false;
+    updateViewSwitchActive();
+    scheduleMobileLayoutUpdate();
+    return wrap;
+  }
+
+  state.viewMode = readStoredViewMode();
+  if (appRootEl) {
+    appRootEl.setAttribute('data-mobile-view', state.viewMode);
+  }
+  scheduleMobileLayoutUpdate();
+  window.addEventListener('resize', ()=>{ scheduleMobileLayoutUpdate(); });
 
   const flashTimers = new WeakMap();
 
@@ -1159,6 +1296,7 @@
       panelTopEl.style.background = '';
       panelTopEl.style.zIndex = '';
     }
+    scheduleMobileLayoutUpdate();
   }
 
   function applyQuickSearchClearStyles(){
@@ -1234,12 +1372,14 @@
         root.classList.toggle('dark');
         localStorage.setItem('fuvar_theme', root.classList.contains('dark') ? 'dark' : 'light');
         applyQuickSearchClearStyles();
+        scheduleMobileLayoutUpdate();
       });
     }
   })();
 
   // ======= MAP
   const map = L.map('map',{zoomControl:true, preferCanvas:true});
+  mapRef = map;
   const markerLayer = L.featureGroup().addTo(map);
   let markerOverlapRefreshTimer = null;
   function updatePinCount(){ if (pinCountEl) pinCountEl.textContent = markerLayer.getLayers().length.toString(); }
@@ -3127,26 +3267,42 @@
     quickSearchClearBtn = clearBtn;
     applyQuickSearchClearStyles();
 
-    // a groupsEl elé tesszük vagy a panel tetejére
-    const parent = groupsEl.parentNode;
-    if (panelTopEl) {
-      panelTopEl.appendChild(wrap);
-    } else {
-      parent.insertBefore(wrap, groupsEl);
-    }
-
     const status = document.createElement('div');
     status.id = 'quickSearchStatus';
     status.className = 'quick-search-status';
     status.setAttribute('role', 'status');
+    // a groupsEl elé tesszük vagy a panel tetejére
+    const parent = groupsEl.parentNode;
     if (panelTopEl) {
+      panelTopEl.appendChild(wrap);
+      const viewSwitch = ensureViewSwitchControls();
+      if (viewSwitch) {
+        panelTopEl.appendChild(viewSwitch);
+      }
       panelTopEl.appendChild(status);
     } else {
+      parent.insertBefore(wrap, groupsEl);
       parent.insertBefore(status, groupsEl);
     }
 
     const updateValueState = ()=>{
       wrap.classList.toggle('has-value', inp.value.trim().length > 0);
+    };
+
+    let filterTimer = null;
+    const scheduleFilter = (immediate = false)=>{
+      if (filterTimer != null) {
+        clearTimeout(filterTimer);
+        filterTimer = null;
+      }
+      if (immediate) {
+        applyFilter();
+        return;
+      }
+      filterTimer = window.setTimeout(()=>{
+        filterTimer = null;
+        applyFilter();
+      }, QUICK_SEARCH_DEBOUNCE_MS);
     };
 
     function updateIndicator(active, visibleCount){
@@ -3223,28 +3379,33 @@
       }
       updateIndicator(!!q, visibleCount);
       updateValueState();
+      scheduleMobileLayoutUpdate();
     }
 
     inp.addEventListener('input', ()=>{
       state.filterText = inp.value;
-      applyFilter();
+      updateValueState();
+      scheduleFilter();
     });
     inp.addEventListener('change', updateValueState);
     clearBtn.addEventListener('click', ()=>{
       state.filterText = '';
       inp.value = '';
-      applyFilter();
+      updateValueState();
+      scheduleFilter(true);
       inp.focus();
     });
 
     // első render után is alkalmazzuk, ha lenne mentett filter
     if (state.filterText) {
       inp.value = state.filterText;
-      applyFilter();
+      scheduleFilter(true);
     } else {
       updateIndicator(false, Array.from(groupsEl.querySelectorAll('.row')).length);
       updateValueState();
     }
+
+    scheduleMobileLayoutUpdate();
   }
 
   function renderGroups(){
@@ -4169,6 +4330,10 @@
       ensureBlankRowInDefaultRound();
 
       renderEverything();
+      scheduleMobileLayoutUpdate();
+      if (state.viewMode === VIEW_MODES.MAP) {
+        requestMapResize();
+      }
     }catch(e){
       console.error(e);
       alert(text('messages.load_error', 'Betöltési hiba: kérlek frissítsd az oldalt.'));
