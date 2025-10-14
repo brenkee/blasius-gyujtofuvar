@@ -38,6 +38,36 @@
   const pinCountEl = document.getElementById('pinCount');
   const themeToggle = document.getElementById('themeToggle');
   const panelTopEl = document.getElementById('panelTop');
+  const appEl = document.querySelector('.app');
+  const mapContainerEl = document.getElementById('map');
+  const rootEl = document.documentElement || document.body;
+  const rootStyle = rootEl?.style || null;
+  const VIEW_MODE_STORAGE_KEY = 'fuvar_view_mode_v1';
+  const VALID_VIEW_MODES = new Set(['list', 'map']);
+  let currentViewMode = 'list';
+  try {
+    const storedMode = window?.localStorage ? window.localStorage.getItem(VIEW_MODE_STORAGE_KEY) : null;
+    if (storedMode && VALID_VIEW_MODES.has(storedMode)) {
+      currentViewMode = storedMode;
+    }
+  } catch (err) {}
+  if (appEl) {
+    appEl.setAttribute('data-view-mode', currentViewMode);
+  }
+  const viewSwitchButtons = new Map();
+  let viewSwitchEl = null;
+  let panelTopResizeObserver = null;
+  let responsiveLayoutInitialized = false;
+  function isMapContainerVisible(){
+    if (!mapContainerEl) return false;
+    if (typeof window === 'undefined') return false;
+    const style = window.getComputedStyle(mapContainerEl);
+    if (!style) return false;
+    if (style.display === 'none' || style.visibility === 'hidden') return false;
+    if (mapContainerEl.offsetWidth <= 0 || mapContainerEl.offsetHeight <= 0) return false;
+    return true;
+  }
+  let mapNeedsFitOnNextShow = !isMapContainerVisible();
   let quickSearchClearBtn = null;
 
   if (READ_ONLY && newAddressEl) {
@@ -66,6 +96,18 @@
   }
 
   const CSRF_COOKIE_NAME = 'GF-CSRF';
+
+  function debounce(fn, delay=0){
+    let timer = null;
+    return function debounced(...args){
+      if (timer) clearTimeout(timer);
+      const ctx = this;
+      timer = setTimeout(()=>{
+        timer = null;
+        fn.apply(ctx, args);
+      }, delay);
+    };
+  }
 
   function readCookie(name){
     if (typeof document === 'undefined' || !document.cookie) {
@@ -1314,6 +1356,139 @@
   map.on('zoom', requestMarkerOverlapRefresh);
   map.on('zoomend', requestMarkerOverlapRefresh);
   map.whenReady(requestMarkerOverlapRefresh);
+
+  function persistViewMode(mode){
+    if (!VALID_VIEW_MODES.has(mode)) return;
+    try {
+      if (window?.localStorage) {
+        window.localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode);
+      }
+    } catch (err) {}
+  }
+
+  function updateViewSwitchButtons(){
+    viewSwitchButtons.forEach(btn => {
+      if (!(btn instanceof HTMLButtonElement)) return;
+      const view = btn.dataset.view || '';
+      const isActive = view === currentViewMode;
+      btn.classList.toggle('is-active', isActive);
+      btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
+  }
+
+  function ensureViewSwitch(){
+    if (viewSwitchEl) return viewSwitchEl;
+    const wrap = document.createElement('div');
+    wrap.className = 'view-switch';
+    wrap.setAttribute('role', 'group');
+    wrap.setAttribute('aria-label', text('view_switch.aria_label', 'Nézet váltása'));
+    const views = [
+      {
+        id: 'list',
+        label: text('view_switch.list', 'Lista'),
+        icon: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 5h14a1 1 0 010 2H5a1 1 0 110-2zm0 6h14a1 1 0 010 2H5a1 1 0 110-2zm0 6h14a1 1 0 010 2H5a1 1 0 110-2z"></path></svg>'
+      },
+      {
+        id: 'map',
+        label: text('view_switch.map', 'Térkép'),
+        icon: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a7 7 0 00-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 00-7-7zm0 9.5a2.5 2.5 0 110-5 2.5 2.5 0 010 5z"></path></svg>'
+      }
+    ];
+    viewSwitchButtons.clear();
+    views.forEach(view => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'view-switch-btn';
+      btn.dataset.view = view.id;
+      btn.setAttribute('aria-label', view.label);
+      btn.title = view.label;
+      btn.innerHTML = `
+        <span class="view-switch-icon" aria-hidden="true">${view.icon}</span>
+        <span class="view-switch-text">${view.label}</span>
+      `;
+      btn.addEventListener('click', ()=>{
+        applyViewMode(view.id);
+      });
+      viewSwitchButtons.set(view.id, btn);
+      wrap.appendChild(btn);
+    });
+    viewSwitchEl = wrap;
+    updateViewSwitchButtons();
+    return viewSwitchEl;
+  }
+
+  function updateViewportMetrics(){
+    if (!rootStyle) return;
+    const viewportHeight = Math.max(window.innerHeight || 0, rootEl?.clientHeight || 0);
+    if (viewportHeight > 0) {
+      rootStyle.setProperty('--app-viewport-height', `${viewportHeight}px`);
+    }
+    if (panelTopEl) {
+      const headerHeight = panelTopEl.getBoundingClientRect().height;
+      rootStyle.setProperty('--mobile-header-height', `${headerHeight}px`);
+    }
+    if (map && isMapContainerVisible()) {
+      requestAnimationFrame(()=>{
+        map.invalidateSize();
+        if (mapNeedsFitOnNextShow) {
+          const bounds = markerLayer.getBounds();
+          if (bounds.isValid()) {
+            map.fitBounds(bounds.pad(0.2));
+          }
+          mapNeedsFitOnNextShow = false;
+        }
+      });
+    }
+  }
+
+  const scheduleLayoutMetricsUpdate = debounce(updateViewportMetrics, 160);
+
+  function applyViewMode(mode, {store=true} = {}){
+    const next = VALID_VIEW_MODES.has(mode) ? mode : 'list';
+    currentViewMode = next;
+    if (appEl) {
+      appEl.setAttribute('data-view-mode', next);
+    }
+    updateViewSwitchButtons();
+    if (store) persistViewMode(next);
+    scheduleLayoutMetricsUpdate();
+    if (!map) return;
+    if (next === 'map') {
+      requestAnimationFrame(()=>{
+        if (!isMapContainerVisible()) return;
+        map.invalidateSize();
+        if (mapNeedsFitOnNextShow) {
+          const bounds = markerLayer.getBounds();
+          if (bounds.isValid()) {
+            map.fitBounds(bounds.pad(0.2));
+          }
+          mapNeedsFitOnNextShow = false;
+        }
+      });
+    } else if (isMapContainerVisible()) {
+      requestAnimationFrame(()=> map.invalidateSize());
+    }
+  }
+
+  function initResponsiveLayout(){
+    if (responsiveLayoutInitialized) {
+      updateViewSwitchButtons();
+      scheduleLayoutMetricsUpdate();
+      return;
+    }
+    responsiveLayoutInitialized = true;
+    const switchNode = ensureViewSwitch();
+    if (panelTopEl && switchNode) {
+      panelTopEl.appendChild(switchNode);
+    }
+    updateViewportMetrics();
+    if (typeof ResizeObserver !== 'undefined' && panelTopEl) {
+      panelTopResizeObserver = new ResizeObserver(()=> scheduleLayoutMetricsUpdate());
+      panelTopResizeObserver.observe(panelTopEl);
+    }
+    window.addEventListener('resize', scheduleLayoutMetricsUpdate, {passive:true});
+    window.addEventListener('orientationchange', scheduleLayoutMetricsUpdate, {passive:true});
+  }
 
   function metersPerPixelAtCenter(){
     if (!map || typeof map.getSize !== 'function') return 0;
@@ -3220,14 +3395,27 @@
       if (markerLayerChanged) {
         updatePinCount();
         requestMarkerOverlapRefresh();
+        if (!isMapContainerVisible()) {
+          mapNeedsFitOnNextShow = true;
+        } else if (map) {
+          const bounds = markerLayer.getBounds();
+          if (bounds.isValid()) {
+            map.fitBounds(bounds.pad(0.2));
+            mapNeedsFitOnNextShow = false;
+          } else {
+            mapNeedsFitOnNextShow = false;
+          }
+        }
       }
       updateIndicator(!!q, visibleCount);
       updateValueState();
     }
 
+    const applyFilterDebounced = debounce(()=> applyFilter(), 250);
+
     inp.addEventListener('input', ()=>{
       state.filterText = inp.value;
-      applyFilter();
+      applyFilterDebounced();
     });
     inp.addEventListener('change', updateValueState);
     clearBtn.addEventListener('click', ()=>{
@@ -3245,6 +3433,15 @@
       updateIndicator(false, Array.from(groupsEl.querySelectorAll('.row')).length);
       updateValueState();
     }
+
+    if (panelTopEl) {
+      const switchNode = ensureViewSwitch();
+      if (switchNode) {
+        panelTopEl.appendChild(switchNode);
+        updateViewSwitchButtons();
+      }
+    }
+    scheduleLayoutMetricsUpdate();
   }
 
   function renderGroups(){
@@ -4115,8 +4312,19 @@
     autoSortItems();
     renderGroups();
     state.items.forEach((it,idx)=>{ if (it.lat!=null&&it.lon!=null) upsertMarker(it, idx); });
-    const b = markerLayer.getBounds(); if (b.isValid()) map.fitBounds(b.pad(0.2));
+    const bounds = markerLayer.getBounds();
+    if (bounds.isValid()) {
+      if (isMapContainerVisible()) {
+        map.fitBounds(bounds.pad(0.2));
+        mapNeedsFitOnNextShow = false;
+      } else {
+        mapNeedsFitOnNextShow = true;
+      }
+    } else {
+      mapNeedsFitOnNextShow = false;
+    }
     updateUndoButton();
+    scheduleLayoutMetricsUpdate();
   }
 
   (async function start(){
@@ -4126,6 +4334,7 @@
       applyThemeVariables();
       applyPanelSizes();
       applyPanelSticky();
+      initResponsiveLayout();
       updateUndoButton();
 
       // tile layer
