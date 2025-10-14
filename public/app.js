@@ -2619,105 +2619,174 @@
     }, lifetime);
   }
 
-  async function doOk(id, overrideRound=null){
-    if (!CAN_EDIT) return;
-    const idx = state.items.findIndex(x=>x.id===id);
-    if (idx<0) return;
+  async function persistItemChanges(id, {geocode=false, overrideRound=null} = {}){
+    if (!CAN_EDIT) {
+      return {item: null, index: -1, saveOk: false};
+    }
+    const idx = state.items.findIndex(x => x.id === id);
+    if (idx < 0) {
+      return {item: null, index: -1, saveOk: false};
+    }
     const it = state.items[idx];
-    const prevRound = +it.round || 0;
     const row = state.rowsById.get(id);
-    const okBtn = row?.querySelector('.ok');
     const fields = getFieldDefs();
     const metrics = getMetricDefs();
     const addressFieldId = getAddressFieldId();
     const labelFieldId = getLabelFieldId();
+    const deadlineFieldId = getDeadlineFieldId();
     const addressInput = row?.querySelector(`[data-field="${addressFieldId}"]`);
-    const originalAddress = (addressInput ? addressInput.value : it[addressFieldId] || '').toString().trim();
-    if (!originalAddress){ alert(text('messages.address_required', 'Adj meg teljes címet!')); if (addressInput) addressInput.focus(); return; }
-    if (okBtn){ okBtn.disabled=true; okBtn.textContent='...'; }
-    try{
-      let workingAddress = originalAddress;
-      let g;
+    const okBtn = geocode ? row?.querySelector('.ok') : null;
+    const prevRound = +it.round || 0;
+
+    let workingAddress = (addressInput ? addressInput.value : it[addressFieldId] || '').toString().trim();
+    let geoResult = null;
+
+    if (geocode) {
+      if (!workingAddress) {
+        alert(text('messages.address_required', 'Adj meg teljes címet!'));
+        if (addressInput) addressInput.focus();
+        return {item: it, index: idx, saveOk: false};
+      }
+      if (okBtn) {
+        okBtn.disabled = true;
+        okBtn.textContent = '...';
+      }
       try {
-        g = await geocodeRobust(workingAddress);
-        if (g.cleanedAddress && g.cleanedAddress.trim()) {
-          workingAddress = g.cleanedAddress.trim();
-          if (addressInput) addressInput.value = workingAddress;
-        }
-      } catch (err) {
-        const cleanedAddress = typeof err?.cleanedAddress === 'string' ? err.cleanedAddress.trim() : '';
-        if (cleanedAddress && cleanedAddress !== workingAddress) {
-          workingAddress = cleanedAddress;
-          if (addressInput) addressInput.value = workingAddress;
-        }
-        const postal = typeof err?.postalCode === 'string' ? err.postalCode.trim() : extractPostalCode(workingAddress);
-        const fallbackCity = cityFromDisplay(workingAddress, it.city);
-        if (postal && fallbackCity) {
-          const offerTpl = text(
-            'messages.geocode_offer_postal_city',
-            'Nem sikerült geokódolni a címet. Jelöljük meg csak {city} települést az {postal} irányítószám alapján?'
-          );
-          const offerMsg = format(offerTpl, {city: fallbackCity, postal});
-          if (window.confirm(offerMsg)) {
-            try {
-              const fallbackQuery = `${postal} ${fallbackCity}`;
-              g = await geocodeRobust(fallbackQuery);
-              workingAddress = fallbackCity;
-            } catch (fallbackErr) {
-              console.error('postal city geocode failed', fallbackErr);
+        try {
+          geoResult = await geocodeRobust(workingAddress);
+          if (geoResult.cleanedAddress && geoResult.cleanedAddress.trim()) {
+            workingAddress = geoResult.cleanedAddress.trim();
+            if (addressInput) addressInput.value = workingAddress;
+          }
+        } catch (err) {
+          const cleanedAddress = typeof err?.cleanedAddress === 'string' ? err.cleanedAddress.trim() : '';
+          if (cleanedAddress && cleanedAddress !== workingAddress) {
+            workingAddress = cleanedAddress;
+            if (addressInput) addressInput.value = workingAddress;
+          }
+          const postal = typeof err?.postalCode === 'string' ? err.postalCode.trim() : extractPostalCode(workingAddress);
+          const fallbackCity = cityFromDisplay(workingAddress, it.city);
+          if (postal && fallbackCity) {
+            const offerTpl = text(
+              'messages.geocode_offer_postal_city',
+              'Nem sikerült geokódolni a címet. Jelöljük meg csak {city} települést az {postal} irányítószám alapján?'
+            );
+            const offerMsg = format(offerTpl, {city: fallbackCity, postal});
+            if (window.confirm(offerMsg)) {
+              try {
+                const fallbackQuery = `${postal} ${fallbackCity}`;
+                geoResult = await geocodeRobust(fallbackQuery);
+                workingAddress = fallbackCity;
+                if (addressInput) addressInput.value = workingAddress;
+              } catch (fallbackErr) {
+                console.error('postal city geocode failed', fallbackErr);
+              }
             }
           }
+          if (!geoResult) {
+            throw err;
+          }
         }
-        if (!g) {
-          throw err;
+      } finally {
+        if (okBtn) {
+          okBtn.disabled = false;
+          okBtn.textContent = 'OK';
         }
       }
-      const newRound = (overrideRound!=null) ? overrideRound : (typeof it._pendingRound!=='undefined' ? it._pendingRound : it.round);
-      pushSnapshot();
-      const updated = {...it};
-      fields.forEach(field => {
-        const el = row?.querySelector(`[data-field="${field.id}"]`);
-        if (!el) return;
-        if (field.type === 'number'){
-          const raw = el.value.trim();
-          updated[field.id] = raw === '' ? null : parseFloat(raw);
-        } else if (field.type === 'textarea'){
-          updated[field.id] = el.value.trim();
-        } else {
-          updated[field.id] = el.value.trim();
-        }
-      });
-      metrics.forEach(metric => {
-        const el = row?.querySelector(`[data-field="${metric.id}"]`);
-        if (!el) return;
+    }
+
+    pushSnapshot();
+    const updated = {...it};
+
+    fields.forEach(field => {
+      const el = row?.querySelector(`[data-field="${field.id}"]`);
+      if (!el) return;
+      if (field.type === 'number') {
         const raw = el.value.trim();
-        if (raw === '') updated[metric.id] = null;
-        else {
-          const num = parseFloat(raw);
-          updated[metric.id] = Number.isFinite(num) ? num : null;
-        }
-      });
-      updated[addressFieldId] = workingAddress;
-      if (labelFieldId && updated[labelFieldId] != null) {
-        updated[labelFieldId] = updated[labelFieldId].toString().trim();
+        updated[field.id] = raw === '' ? null : parseFloat(raw);
+      } else if (field.type === 'textarea') {
+        updated[field.id] = el.value.trim();
+      } else {
+        updated[field.id] = el.value.trim();
       }
-      updated.city = g.city || cityFromDisplay(workingAddress, it.city);
-      updated.lat = g.lat;
-      updated.lon = g.lon;
-      updated.round = +newRound || 0;
-      state.items[idx] = updated;
-      delete state.items[idx]._pendingRound;
+    });
+
+    metrics.forEach(metric => {
+      const el = row?.querySelector(`[data-field="${metric.id}"]`);
+      if (!el) return;
+      const raw = el.value.trim();
+      if (raw === '') {
+        updated[metric.id] = null;
+      } else {
+        const num = parseFloat(raw);
+        updated[metric.id] = Number.isFinite(num) ? num : null;
+      }
+    });
+
+    workingAddress = (updated[addressFieldId] ?? '').toString().trim();
+    updated[addressFieldId] = workingAddress;
+    if (labelFieldId && updated[labelFieldId] != null) {
+      updated[labelFieldId] = updated[labelFieldId].toString().trim();
+    }
+
+    if (geocode && geoResult) {
+      const fallbackCity = cityFromDisplay(workingAddress, it.city);
+      updated.city = geoResult.city || fallbackCity;
+      updated.lat = geoResult.lat;
+      updated.lon = geoResult.lon;
+    } else if (!geocode) {
+      updated.city = cityFromDisplay(workingAddress, it.city);
+    }
+
+    const targetRound = overrideRound != null
+      ? overrideRound
+      : (typeof it._pendingRound !== 'undefined' ? it._pendingRound : updated.round);
+    updated.round = +targetRound || 0;
+
+    state.items[idx] = updated;
+    delete state.items[idx]._pendingRound;
+
+    const cityEl = row?.querySelector('[data-city]');
+    const cityNow = updated.city || '';
+    if (cityEl) {
+      cityEl.textContent = cityNow || '—';
+      cityEl.setAttribute('title', cityNow || '—');
+    }
+
+    if (row) {
+      updateRowPlaceholderState(row, updated);
+      updateRowHeaderLabel(row, updated);
+      if (deadlineFieldId) {
+        updateDeadlineIndicator(row, updated);
+      }
+      updateRowHeaderMeta(row, updated);
+      refreshDeleteButtonState(row, updated);
+    }
+
+    if (geocode || prevRound !== (+updated.round || 0)) {
       removeItemFromCustomOrder(prevRound, updated.id);
       maybeAddItemToCustomOrder(+updated.round || 0, updated.id);
-      upsertMarker(state.items[idx], idx);
-      ensureBlankRowInDefaultRound();
-      setCollapsePref(state.items[idx].id, false);
-      await saveAll();
-      if (row) updateRowHeaderMeta(row, state.items[idx]);
-      renderEverything();
-    } finally{
-      if (okBtn){ okBtn.disabled=false; okBtn.textContent='OK'; }
     }
+
+    if (geocode) {
+      upsertMarker(updated, idx);
+      ensureBlankRowInDefaultRound();
+      setCollapsePref(updated.id, false);
+    } else if (updated.lat != null && updated.lon != null) {
+      upsertMarker(updated, idx);
+    }
+
+    const saveOk = await saveAll();
+    if (geocode) {
+      renderEverything();
+    }
+
+    return {item: state.items[idx], index: idx, saveOk};
+  }
+
+  async function doOk(id, overrideRound=null){
+    const result = await persistItemChanges(id, {geocode: true, overrideRound});
+    return result.item;
   }
 
   let activeDragContext = null;
@@ -3089,7 +3158,6 @@
     const fieldInputs = new Map();
     const metricInputs = new Map();
     if (CAN_EDIT) {
-      const fieldsMap = new Map(fields.map(f=>[f.id, f]));
       fields.forEach(field => {
         const el = row.querySelector(`[data-field="${field.id}"]`);
         if (el) fieldInputs.set(field.id, el);
@@ -3102,59 +3170,26 @@
       const okBtn  = row.querySelector('.ok');
       const delBtn = row.querySelector('.del');
 
-      fieldInputs.forEach((inp, fid)=>{
-        inp.addEventListener('change', ()=>{
-          const idx = state.items.findIndex(x=>x.id===it.id);
-          if (idx<0) return;
-          pushSnapshot();
-          const def = fieldsMap.get(fid) || {};
-          let val;
-          if (def.type === 'number'){
-            const trimmed = inp.value.trim();
-            const num = parseFloat(trimmed);
-            val = trimmed==='' || !Number.isFinite(num) ? null : num;
-          } else {
-            val = inp.value.trim();
+      fieldInputs.forEach((inp)=>{
+        inp.addEventListener('change', async ()=>{
+          try {
+            await persistItemChanges(it.id, {geocode: false});
+          } catch (err) {
+            console.error('field change save failed', err);
           }
-          state.items[idx][fid] = val;
-          if (fid === addressFieldId){
-            const cityNow = cityFromDisplay(state.items[idx][fid], state.items[idx].city);
-            state.items[idx].city = cityNow;
-            const cityEl = row.querySelector('[data-city]');
-            if (cityEl){
-              cityEl.textContent = cityNow || '—';
-              cityEl.setAttribute('title', cityNow || '—');
-            }
-            refreshDeleteButtonState(row, state.items[idx]);
-          }
-          updateRowPlaceholderState(row, state.items[idx]);
-          updateRowHeaderLabel(row, state.items[idx]);
-          if (fid === deadlineFieldId){
-            updateDeadlineIndicator(row, state.items[idx]);
-          }
-          upsertMarker(state.items[idx], idx);
-          saveAll();
-          updateRowHeaderMeta(row, state.items[idx]);
         });
       });
 
-      metricInputs.forEach((inp, fid)=>{
-        inp.addEventListener('change', ()=>{
-          const idx = state.items.findIndex(x=>x.id===it.id);
-          if (idx<0) return;
-          pushSnapshot();
-          const raw = inp.value.trim();
-          if (raw==='') state.items[idx][fid] = null;
-          else {
-            const num = parseFloat(raw);
-            state.items[idx][fid] = Number.isFinite(num) ? num : null;
+      metricInputs.forEach((inp)=>{
+        inp.addEventListener('change', async ()=>{
+          try {
+            const result = await persistItemChanges(it.id, {geocode: false});
+            if (result.item) {
+              renderGroupHeaderTotalsForRound(+result.item.round || 0);
+            }
+          } catch (err) {
+            console.error('metric change save failed', err);
           }
-          updateRowPlaceholderState(row, state.items[idx]);
-          updateRowHeaderLabel(row, state.items[idx]);
-          upsertMarker(state.items[idx], idx);
-          saveAll();
-          renderGroupHeaderTotalsForRound(+state.items[idx].round||0);
-          updateRowHeaderMeta(row, state.items[idx]);
         });
       });
 
