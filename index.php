@@ -221,7 +221,7 @@ $LOGOUT_TOKEN = csrf_get_token();
         if (!empty($toolbarFeatures['undo']) && !empty($CFG['history']['undo_enabled'])) {
           $toolbarItems['undo'] = '<button id="undoBtn" title="' . htmlspecialchars($toolbarText['undo']['title'] ?? '', ENT_QUOTES) . '" disabled>' . htmlspecialchars($toolbarText['undo']['label'] ?? 'Visszavonás', ENT_QUOTES) . '</button>';
         }
-        $toolbarItems['pin_counter'] = '<span class="toolbar-pin-counter" title="' . htmlspecialchars($badgeTitle, ENT_QUOTES) . '">' . htmlspecialchars($badgeText, ENT_QUOTES) . ' <span id="pinCount" class="badge">0</span></span>';
+        $toolbarItems['pin_counter'] = '<span class="toolbar-pin-counter" title="' . htmlspecialchars($badgeTitle, ENT_QUOTES) . '"><span class="toolbar-pin-counter-label">' . htmlspecialchars($badgeText, ENT_QUOTES) . '</span> <span id="pinCount" class="badge">0</span></span>';
 
         $validToolbarKeys = ['expand_all', 'collapse_all', 'menu', 'undo', 'pin_counter'];
         $toolbarOrderCfg = $CFG['ui']['toolbar']['order'] ?? [];
@@ -264,9 +264,11 @@ $LOGOUT_TOKEN = csrf_get_token();
         <?php endif; ?>
       </div>
     </div>
-    <div id="newAddress" class="new-address-container"></div>
-    <div id="groups" class="groups"></div>
-    <img id="devlogo" src="pic/devlogo.webp">
+    <div id="panelContent" class="panel-content">
+      <div id="newAddress" class="new-address-container"></div>
+      <div id="groups" class="groups"></div>
+      <img id="devlogo" src="pic/devlogo.webp">
+    </div>
   </aside>
   <main id="map"></main>
 </div>
