@@ -51,9 +51,22 @@
     }
   })();
   const viewSwitchButtons = new Map();
+  const ROUTE_CACHE_STORAGE_KEY = 'road_route_cache_v2';
+  const routingState = {
+    cacheLoaded: false,
+    cache: new Map(),
+    perRound: new Map(),
+    pending: new Map(),
+    storageTimer: null,
+    renderTimer: null,
+    layerByRound: new Map(),
+    statusTotals: {distance: null, duration: null},
+    statusEl: null
+  };
   let pendingMapResize = null;
   let mobileLayoutFrame = null;
   let mapRef = null;
+  let routeLayer = null;
   let quickSearchClearBtn = null;
   const DEFAULT_MAP_BOUNDS = L.latLngBounds(
     L.latLng(45.6, 16.0),
@@ -1433,9 +1446,60 @@
   // ======= MAP
   const map = L.map('map',{zoomControl:true, preferCanvas:true});
   mapRef = map;
+  const routePane = map.createPane('routePane');
+  if (routePane && routePane.style) {
+    routePane.style.zIndex = '350';
+  }
+  routeLayer = L.featureGroup({pane:'routePane'}).addTo(map);
   const markerLayer = L.featureGroup().addTo(map);
+  const mapContainerEl = document.getElementById('map');
+  if (mapContainerEl) {
+    const statusEl = document.createElement('div');
+    statusEl.className = 'route-status';
+    statusEl.setAttribute('role', 'status');
+    statusEl.setAttribute('aria-live', 'polite');
+    statusEl.dataset.visible = 'false';
+    mapContainerEl.appendChild(statusEl);
+    routingState.statusEl = statusEl;
+    updateRouteStatusBar();
+  }
   let markerOverlapRefreshTimer = null;
   function updatePinCount(){ if (pinCountEl) pinCountEl.textContent = markerLayer.getLayers().length.toString(); }
+
+  function updateRouteStatusBar(){
+    const el = routingState.statusEl;
+    if (!el) return;
+    const distance = routingState.statusTotals?.distance;
+    const duration = routingState.statusTotals?.duration;
+    if (!Number.isFinite(distance) || distance <= 0 || !Number.isFinite(duration) || duration <= 0) {
+      el.dataset.visible = 'false';
+      el.textContent = '';
+      return;
+    }
+    const distLabel = formatDistanceShort(distance);
+    const durLabel = formatDurationShort(duration);
+    const template = text('routing.status_total', 'Összesen: {distance} · {duration}');
+    el.textContent = format(template, {distance: distLabel, duration: durLabel});
+    el.dataset.visible = 'true';
+  }
+
+  function formatDistanceShort(meters){
+    if (!Number.isFinite(meters) || meters <= 0) return '0 km';
+    const km = meters / 1000;
+    if (km >= 100) return `${km.toFixed(0)} km`;
+    if (km >= 10) return `${km.toFixed(1)} km`;
+    return `${km.toFixed(2)} km`;
+  }
+
+  function formatDurationShort(seconds){
+    if (!Number.isFinite(seconds) || seconds <= 0) return '0 p';
+    const totalMinutes = Math.max(1, Math.round(seconds / 60));
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    if (hours > 0 && minutes > 0) return `${hours} ó ${minutes} p`;
+    if (hours > 0) return `${hours} ó`;
+    return `${minutes} p`;
+  }
 
   function refreshMarkerOverlapIndicators(){
     const perId = new Map();
@@ -2137,6 +2201,841 @@
     return {changed, saveOk, failed, attempted, failures};
   }
 
+  // ======= ROUTING (OSRM alapú rendezés)
+  function loadRouteCacheFromStorage(){
+    if (routingState.cacheLoaded) return;
+    routingState.cacheLoaded = true;
+    if (!canUseLocalStorage) return;
+    const storage = routeCacheStorage();
+    if (!storage) return;
+    try {
+      const raw = storage.getItem(ROUTE_CACHE_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return;
+      const ttl = routeCacheTtl();
+      const now = Date.now();
+      parsed.forEach(entry => {
+        if (!Array.isArray(entry) || entry.length !== 2) return;
+        const [key, value] = entry;
+        if (typeof key !== 'string') return;
+        const plan = sanitizeStoredPlan(value);
+        if (!plan) return;
+        if (isPlanExpired(plan, ttl, now)) return;
+        routingState.cache.set(key, plan);
+      });
+    } catch (err) {
+      console.warn('route cache load failed', err);
+      routingState.cache.clear();
+    }
+  }
+
+  function routeCacheStorage(){
+    if (!canUseLocalStorage) return null;
+    const prefRaw = cfg('routing.cache.storage', cfg('routing.road_sort.storage', 'local'));
+    const pref = typeof prefRaw === 'string' ? prefRaw.trim().toLowerCase() : 'local';
+    try {
+      if (pref === 'session' && window.sessionStorage) {
+        return window.sessionStorage;
+      }
+    } catch (err) {}
+    try {
+      return window.localStorage;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function persistRouteCacheSoon(){
+    if (!routingState.cacheLoaded) return;
+    if (routingState.storageTimer != null) return;
+    routingState.storageTimer = window.setTimeout(()=>{
+      routingState.storageTimer = null;
+      persistRouteCacheNow();
+    }, 400);
+  }
+
+  function persistRouteCacheNow(){
+    if (!routingState.cacheLoaded || !canUseLocalStorage) return;
+    const storage = routeCacheStorage();
+    if (!storage) return;
+    try {
+      const ttl = routeCacheTtl();
+      const now = Date.now();
+      const entries = Array.from(routingState.cache.entries())
+        .filter(([, plan]) => !isPlanExpired(plan, ttl, now));
+      storage.setItem(ROUTE_CACHE_STORAGE_KEY, JSON.stringify(entries));
+    } catch (err) {
+      console.warn('route cache persist failed', err);
+    }
+  }
+
+  function trimRouteCache(limit){
+    const max = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 48;
+    const ttl = routeCacheTtl();
+    const now = Date.now();
+    if (Number.isFinite(ttl) && ttl > 0) {
+      const staleKeys = [];
+      routingState.cache.forEach((plan, key) => {
+        if (isPlanExpired(plan, ttl, now)) staleKeys.push(key);
+      });
+      staleKeys.forEach(key => routingState.cache.delete(key));
+    }
+    while (routingState.cache.size > max) {
+      const firstKey = routingState.cache.keys().next();
+      if (firstKey.done) break;
+      routingState.cache.delete(firstKey.value);
+    }
+  }
+
+  function routeCacheTtl(){
+    const ttl = cfgNumber('routing.cache.ttl_ms', null);
+    if (Number.isFinite(ttl) && ttl >= 0) return ttl;
+    const legacy = cfgNumber('routing.road_sort.cache_ttl_ms', null);
+    if (Number.isFinite(legacy) && legacy >= 0) return legacy;
+    return 21600000;
+  }
+
+  function isPlanExpired(plan, ttl, now){
+    if (!plan) return true;
+    const limit = Number.isFinite(ttl) ? ttl : routeCacheTtl();
+    if (!Number.isFinite(limit) || limit <= 0) return false;
+    const fetchedAt = Number.isFinite(plan.fetchedAt) ? Number(plan.fetchedAt) : null;
+    if (!Number.isFinite(fetchedAt)) return true;
+    const ref = Number.isFinite(now) ? Number(now) : Date.now();
+    return (ref - fetchedAt) > limit;
+  }
+
+  function sanitizeStoredPlan(raw){
+    if (!raw || typeof raw !== 'object') return null;
+    const order = Array.isArray(raw.orderIds)
+      ? raw.orderIds.filter(id => id != null)
+      : null;
+    if (!order || !order.length) return null;
+    const plan = {
+      orderIds: order.slice(),
+      distance: Number.isFinite(raw.distance) ? Number(raw.distance) : null,
+      duration: Number.isFinite(raw.duration) ? Number(raw.duration) : null,
+      geometry: sanitizeGeometry(raw.geometry),
+      source: typeof raw.source === 'string' ? raw.source : 'cached',
+      fetchedAt: Number.isFinite(raw.fetchedAt) ? Number(raw.fetchedAt) : Date.now()
+    };
+    return plan;
+  }
+
+  function sanitizeGeometry(raw){
+    if (!raw || typeof raw !== 'object') return null;
+    if (raw.type === 'LineString' && Array.isArray(raw.coordinates)) {
+      const coords = raw.coordinates
+        .map(pair => Array.isArray(pair) && pair.length >= 2 ? [Number(pair[0]), Number(pair[1])] : null)
+        .filter(pair => pair && Number.isFinite(pair[0]) && Number.isFinite(pair[1]));
+      return coords.length ? {type:'LineString', coordinates: coords} : null;
+    }
+    if (raw.type === 'MultiLineString' && Array.isArray(raw.coordinates)) {
+      const lines = raw.coordinates.map(line => {
+        if (!Array.isArray(line)) return null;
+        const coords = line
+          .map(pair => Array.isArray(pair) && pair.length >= 2 ? [Number(pair[0]), Number(pair[1])] : null)
+          .filter(pair => pair && Number.isFinite(pair[0]) && Number.isFinite(pair[1]));
+        return coords.length ? coords : null;
+      }).filter(Boolean);
+      if (!lines.length) return null;
+      return {type:'MultiLineString', coordinates: lines};
+    }
+    return null;
+  }
+
+  function roadSortingEnabled(){
+    return cfg('routing.enabled', true) !== false && cfg('routing.road_sort.enabled', true) !== false;
+  }
+
+  function routingReturnToOrigin(){
+    const explicit = cfg('routing.return_to_origin', null);
+    if (explicit != null) return !!explicit;
+    return !!cfg('routing.road_sort.return_to_origin', false);
+  }
+
+  function originIsValid(){
+    const lat = Number(state.ORIGIN?.lat);
+    const lon = Number(state.ORIGIN?.lon);
+    return Number.isFinite(lat) && Number.isFinite(lon);
+  }
+
+  function routeCacheLimit(){
+    const limit = cfgNumber('routing.cache.max_entries', null);
+    if (Number.isFinite(limit) && limit > 0) return limit;
+    const legacy = cfgNumber('routing.road_sort.cache_limit', null);
+    if (Number.isFinite(legacy) && legacy > 0) return legacy;
+    return 48;
+  }
+
+  const routingAdapter = createRoutingAdapter();
+
+  function createRoutingAdapter(){
+    const healthState = {status: 'unknown', checkedAt: 0, pending: null};
+
+    function buildConfig(){
+      const routingCfg = cfg('routing', {}) || {};
+      const legacy = routingCfg.osrm && typeof routingCfg.osrm === 'object' ? routingCfg.osrm : {};
+      const enabled = routingCfg.enabled !== false && cfg('routing.road_sort.enabled', true) !== false;
+      const baseCandidates = [routingCfg.base_url, legacy.base_url].filter(val => typeof val === 'string' && val.trim());
+      const baseUrl = baseCandidates.length ? baseCandidates[0].trim().replace(/\/+$/, '') : '';
+      const profileCandidates = [routingCfg.profile, legacy.profile].filter(val => typeof val === 'string' && val.trim());
+      const profile = (profileCandidates.length ? profileCandidates[0].trim() : 'driving');
+      const timeoutCandidates = [routingCfg.request_timeout_ms, legacy.request_timeout_ms]
+        .map(val => Number(val))
+        .filter(val => Number.isFinite(val) && val > 0);
+      const requestTimeout = timeoutCandidates.length ? timeoutCandidates[0] : 8000;
+      const tripRaw = routingCfg.trip && typeof routingCfg.trip === 'object' ? routingCfg.trip : (legacy.trip && typeof legacy.trip === 'object' ? legacy.trip : {});
+      const tableRaw = routingCfg.table && typeof routingCfg.table === 'object' ? routingCfg.table : (legacy.table && typeof legacy.table === 'object' ? legacy.table : {});
+      const routeRaw = routingCfg.route && typeof routingCfg.route === 'object' ? routingCfg.route : (legacy.route && typeof legacy.route === 'object' ? legacy.route : {});
+      const healthRaw = routingCfg.healthcheck && typeof routingCfg.healthcheck === 'object' ? routingCfg.healthcheck : {};
+      return {
+        enabled,
+        baseUrl,
+        profile,
+        requestTimeout,
+        trip: {
+          enabled: tripRaw.enabled !== false,
+          maxSize: Number.isFinite(tripRaw.max_size) ? Math.max(2, Number(tripRaw.max_size)) : 90
+        },
+        table: {
+          enabled: tableRaw.enabled !== false,
+          maxSize: Number.isFinite(tableRaw.max_size) ? Math.max(2, Number(tableRaw.max_size)) : 90
+        },
+        route: {
+          enabled: routeRaw.enabled !== false,
+          maxPoints: Number.isFinite(routeRaw.max_points) ? Math.max(2, Number(routeRaw.max_points)) : 90
+        },
+        health: {
+          path: typeof healthRaw.path === 'string' && healthRaw.path.trim() ? healthRaw.path.trim() : '/health',
+          timeoutMs: Number.isFinite(healthRaw.timeout_ms) ? Math.max(250, Number(healthRaw.timeout_ms)) : 2000,
+          cacheMs: Number.isFinite(healthRaw.cache_ms) ? Math.max(0, Number(healthRaw.cache_ms)) : 60000,
+          retryMs: Number.isFinite(healthRaw.retry_ms) ? Math.max(1000, Number(healthRaw.retry_ms)) : 120000
+        }
+      };
+    }
+
+    function healthUrl(config){
+      const base = config.baseUrl.replace(/\/+$/, '');
+      const path = config.health?.path || '/health';
+      return `${base}${path.startsWith('/') ? path : `/${path}`}`;
+    }
+
+    async function ensureHealthy(config){
+      if (!config.baseUrl) return false;
+      if (!config.health) return true;
+      const now = Date.now();
+      if (healthState.status === 'ok' && now - healthState.checkedAt < config.health.cacheMs) return true;
+      if (healthState.status === 'fail' && now - healthState.checkedAt < config.health.retryMs) return false;
+      if (healthState.pending) return healthState.pending;
+      const url = healthUrl(config);
+      const promise = osrmFetch(url, config.health.timeoutMs, {skipValidation: true})
+        .then(() => {
+          healthState.status = 'ok';
+          healthState.checkedAt = Date.now();
+          return true;
+        })
+        .catch(err => {
+          healthState.status = 'fail';
+          healthState.checkedAt = Date.now();
+          console.warn('OSRM health check failed', err);
+          return false;
+        })
+        .finally(() => {
+          healthState.pending = null;
+        });
+      healthState.pending = promise;
+      return promise;
+    }
+
+    async function planRound({stops, origin, returnToOrigin, expectedLength}){
+      const config = buildConfig();
+      if (!config.enabled || !config.baseUrl) return null;
+      if (!Array.isArray(stops) || !stops.length) return null;
+      const healthy = await ensureHealthy(config);
+      if (!healthy) return null;
+      return fetchRoutePlan(stops, origin, returnToOrigin, expectedLength, config);
+    }
+
+    function markFailure(){
+      healthState.status = 'fail';
+      healthState.checkedAt = Date.now();
+    }
+
+    return {planRound, markFailure, getConfig: buildConfig, ensureHealthy};
+  }
+
+  function buildRouteSignature(rid, stops, origin, returnToOrigin){
+    const parts = [String(rid), Number(origin.lat).toFixed(6), Number(origin.lon).toFixed(6), returnToOrigin ? '1' : '0'];
+    const sortedStops = stops.slice().sort((a, b) => {
+      const aId = a.id != null ? String(a.id) : '';
+      const bId = b.id != null ? String(b.id) : '';
+      if (aId < bId) return -1;
+      if (aId > bId) return 1;
+      return 0;
+    });
+    sortedStops.forEach(stop => {
+      const lat = Number(stop.lat);
+      const lon = Number(stop.lon);
+      parts.push(`${stop.id ?? ''}@${lat.toFixed(6)},${lon.toFixed(6)}`);
+    });
+    return parts.join('|');
+  }
+
+  function getRoutePlanForRound(rid, entries){
+    if (!roadSortingEnabled()) {
+      clearRoutePlan(rid);
+      return null;
+    }
+    if (!originIsValid()) return null;
+    const stops = entries.map(entry => {
+      const lat = Number(entry.it.lat);
+      const lon = Number(entry.it.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+      return {id: entry.it.id, lat, lon};
+    }).filter(Boolean);
+    if (!stops.length) {
+      clearRoutePlan(rid);
+      return null;
+    }
+    const returnToOrigin = routingReturnToOrigin();
+    const origin = {lat: Number(state.ORIGIN.lat), lon: Number(state.ORIGIN.lon)};
+    const signature = buildRouteSignature(rid, stops, origin, returnToOrigin);
+    loadRouteCacheFromStorage();
+    const ttl = routeCacheTtl();
+    const now = Date.now();
+    let cachedPlan = routingState.cache.get(signature) || null;
+    if (cachedPlan && isPlanExpired(cachedPlan, ttl, now)) {
+      routingState.cache.delete(signature);
+      cachedPlan = null;
+    }
+    const expectedLength = stops.length;
+    let roundState = routingState.perRound.get(rid);
+    if (!roundState || roundState.signature !== signature) {
+      const plan = cachedPlan && Array.isArray(cachedPlan.orderIds) && cachedPlan.orderIds.length === expectedLength ? cachedPlan : null;
+      routingState.perRound.set(rid, {signature, plan});
+      roundState = routingState.perRound.get(rid);
+      if (!routingState.pending.has(signature)) {
+        ensureRoutePlanAsync(signature, rid, stops, origin, returnToOrigin, expectedLength);
+      }
+    } else {
+      if (roundState.plan && isPlanExpired(roundState.plan, ttl, now)) {
+        roundState.plan = null;
+      }
+      if (!roundState.plan && cachedPlan && Array.isArray(cachedPlan.orderIds) && cachedPlan.orderIds.length === expectedLength) {
+        roundState.plan = cachedPlan;
+        updateRoutingTotals();
+      }
+    }
+    const plan = roundState?.plan;
+    if (plan && Array.isArray(plan.orderIds) && plan.orderIds.length === expectedLength) {
+      return plan;
+    }
+    return null;
+  }
+
+  function ensureRoutePlanAsync(signature, rid, stops, origin, returnToOrigin, expectedLength){
+    const promise = routingAdapter.planRound({stops, origin, returnToOrigin, expectedLength})
+      .then(plan => {
+        if (!plan) return;
+        if (!Array.isArray(plan.orderIds)) plan.orderIds = [];
+        const stopIds = stops.map(stop => stop.id);
+        const unique = Array.from(new Set(plan.orderIds.filter(id => id != null)));
+        const missing = stopIds.filter(id => !unique.includes(id));
+        if (missing.length) unique.push(...missing);
+        plan.orderIds = unique;
+        const current = routingState.perRound.get(rid);
+        if (!current || current.signature !== signature) return;
+        routingState.cache.set(signature, plan);
+        trimRouteCache(routeCacheLimit());
+        routingState.perRound.set(rid, {signature, plan});
+        updateRoutingTotals();
+        persistRouteCacheSoon();
+        scheduleRouteRender();
+      })
+      .catch(err => {
+        console.warn('OSRM route planning failed', err);
+        if (typeof routingAdapter.markFailure === 'function') {
+          routingAdapter.markFailure();
+        }
+      })
+      .finally(()=>{
+        routingState.pending.delete(signature);
+      });
+    routingState.pending.set(signature, promise);
+  }
+
+  function scheduleRouteRender(){
+    if (routingState.renderTimer != null) return;
+    routingState.renderTimer = window.setTimeout(()=>{
+      routingState.renderTimer = null;
+      try {
+        renderEverything();
+      } catch (err) {
+        console.error(err);
+      }
+    }, 0);
+  }
+
+  function clearRoutePlan(rid){
+    if (!routingState.perRound.has(rid)) return;
+    routingState.perRound.delete(rid);
+    const layer = routingState.layerByRound.get(rid);
+    if (layer && routeLayer) {
+      routeLayer.removeLayer(layer);
+    }
+    routingState.layerByRound.delete(rid);
+    updateRoutingTotals();
+  }
+
+  async function fetchRoutePlan(stops, origin, returnToOrigin, expectedLength, config){
+    let plan = null;
+    if (config.trip?.enabled !== false) {
+      try {
+        plan = await planRoadOrderWithTrip(origin, stops, returnToOrigin, config);
+      } catch (err) {
+        console.warn('OSRM trip failed', err);
+      }
+    }
+    if ((!plan || !plan.orderIds || plan.orderIds.length !== expectedLength) && config.table?.enabled !== false) {
+      try {
+        plan = await planRoadOrderWithTable(origin, stops, returnToOrigin, config);
+      } catch (err) {
+        console.warn('OSRM table fallback failed', err);
+      }
+    }
+    if (plan) plan.fetchedAt = Date.now();
+    return plan;
+  }
+
+  async function planRoadOrderWithTrip(origin, stops, returnToOrigin, config){
+    if (!stops.length) return null;
+    const maxSize = Number.isFinite(config.trip?.maxSize) ? Math.max(2, config.trip.maxSize) : 0;
+    if (maxSize && stops.length + 1 > maxSize) {
+      return planRoadOrderTripBatched(origin, stops, returnToOrigin, config, maxSize);
+    }
+    return planRoadOrderTripSingle(origin, stops, returnToOrigin, config);
+  }
+
+  async function planRoadOrderTripSingle(origin, stops, returnToOrigin, config){
+    if (!stops.length) return null;
+    const result = await performTripRequest({origin, stops, returnToOrigin, config});
+    if (!result) return null;
+    const stopIds = stops.map(stop => stop.id);
+    const unique = Array.from(new Set((result.orderIds || []).filter(id => id != null)));
+    const missing = stopIds.filter(id => !unique.includes(id));
+    if (missing.length) unique.push(...missing);
+    return {
+      source: 'trip',
+      orderIds: unique,
+      geometry: result.geometry || null,
+      distance: Number.isFinite(result.distance) ? Number(result.distance) : null,
+      duration: Number.isFinite(result.duration) ? Number(result.duration) : null,
+      fetchedAt: Date.now()
+    };
+  }
+
+  async function planRoadOrderTripBatched(origin, stops, returnToOrigin, config, maxSize){
+    const chunkSize = Math.max(1, maxSize - 1);
+    const queue = stops.slice();
+    const orderIds = [];
+    const stopMap = new Map(stops.map(stop => [stop.id, stop]));
+    let totalGeometry = null;
+    let totalDistance = 0;
+    let totalDuration = 0;
+    let currentOrigin = origin;
+    while (queue.length) {
+      const chunk = queue.splice(0, chunkSize);
+      const plan = await planRoadOrderTripSingle(currentOrigin, chunk, false, config);
+      if (!plan) {
+        chunk.forEach(stop => orderIds.push(stop.id));
+        if (chunk.length) currentOrigin = chunk[chunk.length - 1];
+        continue;
+      }
+      orderIds.push(...plan.orderIds);
+      if (plan.geometry) totalGeometry = mergeLineGeometries(totalGeometry, plan.geometry);
+      if (Number.isFinite(plan.distance)) totalDistance += plan.distance;
+      if (Number.isFinite(plan.duration)) totalDuration += plan.duration;
+      const lastId = plan.orderIds[plan.orderIds.length - 1];
+      if (lastId && stopMap.has(lastId)) {
+        currentOrigin = stopMap.get(lastId);
+      }
+    }
+    const unique = Array.from(new Set(orderIds.filter(id => id != null)));
+    const missing = stops.map(stop => stop.id).filter(id => !unique.includes(id));
+    if (missing.length) unique.push(...missing);
+    if (returnToOrigin && unique.length) {
+      const lastStop = stopMap.get(unique[unique.length - 1]);
+      if (lastStop) {
+        const backLeg = await performRouteRequest({start: lastStop, orderedStops: [], end: origin, config});
+        if (backLeg) {
+          if (backLeg.geometry) totalGeometry = mergeLineGeometries(totalGeometry, backLeg.geometry);
+          if (Number.isFinite(backLeg.distance)) totalDistance += backLeg.distance;
+          if (Number.isFinite(backLeg.duration)) totalDuration += backLeg.duration;
+        }
+      }
+    }
+    return {
+      source: 'trip',
+      orderIds: unique,
+      geometry: totalGeometry,
+      distance: unique.length ? totalDistance : null,
+      duration: unique.length ? totalDuration : null,
+      fetchedAt: Date.now()
+    };
+  }
+
+  async function planRoadOrderWithTable(origin, stops, returnToOrigin, config){
+    if (!stops.length) return null;
+    const maxSize = Number.isFinite(config.table?.maxSize) ? Math.max(2, config.table.maxSize) : 0;
+    if (maxSize && stops.length + 1 > maxSize) {
+      return planRoadOrderTableBatched(origin, stops, returnToOrigin, config, maxSize);
+    }
+    return planRoadOrderTableSingle(origin, stops, returnToOrigin, config);
+  }
+
+  async function planRoadOrderTableSingle(origin, stops, returnToOrigin, config){
+    const matrix = await performTableRequest({origin, stops, config});
+    if (!matrix) return null;
+    const orderIdx = computeNearestNeighborOrder(matrix.durations);
+    const orderIds = orderIdx.map(idx => stops[idx - 1]?.id).filter(id => id != null);
+    const stopMap = new Map(stops.map(stop => [stop.id, stop]));
+    const orderedStops = orderIds.map(id => stopMap.get(id)).filter(Boolean);
+    let geometryInfo = null;
+    if (config.route?.enabled !== false) {
+      geometryInfo = await performRouteRequest({start: origin, orderedStops, end: returnToOrigin ? origin : null, config});
+    }
+    const distanceFromMatrix = computeTotalFromMatrix(matrix.distances, orderIdx, returnToOrigin);
+    const durationFromMatrix = computeTotalFromMatrix(matrix.durations, orderIdx, returnToOrigin);
+    const missing = stops.map(stop => stop.id).filter(id => !orderIds.includes(id));
+    if (missing.length) orderIds.push(...missing);
+    return {
+      source: 'table',
+      orderIds,
+      geometry: geometryInfo?.geometry || null,
+      distance: Number.isFinite(geometryInfo?.distance) ? geometryInfo.distance : (Number.isFinite(distanceFromMatrix) ? distanceFromMatrix : null),
+      duration: Number.isFinite(geometryInfo?.duration) ? geometryInfo.duration : (Number.isFinite(durationFromMatrix) ? durationFromMatrix : null),
+      fetchedAt: Date.now()
+    };
+  }
+
+  async function planRoadOrderTableBatched(origin, stops, returnToOrigin, config, maxSize){
+    const chunkSize = Math.max(1, maxSize - 1);
+    const queue = stops.slice();
+    const orderIds = [];
+    const stopMap = new Map(stops.map(stop => [stop.id, stop]));
+    let totalGeometry = null;
+    let totalDistance = 0;
+    let totalDuration = 0;
+    let currentOrigin = origin;
+    while (queue.length) {
+      const chunk = queue.splice(0, chunkSize);
+      const plan = await planRoadOrderTableSingle(currentOrigin, chunk, false, config);
+      if (!plan) {
+        chunk.forEach(stop => orderIds.push(stop.id));
+        if (chunk.length) currentOrigin = chunk[chunk.length - 1];
+        continue;
+      }
+      orderIds.push(...plan.orderIds);
+      if (plan.geometry) totalGeometry = mergeLineGeometries(totalGeometry, plan.geometry);
+      if (Number.isFinite(plan.distance)) totalDistance += plan.distance;
+      if (Number.isFinite(plan.duration)) totalDuration += plan.duration;
+      const lastId = plan.orderIds[plan.orderIds.length - 1];
+      if (lastId && stopMap.has(lastId)) {
+        currentOrigin = stopMap.get(lastId);
+      }
+    }
+    const unique = Array.from(new Set(orderIds.filter(id => id != null)));
+    const missing = stops.map(stop => stop.id).filter(id => !unique.includes(id));
+    if (missing.length) unique.push(...missing);
+    if (returnToOrigin && unique.length) {
+      const lastStop = stopMap.get(unique[unique.length - 1]);
+      if (lastStop) {
+        const backLeg = await performRouteRequest({start: lastStop, orderedStops: [], end: origin, config});
+        if (backLeg) {
+          if (backLeg.geometry) totalGeometry = mergeLineGeometries(totalGeometry, backLeg.geometry);
+          if (Number.isFinite(backLeg.distance)) totalDistance += backLeg.distance;
+          if (Number.isFinite(backLeg.duration)) totalDuration += backLeg.duration;
+        }
+      }
+    }
+    return {
+      source: 'table',
+      orderIds: unique,
+      geometry: totalGeometry,
+      distance: unique.length ? totalDistance : null,
+      duration: unique.length ? totalDuration : null,
+      fetchedAt: Date.now()
+    };
+  }
+
+  async function performTripRequest({origin, stops, returnToOrigin, config}){
+    if (!stops.length) return null;
+    const coordParts = [];
+    const meta = [];
+    coordParts.push(`${Number(origin.lon)},${Number(origin.lat)}`);
+    meta.push({type:'origin'});
+    stops.forEach(stop => {
+      coordParts.push(`${Number(stop.lon)},${Number(stop.lat)}`);
+      meta.push({type:'item', id: stop.id});
+    });
+    if (returnToOrigin) {
+      coordParts.push(`${Number(origin.lon)},${Number(origin.lat)}`);
+      meta.push({type:'origin_end'});
+    }
+    const params = new URLSearchParams();
+    params.set('overview', 'full');
+    params.set('geometries', 'geojson');
+    params.set('steps', 'false');
+    params.set('source', 'first');
+    if (returnToOrigin) params.set('destination', 'last');
+    params.set('roundtrip', 'false');
+    const url = `${config.baseUrl}/trip/v1/${encodeURIComponent(config.profile)}/${coordParts.join(';')}?${params.toString()}`;
+    const data = await osrmFetch(url, config.requestTimeout);
+    if (!data) return null;
+    const trip = Array.isArray(data.trips) ? data.trips[0] : null;
+    if (!trip) return null;
+    const waypoints = Array.isArray(data.waypoints) ? data.waypoints : [];
+    const ordered = waypoints
+      .map((wp, idx) => ({wp, meta: meta[idx]}))
+      .filter(entry => entry.meta && entry.meta.type === 'item')
+      .sort((a, b) => a.wp.waypoint_index - b.wp.waypoint_index)
+      .map(entry => entry.meta.id)
+      .filter(id => id != null);
+    return {
+      orderIds: ordered,
+      geometry: trip.geometry || null,
+      distance: Number.isFinite(trip.distance) ? Number(trip.distance) : null,
+      duration: Number.isFinite(trip.duration) ? Number(trip.duration) : null
+    };
+  }
+
+  async function performTableRequest({origin, stops, config}){
+    if (!stops.length) return null;
+    const coords = [origin].concat(stops).map(pt => `${Number(pt.lon)},${Number(pt.lat)}`).join(';');
+    const params = new URLSearchParams();
+    params.set('annotations', 'duration,distance');
+    const url = `${config.baseUrl}/table/v1/${encodeURIComponent(config.profile)}/${coords}?${params.toString()}`;
+    const data = await osrmFetch(url, config.requestTimeout);
+    if (!data || !Array.isArray(data.durations)) return null;
+    return {
+      durations: data.durations,
+      distances: Array.isArray(data.distances) ? data.distances : null
+    };
+  }
+
+  async function performRouteRequest({start, orderedStops = [], end = null, config}){
+    const points = [start].concat(orderedStops);
+    if (end) points.push(end);
+    const clean = points.map(normalizeCoordinate).filter(Boolean);
+    if (clean.length < 2) return null;
+    const maxPoints = Number.isFinite(config.route?.maxPoints) ? Math.max(2, config.route.maxPoints) : 0;
+    if (maxPoints && clean.length > maxPoints) {
+      let combinedGeometry = null;
+      let totalDistance = 0;
+      let totalDuration = 0;
+      for (let i = 0; i < clean.length - 1; i += (maxPoints - 1)) {
+        const slice = clean.slice(i, Math.min(clean.length, i + maxPoints));
+        if (slice.length < 2) continue;
+        const seg = await performRouteRequestChunk(slice, config);
+        if (!seg) continue;
+        if (seg.geometry) combinedGeometry = mergeLineGeometries(combinedGeometry, seg.geometry);
+        if (Number.isFinite(seg.distance)) totalDistance += seg.distance;
+        if (Number.isFinite(seg.duration)) totalDuration += seg.duration;
+      }
+      return {
+        geometry: combinedGeometry,
+        distance: totalDistance || null,
+        duration: totalDuration || null
+      };
+    }
+    return performRouteRequestChunk(clean, config);
+  }
+
+  async function performRouteRequestChunk(points, config){
+    if (!points || points.length < 2) return null;
+    const coordStr = points.map(pt => `${Number(pt.lon)},${Number(pt.lat)}`).join(';');
+    const params = new URLSearchParams();
+    params.set('overview', 'full');
+    params.set('geometries', 'geojson');
+    params.set('steps', 'false');
+    const url = `${config.baseUrl}/route/v1/${encodeURIComponent(config.profile)}/${coordStr}?${params.toString()}`;
+    const data = await osrmFetch(url, config.requestTimeout);
+    if (!data || !Array.isArray(data.routes) || !data.routes.length) return null;
+    const route = data.routes[0];
+    return {
+      geometry: route.geometry || null,
+      distance: Number.isFinite(route.distance) ? Number(route.distance) : null,
+      duration: Number.isFinite(route.duration) ? Number(route.duration) : null
+    };
+  }
+
+  async function osrmFetch(url, timeout, options = {}){
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    let timer = null;
+    if (controller && Number.isFinite(timeout) && timeout > 0) {
+      timer = window.setTimeout(()=>{ controller.abort(); }, timeout);
+    }
+    try {
+      const response = await fetch(url, {signal: controller?.signal});
+      const text = await response.text();
+      let data = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch (err) {
+        throw new Error('osrm_invalid_json');
+      }
+      if (!response.ok) {
+        throw Object.assign(new Error(`osrm_http_${response.status}`), {response: data});
+      }
+      if (!options.skipValidation && data && typeof data.code === 'string' && data.code !== 'Ok') {
+        throw Object.assign(new Error(`osrm_error_${data.code}`), {response: data});
+      }
+      return data;
+    } finally {
+      if (timer != null) window.clearTimeout(timer);
+    }
+  }
+
+  function computeNearestNeighborOrder(matrix){
+    if (!Array.isArray(matrix) || !matrix.length) return [];
+    const size = matrix.length;
+    const visited = new Set();
+    const order = [];
+    let current = 0;
+    while (order.length < size - 1) {
+      let bestIdx = null;
+      let bestScore = Infinity;
+      for (let i = 1; i < size; i += 1) {
+        if (visited.has(i)) continue;
+        const row = matrix[current];
+        const val = Array.isArray(row) ? row[i] : null;
+        if (!Number.isFinite(val)) continue;
+        if (val < bestScore) {
+          bestScore = val;
+          bestIdx = i;
+        }
+      }
+      if (bestIdx == null) {
+        for (let i = 1; i < size; i += 1) {
+          if (!visited.has(i)) { bestIdx = i; break; }
+        }
+        if (bestIdx == null) break;
+      }
+      visited.add(bestIdx);
+      order.push(bestIdx);
+      current = bestIdx;
+    }
+    for (let i = 1; i < size; i += 1) {
+      if (!visited.has(i)) order.push(i);
+    }
+    return order;
+  }
+
+  function computeTotalFromMatrix(matrix, order, includeReturn){
+    if (!Array.isArray(matrix) || !matrix.length) return null;
+    let total = 0;
+    let prev = 0;
+    order.forEach(idx => {
+      const row = matrix[prev];
+      const val = Array.isArray(row) ? row[idx] : null;
+      if (Number.isFinite(val)) total += val;
+      prev = idx;
+    });
+    if (includeReturn) {
+      const row = matrix[prev];
+      const back = Array.isArray(row) ? row[0] : null;
+      if (Number.isFinite(back)) total += back;
+    }
+    return total;
+  }
+
+  function mergeLineGeometries(baseGeom, additionGeom){
+    const baseLines = geometryToLineArray(baseGeom);
+    const additionLines = geometryToLineArray(additionGeom);
+    if (!additionLines.length) {
+      return baseLines.length ? (baseLines.length === 1 ? {type:'LineString', coordinates: baseLines[0]} : {type:'MultiLineString', coordinates: baseLines}) : null;
+    }
+    const lines = baseLines.length ? baseLines.map(line => line.slice()) : [];
+    additionLines.forEach((line, idx) => {
+      if (!line.length) return;
+      if (lines.length && idx === 0) {
+        const prev = lines[lines.length - 1];
+        if (prev.length && coordsApproximatelyEqual(prev[prev.length - 1], line[0])) {
+          for (let i = 1; i < line.length; i += 1) prev.push(line[i]);
+          return;
+        }
+      }
+      lines.push(line.slice());
+    });
+    if (!lines.length) return null;
+    return lines.length === 1 ? {type:'LineString', coordinates: lines[0]} : {type:'MultiLineString', coordinates: lines};
+  }
+
+  function geometryToLineArray(geometry){
+    if (!geometry || typeof geometry !== 'object') return [];
+    if (geometry.type === 'LineString' && Array.isArray(geometry.coordinates)) {
+      const coords = geometry.coordinates
+        .map(normalizeCoordinatePair)
+        .filter(Boolean);
+      return coords.length ? [coords] : [];
+    }
+    if (geometry.type === 'MultiLineString' && Array.isArray(geometry.coordinates)) {
+      return geometry.coordinates
+        .map(line => Array.isArray(line) ? line.map(normalizeCoordinatePair).filter(Boolean) : null)
+        .filter(line => line && line.length);
+    }
+    return [];
+  }
+
+  function normalizeCoordinatePair(pair){
+    if (!Array.isArray(pair) || pair.length < 2) return null;
+    const lon = Number(pair[0]);
+    const lat = Number(pair[1]);
+    if (!Number.isFinite(lon) || !Number.isFinite(lat)) return null;
+    return [lon, lat];
+  }
+
+  function coordsApproximatelyEqual(a, b){
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length < 2 || b.length < 2) return false;
+    const dx = Math.abs(Number(a[0]) - Number(b[0]));
+    const dy = Math.abs(Number(a[1]) - Number(b[1]));
+    return dx < 1e-5 && dy < 1e-5;
+  }
+
+  function normalizeCoordinate(coord){
+    if (!coord || typeof coord !== 'object') return null;
+    const lat = Number(coord.lat);
+    const lon = Number(coord.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    return {lat, lon};
+  }
+
+  function updateRoutingTotals(){
+    let totalDistance = 0;
+    let totalDuration = 0;
+    let hasDistance = false;
+    let hasDuration = false;
+    routingState.perRound.forEach(entry => {
+      const plan = entry?.plan;
+      if (!plan) return;
+      if (Number.isFinite(plan.distance)) {
+        totalDistance += Number(plan.distance);
+        hasDistance = true;
+      }
+      if (Number.isFinite(plan.duration)) {
+        totalDuration += Number(plan.duration);
+        hasDuration = true;
+      }
+    });
+    routingState.statusTotals = {
+      distance: hasDistance ? totalDistance : null,
+      duration: hasDuration ? totalDuration : null
+    };
+    updateRouteStatusBar();
+  }
+
   // ======= AUTO SORT (kör + körön belül távolság)
   function autoSortItems(){
     if (!cfg('app.auto_sort_by_round', true)) return;
@@ -2163,6 +3062,8 @@
     };
 
     const ordered = [];
+    const activeRounds = new Set(roundIds);
+
     roundIds.forEach(rid => {
       const entries = groups.get(rid) || [];
       const mode = getRoundSortMode(rid);
@@ -2180,48 +3081,77 @@
         });
         const placeholderSorted = placeholders.sort((a,b)=>a.idx-b.idx);
         active.concat(placeholderSorted).forEach(entry => ordered.push(entry.it));
+        clearRoutePlan(rid);
         return;
       }
 
       const withCoords = entries.filter(hasCoords);
       const withoutCoords = entries.filter(entry => !hasCoords(entry));
 
-      const sorted = [];
-      if (withCoords.length){
-        const remaining = withCoords.slice();
-        let currentIdx = 0;
-        let bestStart = Infinity;
-        for (let i=0;i<remaining.length;i++){
-          const candidate = remaining[i];
-          const distRaw = haversineKm(state.ORIGIN.lat, state.ORIGIN.lon, candidate.it.lat, candidate.it.lon);
-          const dist = Number.isFinite(distRaw) ? distRaw : Infinity;
-          if (dist < bestStart){
-            bestStart = dist;
-            currentIdx = i;
-          }
-        }
-        let current = remaining.splice(currentIdx,1)[0];
-        sorted.push(current);
-        while (remaining.length){
-          let nextIdx = 0;
-          let bestDist = Infinity;
-          for (let i=0;i<remaining.length;i++){
-            const candidate = remaining[i];
-            const distRaw = haversineKm(current.it.lat, current.it.lon, candidate.it.lat, candidate.it.lon);
-            const dist = Number.isFinite(distRaw) ? distRaw : Infinity;
-            if (dist < bestDist){
-              bestDist = dist;
-              nextIdx = i;
+      let sortedWithCoords = [];
+      if (withCoords.length) {
+        const plan = getRoutePlanForRound(rid, withCoords);
+        if (plan && Array.isArray(plan.orderIds) && plan.orderIds.length) {
+          const orderIndex = new Map();
+          plan.orderIds.forEach((id, idx) => {
+            if (!orderIndex.has(id)) orderIndex.set(id, idx);
+          });
+          sortedWithCoords = withCoords.slice().sort((a, b) => {
+            const aIdx = orderIndex.has(a.it.id) ? orderIndex.get(a.it.id) : (orderIndex.size + a.idx);
+            const bIdx = orderIndex.has(b.it.id) ? orderIndex.get(b.it.id) : (orderIndex.size + b.idx);
+            if (aIdx !== bIdx) return aIdx - bIdx;
+            return a.idx - b.idx;
+          });
+        } else {
+          const remaining = withCoords.slice();
+          const fallback = [];
+          if (remaining.length) {
+            let currentIdx = 0;
+            let bestStart = Infinity;
+            for (let i = 0; i < remaining.length; i += 1) {
+              const candidate = remaining[i];
+              const distRaw = haversineKm(state.ORIGIN.lat, state.ORIGIN.lon, candidate.it.lat, candidate.it.lon);
+              const dist = Number.isFinite(distRaw) ? distRaw : Infinity;
+              if (dist < bestStart) {
+                bestStart = dist;
+                currentIdx = i;
+              }
+            }
+            let current = remaining.splice(currentIdx, 1)[0];
+            fallback.push(current);
+            while (remaining.length) {
+              let nextIdx = 0;
+              let bestDist = Infinity;
+              for (let i = 0; i < remaining.length; i += 1) {
+                const candidate = remaining[i];
+                const distRaw = haversineKm(current.it.lat, current.it.lon, candidate.it.lat, candidate.it.lon);
+                const dist = Number.isFinite(distRaw) ? distRaw : Infinity;
+                if (dist < bestDist) {
+                  bestDist = dist;
+                  nextIdx = i;
+                }
+              }
+              current = remaining.splice(nextIdx, 1)[0];
+              fallback.push(current);
             }
           }
-          current = remaining.splice(nextIdx,1)[0];
-          sorted.push(current);
+          sortedWithCoords = fallback;
         }
+      } else {
+        clearRoutePlan(rid);
       }
 
-      withoutCoords.sort((a,b)=>a.idx-b.idx);
-      sorted.concat(withoutCoords).forEach(entry => ordered.push(entry.it));
+      const withoutSorted = withoutCoords.sort((a,b)=>a.idx-b.idx);
+      sortedWithCoords.concat(withoutSorted).forEach(entry => ordered.push(entry.it));
     });
+
+    const inactiveRounds = [];
+    routingState.perRound.forEach((_, rid) => {
+      if (!activeRounds.has(rid)) {
+        inactiveRounds.push(rid);
+      }
+    });
+    inactiveRounds.forEach(rid => clearRoutePlan(rid));
 
     state.items = ordered;
   }
@@ -2231,6 +3161,41 @@
   const roundLabel = (r)=> (ROUND_MAP.get(Number(r))?.label) ?? String(r);
   const colorForRound = (r)=> (ROUND_MAP.get(Number(r))?.color) ?? '#374151';
   const isRoundZero = (r)=> Number(r) === 0;
+
+  function updateRouteLayers(){
+    if (!routeLayer) return;
+    const active = new Set();
+    routingState.perRound.forEach((entry, rid) => {
+      const plan = entry?.plan;
+      const existing = routingState.layerByRound.get(rid);
+      if (!plan || !plan.geometry) {
+        if (existing) {
+          routeLayer.removeLayer(existing);
+          routingState.layerByRound.delete(rid);
+        }
+        return;
+      }
+      active.add(rid);
+      if (existing) {
+        routeLayer.removeLayer(existing);
+      }
+      const paneName = routeLayer?.options?.pane;
+      const weight = Math.max(1, cfgNumber('routing.line.width', cfgNumber('routing.road_sort.line_width', 4) || 4) || 4);
+      const layer = L.geoJSON(plan.geometry, {
+        style: () => ({color: colorForRound(rid), weight, opacity: 0.6, lineCap: 'round', lineJoin: 'round'}),
+        pane: paneName,
+        interactive: false
+      });
+      layer.addTo(routeLayer);
+      routingState.layerByRound.set(rid, layer);
+    });
+    routingState.layerByRound.forEach((layer, rid) => {
+      if (!active.has(rid)) {
+        routeLayer.removeLayer(layer);
+        routingState.layerByRound.delete(rid);
+      }
+    });
+  }
 
   function hasBlankInDefaultRound(){
     const addrField = getAddressFieldId();
@@ -4413,7 +5378,21 @@
     autoSortItems();
     renderGroups();
     state.items.forEach((it,idx)=>{ if (it.lat!=null&&it.lon!=null) upsertMarker(it, idx); });
-    const b = markerLayer.getBounds(); if (b.isValid()) map.fitBounds(b.pad(0.2));
+    updateRouteLayers();
+    let combinedBounds = null;
+    const markerBounds = markerLayer.getBounds();
+    if (markerBounds && markerBounds.isValid()) {
+      combinedBounds = markerBounds;
+    }
+    if (routeLayer) {
+      const routeBounds = routeLayer.getBounds();
+      if (routeBounds && routeBounds.isValid()) {
+        combinedBounds = combinedBounds ? combinedBounds.extend(routeBounds) : routeBounds;
+      }
+    }
+    if (combinedBounds && combinedBounds.isValid()) {
+      map.fitBounds(combinedBounds.pad(0.2));
+    }
     updateUndoButton();
   }
 

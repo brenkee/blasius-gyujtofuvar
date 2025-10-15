@@ -13,6 +13,8 @@ Ez a projekt egy fájlalapú gyűjtőfuvar-tervező eszköz, amely mostantól gl
 
 > **Megjegyzés:** Az alkalmazás minden útvonala a konfigurált `base_url` értéket használja. Az egyedi URL-t a `config/base_url.local.json` fájlban állíthatod be (mintát a `config/base_url.example.json` fájl tartalmaz). A fájl a `.gitignore` miatt nem kerül a verziókezelésbe, hiányában az alapértelmezett `"/"` értéket használja a rendszer.
 
+> **Útvonaltervezés:** A közúti sorrendezéshez szükséges OSRM backend indításáról és konfigurációjáról a [README_ROUTING.md](README_ROUTING.md) dokumentumban találsz részletes útmutatót.
+
 A háttér a `data/app.db` SQLite-adatbázisban tárolja az adatokat. Az adatbázist a `scripts/init-db.php` script hozza létre és frissíti, amelyet az alkalmazás induláskor automatikusan meghív, ha a fájl hiányzik. A revíziókezeléshez további fájlok jönnek létre a `temp/` könyvtárban:
 
 - `temp/fuvar_revision.json` – az aktuális globális revíziószám.
@@ -81,8 +83,10 @@ Minden sikeres írás a beállítások szerint automatikus biztonsági mentést 
 
 A körök fejléceiben megadható tervezett dátum és idő, illetve a rendezés módja. A rendezéshez két opció érhető el:
 
-- **Alapértelmezett** – a címek automatikusan a maglódi origótól mért távolság alapján kerülnek sorba.
+- **Alapértelmezett (közúti)** – a címek az OSRM `trip`/`route` szolgáltatására támaszkodva, a konfigurált központból indulva rendeződnek. A kliens a teljes útvonalat kirajzolja a térképen, és egy állapotsávban jelzi az össztávot és az utazási időt. Nagyobb körök esetén a kliens automatikusan batch-eli és cache-eli a hívásokat.
 - **Egyéni** – a címek a felhasználó által megadott drag & drop sorrendet tartják meg. A kör fejlécében és minden cím mellett ikon jelzi, hogy kézzel rendezhető lista áll rendelkezésre.
 
 Az egyéni sorrend bármikor visszaállítható: ha átmenetileg visszaváltunk az alapértelmezett módra, majd ismét az egyénit választjuk, a korábban mentett sorrend változatlanul megmarad. A CSV export és a biztonsági mentések tartalmazzák a kör metaadatait (tervezett időpont, rendezési mód, egyedi sorrend), így az információk külső feldolgozás vagy visszaállítás során is elérhetők.
+
+A közúti sorrendezés kikapcsolásáról, a visszatérésről a központba és a cache finomhangolásáról a [ROAD_ROUTING.md](ROAD_ROUTING.md) dokumentum tartalmaz részleteket.
 

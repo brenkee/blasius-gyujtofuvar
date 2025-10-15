@@ -298,6 +298,37 @@ $CFG_DEFAULT = [
     ]
   ],
   "routing" => [
+    "enabled" => true,
+    "base_url" => 'http://127.0.0.1:5000',
+    "profile" => 'driving',
+    "request_timeout_ms" => 8000,
+    "return_to_origin" => false,
+    "cache" => [
+      "storage" => 'local',
+      "max_entries" => 48,
+      "ttl_ms" => 21600000
+    ],
+    "healthcheck" => [
+      "path" => '/health',
+      "timeout_ms" => 2000,
+      "cache_ms" => 60000,
+      "retry_ms" => 120000
+    ],
+    "trip" => [
+      "enabled" => true,
+      "max_size" => 90
+    ],
+    "table" => [
+      "enabled" => true,
+      "max_size" => 90
+    ],
+    "route" => [
+      "enabled" => true,
+      "max_points" => 90
+    ],
+    "line" => [
+      "width" => 4
+    ],
     "origin" => "Maglód",
     "origin_coordinates" => [
       "lat" => 47.45,
@@ -332,6 +363,9 @@ $CFG_DEFAULT = [
       "sort_mode_custom" => "Egyéni (drag & drop)",
       "sort_mode_custom_hint" => "Fogd és vidd a címeket a sorrend módosításához",
       "custom_sort_handle_hint" => "Fogd meg és húzd a cím átrendezéséhez"
+    ],
+    "routing" => [
+      "status_total" => "Összesen: {distance} · {duration}"
     ],
     "group" => [
       "sum_template" => "Összesen: {parts}",

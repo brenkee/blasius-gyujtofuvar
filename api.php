@@ -257,6 +257,37 @@ if ($action === 'cfg') {
     ],
     "rounds" => array_values($ROUND_MAP),
     "routing" => [
+      "enabled" => !isset($CFG['routing']['enabled']) || !empty($CFG['routing']['enabled']),
+      "base_url" => isset($CFG['routing']['base_url']) ? (string)$CFG['routing']['base_url'] : 'http://127.0.0.1:5000',
+      "profile" => isset($CFG['routing']['profile']) ? (string)$CFG['routing']['profile'] : 'driving',
+      "request_timeout_ms" => isset($CFG['routing']['request_timeout_ms']) ? (int)$CFG['routing']['request_timeout_ms'] : 8000,
+      "return_to_origin" => !empty($CFG['routing']['return_to_origin']),
+      "cache" => [
+        "storage" => isset($CFG['routing']['cache']['storage']) ? (string)$CFG['routing']['cache']['storage'] : 'local',
+        "max_entries" => isset($CFG['routing']['cache']['max_entries']) ? (int)$CFG['routing']['cache']['max_entries'] : 48,
+        "ttl_ms" => isset($CFG['routing']['cache']['ttl_ms']) ? (int)$CFG['routing']['cache']['ttl_ms'] : 21600000
+      ],
+      "healthcheck" => [
+        "path" => isset($CFG['routing']['healthcheck']['path']) ? (string)$CFG['routing']['healthcheck']['path'] : '/health',
+        "timeout_ms" => isset($CFG['routing']['healthcheck']['timeout_ms']) ? (int)$CFG['routing']['healthcheck']['timeout_ms'] : 2000,
+        "cache_ms" => isset($CFG['routing']['healthcheck']['cache_ms']) ? (int)$CFG['routing']['healthcheck']['cache_ms'] : 60000,
+        "retry_ms" => isset($CFG['routing']['healthcheck']['retry_ms']) ? (int)$CFG['routing']['healthcheck']['retry_ms'] : 120000
+      ],
+      "trip" => [
+        "enabled" => !isset($CFG['routing']['trip']['enabled']) || !empty($CFG['routing']['trip']['enabled']),
+        "max_size" => isset($CFG['routing']['trip']['max_size']) ? (int)$CFG['routing']['trip']['max_size'] : 90
+      ],
+      "table" => [
+        "enabled" => !isset($CFG['routing']['table']['enabled']) || !empty($CFG['routing']['table']['enabled']),
+        "max_size" => isset($CFG['routing']['table']['max_size']) ? (int)$CFG['routing']['table']['max_size'] : 90
+      ],
+      "route" => [
+        "enabled" => !isset($CFG['routing']['route']['enabled']) || !empty($CFG['routing']['route']['enabled']),
+        "max_points" => isset($CFG['routing']['route']['max_points']) ? (int)$CFG['routing']['route']['max_points'] : 90
+      ],
+      "line" => [
+        "width" => isset($CFG['routing']['line']['width']) ? (int)$CFG['routing']['line']['width'] : 4
+      ],
       "origin" => $CFG['routing']['origin'] ?? 'Maglód',
       "origin_coordinates" => [
         'lat' => isset($CFG['routing']['origin_coordinates']['lat']) ? (float)$CFG['routing']['origin_coordinates']['lat'] : null,
