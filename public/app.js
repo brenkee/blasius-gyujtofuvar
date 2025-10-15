@@ -3557,6 +3557,25 @@
       const btnNav = groupEl.querySelector('.grp-nav');
       if (btnNav) btnNav.addEventListener('click', ()=>{ openGmapsForRound(rid); });
 
+      const titleEl = groupEl.querySelector('.group-title');
+      if (titleEl instanceof HTMLElement) {
+        titleEl.tabIndex = 0;
+        titleEl.setAttribute('role', 'button');
+        titleEl.setAttribute('data-round-focus', String(rid));
+        const triggerFocus = (event)=>{
+          if (event) event.preventDefault();
+          focusMapOnRound(rid);
+        };
+        titleEl.addEventListener('click', triggerFocus);
+        titleEl.addEventListener('keydown', event => {
+          if (!event) return;
+          const key = event.key;
+          if (key === 'Enter' || key === ' ' || key === 'Spacebar') {
+            triggerFocus(event);
+          }
+        });
+      }
+
       const plannedDateInput = groupEl.querySelector('.planned-date-input');
       if (CAN_CHANGE_ROUND_META && plannedDateInput) {
         plannedDateInput.addEventListener('change', async ()=>{
@@ -4295,6 +4314,52 @@
     if (origin && Number.isFinite(origin.lat) && Number.isFinite(origin.lon)) {
       map.setView([origin.lat, origin.lon], map.getZoom());
     }
+  }
+
+  function focusMapOnRound(rid){
+    const roundId = Number(rid);
+    if (!Number.isFinite(roundId)) return;
+    const coords = state.items
+      .filter(it => (+it.round || 0) === roundId)
+      .map(it => {
+        const lat = Number(it.lat);
+        const lon = Number(it.lon);
+        return Number.isFinite(lat) && Number.isFinite(lon) ? L.latLng(lat, lon) : null;
+      })
+      .filter(Boolean);
+    if (coords.length === 0) return;
+
+    if (state.viewMode !== VIEW_MODES.MAP) {
+      applyViewMode(VIEW_MODES.MAP, {persist: false});
+      requestMapResize();
+    }
+
+    if (coords.length === 1) {
+      const point = coords[0];
+      const mapMaxZoom = typeof map.getMaxZoom === 'function' ? map.getMaxZoom() : undefined;
+      const fallbackZoom = Number.isFinite(mapMaxZoom) ? mapMaxZoom : 17;
+      const desiredZoom = cfgNumber('map.round_focus_single_zoom', fallbackZoom);
+      if (Number.isFinite(desiredZoom)) {
+        map.setView(point, desiredZoom);
+      } else {
+        map.panTo(point);
+      }
+      keepMapWithinBounds();
+      return;
+    }
+
+    const bounds = L.latLngBounds(coords);
+    if (!bounds.isValid()) return;
+    const paddingRatioRaw = cfgNumber('map.round_focus_padding', 0.05);
+    const paddingRatio = Number.isFinite(paddingRatioRaw) ? Math.max(0, paddingRatioRaw) : 0.05;
+    const paddedBounds = bounds.pad(paddingRatio);
+    const fitOpts = {padding: [24, 24]};
+    const maxZoomSetting = cfgNumber('map.round_focus_max_zoom', NaN);
+    if (Number.isFinite(maxZoomSetting) && maxZoomSetting > 0) {
+      fitOpts.maxZoom = maxZoomSetting;
+    }
+    map.fitBounds(paddedBounds, fitOpts);
+    keepMapWithinBounds();
   }
   const expandAllBtn = document.getElementById('expandAll');
   if (expandAllBtn) expandAllBtn.addEventListener('click', expandAllRows);
