@@ -28,7 +28,7 @@ $LOGOUT_TOKEN = csrf_get_token();
     'importCsv' => 'api.php?action=import_csv',
     'exportAll' => 'api.php?action=export',
     'deleteRound' => 'api.php?action=delete_round',
-    'downloadArchive' => 'api.php?action=download_archive',
+    'auditLog' => 'log.php',
     'printAll' => 'print.php',
   ];
   $bootstrapEndpoints = [];
@@ -126,10 +126,10 @@ $LOGOUT_TOKEN = csrf_get_token();
         $hasImportAll = !empty($toolbarFeatures['import_all']);
         $hasExportAll = !empty($toolbarFeatures['export_all']);
         $hasPrintAll = !empty($toolbarFeatures['print_all']);
-        $hasDownloadArchive = !empty($toolbarFeatures['download_archive']);
+        $hasAuditLog = !empty($toolbarFeatures['audit_log']);
         $hasThemeToggle = !empty($toolbarFeatures['theme_toggle']);
         $hasAdminMenuItem = !empty($PERMISSIONS['canManageUsers']);
-        $hasUtilityMenuItems = $hasImportAll || $hasExportAll || $hasPrintAll || $hasDownloadArchive || $hasThemeToggle;
+        $hasUtilityMenuItems = $hasImportAll || $hasExportAll || $hasPrintAll || $hasAuditLog || $hasThemeToggle;
         $hasUserMenuItems = true;
         $toolbarMenuHasItems = $hasUtilityMenuItems || $hasAdminMenuItem || $hasUserMenuItems;
 
@@ -183,9 +183,9 @@ $LOGOUT_TOKEN = csrf_get_token();
                 </button>
                 <?php $menuSectionRendered = true; ?>
               <?php endif; ?>
-              <?php if ($hasDownloadArchive): ?>
-                <button id="downloadArchiveBtn" type="button" title="<?= htmlspecialchars($toolbarText['download_archive']['title'] ?? '') ?>">
-                  <?= htmlspecialchars($toolbarText['download_archive']['label'] ?? 'Archívum letöltése') ?>
+              <?php if ($hasAuditLog): ?>
+                <button id="auditLogBtn" type="button" title="<?= htmlspecialchars($toolbarText['audit_log']['title'] ?? '') ?>">
+                  <?= htmlspecialchars($toolbarText['audit_log']['label'] ?? 'Napló') ?>
                 </button>
                 <?php $menuSectionRendered = true; ?>
               <?php endif; ?>

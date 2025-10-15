@@ -87,7 +87,7 @@ $CFG_DEFAULT = [
       "import_all" => true,
       "export_all" => true,
       "print_all" => true,
-      "download_archive" => true,
+      "audit_log" => true,
       "theme_toggle" => true,
       "undo" => true
     ],
@@ -111,11 +111,11 @@ $CFG_DEFAULT = [
     "data_file" => "data/app.db",
     "export_file" => "backups/fuvar_export.csv",
     "export_download_name" => "fuvar_export.csv",
-    "archive_file" => "temp/fuvar_archive.log",
     "revision_file" => "temp/fuvar_revision.json",
     "change_log_file" => "temp/fuvar_changes.log",
     "lock_file" => "temp/fuvar_state.lock"
   ],
+  "log_retention_days" => 365,
   "map" => [
     "tiles" => [
       "url" => "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
@@ -235,7 +235,7 @@ $CFG_DEFAULT = [
       "import_all" => ["label" => "Import (CSV)", "title" => "Címlista importálása CSV-ből"],
       "export_all" => ["label" => "Export (CSV)", "title" => "Címlista exportálása CSV-be"],
       "print_all" => ["label" => "Nyomtatás", "title" => "Nyomtatás"],
-      "download_archive" => ["label" => "Archívum letöltése", "title" => "Archívum letöltése (TXT)"],
+      "audit_log" => ["label" => "Napló", "title" => "Admin napló megnyitása"],
       "theme_toggle" => ["label" => "🌙 / ☀️", "title" => "Téma váltása"],
       "undo" => ["label" => "Visszavonás", "title" => "Visszavonás"],
       "more_actions" => ["label" => "Menü", "title" => "További műveletek"]
@@ -572,7 +572,6 @@ sort($ROUND_IDS);
 $DATA_FILE       = __DIR__ . '/' . ($CFG['files']['data_file'] ?? 'data/app.db');
 $EXPORT_FILE     = __DIR__ . '/' . ($CFG['files']['export_file'] ?? 'backups/fuvar_export.txt');
 $EXPORT_NAME     = (string)($CFG['files']['export_download_name'] ?? 'fuvar_export.txt');
-$ARCHIVE_FILE    = __DIR__ . '/' . ($CFG['files']['archive_file'] ?? 'temp/fuvar_archive.log');
 $REVISION_FILE   = __DIR__ . '/' . ($CFG['files']['revision_file'] ?? 'temp/fuvar_revision.json');
 $CHANGE_LOG_FILE = __DIR__ . '/' . ($CFG['files']['change_log_file'] ?? 'temp/fuvar_changes.log');
 $STATE_LOCK_FILE = __DIR__ . '/' . ($CFG['files']['lock_file'] ?? 'temp/fuvar_state.lock');
@@ -1540,6 +1539,521 @@ function compute_round_meta_changes(array $oldMeta, array $newMeta) {
   return $events;
 }
 
+function audit_log_action_labels() {
+  return [
+    'item.created' => 'Tétel létrehozása',
+    'item.updated' => 'Tétel módosítása',
+    'item.deleted' => 'Tétel törlése',
+    'round_meta.updated' => 'Kör meta frissítése',
+    'round_meta.cleared' => 'Kör meta törlése',
+    'dataset.import' => 'Import',
+    'dataset.save' => 'Mentés',
+    'dataset.delete_round' => 'Kör törlése',
+  ];
+}
+
+function audit_log_actor_label($user) {
+  $username = trim((string)($user['username'] ?? ''));
+  $roleLabel = auth_role_label($user['role'] ?? null);
+  if ($roleLabel && $username !== '') {
+    return sprintf('%s (%s) felhasználó', $roleLabel, $username);
+  }
+  if ($username !== '') {
+    return sprintf('%s felhasználó', $username);
+  }
+  if ($roleLabel) {
+    return sprintf('%s felhasználó', $roleLabel);
+  }
+  return 'Ismeretlen felhasználó';
+}
+
+function audit_log_field_labels() {
+  static $cache = null;
+  if (is_array($cache)) {
+    return $cache;
+  }
+  global $CFG;
+  $labels = [];
+  $itemsCfg = isset($CFG['items']) && is_array($CFG['items']) ? $CFG['items'] : [];
+  $fields = array_values(array_filter($itemsCfg['fields'] ?? [], function ($f) {
+    return ($f['enabled'] ?? true) !== false;
+  }));
+  foreach ($fields as $field) {
+    $id = isset($field['id']) ? (string)$field['id'] : '';
+    if ($id === '') {
+      continue;
+    }
+    $labels[$id] = (string)($field['label'] ?? $id);
+  }
+  $metrics = array_values(array_filter($itemsCfg['metrics'] ?? [], function ($m) {
+    return ($m['enabled'] ?? true) !== false;
+  }));
+  foreach ($metrics as $metric) {
+    $id = isset($metric['id']) ? (string)$metric['id'] : '';
+    if ($id === '') {
+      continue;
+    }
+    $labels[$id] = (string)($metric['label'] ?? $id);
+  }
+  $labels['round'] = (string)($itemsCfg['round_field']['label'] ?? 'Kör');
+  $defaults = [
+    'id' => 'Azonosító',
+    'address' => 'Cím',
+    'city' => 'Település',
+    'zip' => 'Irányítószám',
+    'note' => 'Megjegyzés',
+    'deadline' => 'Határidő',
+    'lat' => 'Szélesség',
+    'lon' => 'Hosszúság',
+  ];
+  foreach ($defaults as $id => $label) {
+    if (!isset($labels[$id])) {
+      $labels[$id] = $label;
+    }
+  }
+  $cache = $labels;
+  return $cache;
+}
+
+function audit_log_round_meta_labels() {
+  static $cache = null;
+  if (is_array($cache)) {
+    return $cache;
+  }
+  global $CFG;
+  $roundText = isset($CFG['text']['round']) && is_array($CFG['text']['round']) ? $CFG['text']['round'] : [];
+  $cache = [
+    'planned_date' => (string)($roundText['planned_date_label'] ?? 'Tervezett dátum'),
+    'planned_time' => (string)($roundText['planned_time_label'] ?? 'Tervezett idő'),
+    'note' => 'Megjegyzés',
+    'label' => 'Címke',
+  ];
+  return $cache;
+}
+
+function audit_log_format_value($field, $value) {
+  if (is_array($value)) {
+    $json = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    return $json !== false ? $json : '—';
+  }
+  if ($value === null) {
+    return '—';
+  }
+  if (is_bool($value)) {
+    return $value ? 'igen' : 'nem';
+  }
+  if (is_numeric($value)) {
+    if (is_float($value) || strpos((string)$value, '.') !== false) {
+      $formatted = rtrim(rtrim(number_format((float)$value, 6, '.', ''), '0'), '.');
+      return $formatted === '' ? '0' : $formatted;
+    }
+    return (string)$value;
+  }
+  $trimmed = trim((string)$value);
+  if ($trimmed === '') {
+    return '—';
+  }
+  if (in_array($field, ['round', 'round_id'], true)) {
+    global $ROUND_MAP;
+    $rid = (int)$value;
+    $label = $ROUND_MAP[$rid]['label'] ?? (string)$rid;
+    return sprintf('%s (#%d)', $label, $rid);
+  }
+  return $trimmed;
+}
+
+function audit_log_format_item_summary(array $item) {
+  global $CFG, $ROUND_MAP;
+  $itemsCfg = isset($CFG['items']) && is_array($CFG['items']) ? $CFG['items'] : [];
+  $labelFieldId = $itemsCfg['label_field_id'] ?? 'label';
+  $addressFieldId = $itemsCfg['address_field_id'] ?? 'address';
+  $noteFieldId = $itemsCfg['note_field_id'] ?? 'note';
+  $parts = [];
+  foreach ([$labelFieldId, $addressFieldId, $noteFieldId] as $fieldId) {
+    if (!$fieldId) {
+      continue;
+    }
+    $val = isset($item[$fieldId]) ? trim((string)$item[$fieldId]) : '';
+    if ($val !== '') {
+      $parts[] = $val;
+    }
+  }
+  if (empty($parts) && isset($item['id'])) {
+    $parts[] = 'Azonosító: ' . trim((string)$item['id']);
+  }
+  if (isset($item['round'])) {
+    $rid = (int)$item['round'];
+    $roundLabel = $ROUND_MAP[$rid]['label'] ?? (string)$rid;
+    $parts[] = 'Kör: ' . $roundLabel;
+  }
+  return $parts ? implode(', ', $parts) : 'Ismeretlen tétel';
+}
+
+function audit_log_index_items(array $items) {
+  $map = [];
+  foreach ($items as $item) {
+    if (!is_array($item)) {
+      continue;
+    }
+    $id = isset($item['id']) ? (string)$item['id'] : '';
+    if ($id === '') {
+      continue;
+    }
+    $map[$id] = $item;
+  }
+  return $map;
+}
+
+function audit_log_diff_assoc(array $before, array $after) {
+  $keys = array_unique(array_merge(array_keys($before), array_keys($after)));
+  $diffs = [];
+  foreach ($keys as $key) {
+    $old = $before[$key] ?? null;
+    $new = $after[$key] ?? null;
+    if ($old === $new) {
+      continue;
+    }
+    $diffs[$key] = ['before' => $old, 'after' => $new];
+  }
+  return $diffs;
+}
+
+function audit_log_cleanup_old(PDO $pdo) {
+  static $cleaned = false;
+  if ($cleaned) {
+    return;
+  }
+  $cleaned = true;
+  global $CFG;
+  $days = isset($CFG['log_retention_days']) ? (int)$CFG['log_retention_days'] : 0;
+  if ($days <= 0) {
+    return;
+  }
+  try {
+    $cutoff = (new DateTimeImmutable('now', new DateTimeZone('UTC')))->modify(sprintf('-%d days', $days))->format('c');
+    $stmt = $pdo->prepare('DELETE FROM audit_log WHERE created_at < :cutoff');
+    $dbStart = microtime(true);
+    $stmt->execute([':cutoff' => $cutoff]);
+    app_perf_track_db($dbStart);
+  } catch (Throwable $e) {
+    error_log('Audit napló tisztítási hiba: ' . $e->getMessage());
+  }
+}
+
+function audit_log_record($user, $actionKey, $message, array $meta = [], $entity = null, $entityId = null) {
+  $action = trim((string)$actionKey);
+  $text = trim((string)$message);
+  if ($action === '' || $text === '') {
+    return false;
+  }
+  try {
+    $pdo = auth_db();
+  } catch (Throwable $e) {
+    error_log('Audit napló adatbázis hiba: ' . $e->getMessage());
+    return false;
+  }
+  try {
+    $actorId = isset($user['id']) ? (int)$user['id'] : null;
+    if ($actorId !== null && $actorId <= 0) {
+      $actorId = null;
+    }
+    $actorName = trim((string)($user['username'] ?? ''));
+    if ($actorName === '') {
+      $actorName = 'ismeretlen';
+    }
+    $actorRole = auth_user_role($user);
+    $metaPayload = null;
+    if (!empty($meta)) {
+      $encoded = json_encode($meta, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+      if ($encoded !== false) {
+        $metaPayload = $encoded;
+      }
+    }
+    $params = [
+      ':created_at' => gmdate('c'),
+      ':action' => $action,
+      ':actor_id' => $actorId,
+      ':actor_name' => $actorName,
+      ':actor_role' => $actorRole,
+      ':entity' => $entity !== null ? (string)$entity : null,
+      ':entity_id' => $entityId !== null ? (string)$entityId : null,
+      ':message' => $text,
+      ':meta' => $metaPayload,
+    ];
+    $sql = 'INSERT INTO audit_log (created_at, action, actor_id, actor_name, actor_role, entity, entity_id, message, meta)'
+         . ' VALUES (:created_at, :action, :actor_id, :actor_name, :actor_role, :entity, :entity_id, :message, :meta)';
+    $stmt = $pdo->prepare($sql);
+    if ($actorId === null) {
+      $stmt->bindValue(':actor_id', null, PDO::PARAM_NULL);
+    } else {
+      $stmt->bindValue(':actor_id', $actorId, PDO::PARAM_INT);
+    }
+    foreach ([':created_at', ':action', ':actor_name', ':actor_role', ':entity', ':entity_id', ':message', ':meta'] as $param) {
+      if ($param === ':actor_id') {
+        continue;
+      }
+      $value = $params[$param];
+      $type = $value === null ? PDO::PARAM_NULL : PDO::PARAM_STR;
+      $stmt->bindValue($param, $value, $type);
+    }
+    $dbStart = microtime(true);
+    $stmt->execute();
+    app_perf_track_db($dbStart);
+    audit_log_cleanup_old($pdo);
+    return true;
+  } catch (Throwable $e) {
+    error_log('Audit napló bejegyzés mentési hiba: ' . $e->getMessage());
+    return false;
+  }
+}
+
+function audit_log_dataset_events(array $events, array $oldItems, array $newItems, array $oldRoundMeta, array $newRoundMeta, $action, array $actionMeta, $user) {
+  if (!is_array($user) || empty($user)) {
+    return;
+  }
+  global $ROUND_MAP;
+  $actorText = audit_log_actor_label($user);
+  $fieldLabels = audit_log_field_labels();
+  $roundMetaLabels = audit_log_round_meta_labels();
+  $oldMap = audit_log_index_items($oldItems);
+  $newMap = audit_log_index_items($newItems);
+  $datasetEventLogged = false;
+  foreach ($events as $event) {
+    if (!is_array($event)) {
+      continue;
+    }
+    $entity = $event['entity'] ?? '';
+    $eventAction = $event['action'] ?? '';
+    $entityId = isset($event['entity_id']) ? (string)$event['entity_id'] : null;
+    if ($entity === 'item') {
+      if ($eventAction === 'created' && $entityId !== null && isset($newMap[$entityId])) {
+        $summary = audit_log_format_item_summary($newMap[$entityId]);
+        $message = sprintf('%s létrehozott egy új tételt: %s.', $actorText, $summary);
+        audit_log_record($user, 'item.created', $message, ['item_id' => $entityId], 'item', $entityId);
+      } elseif ($eventAction === 'deleted' && $entityId !== null && isset($oldMap[$entityId])) {
+        $summary = audit_log_format_item_summary($oldMap[$entityId]);
+        $message = sprintf('%s törölte ezt a tételt: %s.', $actorText, $summary);
+        audit_log_record($user, 'item.deleted', $message, ['item_id' => $entityId], 'item', $entityId);
+      } elseif ($eventAction === 'updated' && $entityId !== null) {
+        $changes = isset($event['meta']['changes']) && is_array($event['meta']['changes']) ? $event['meta']['changes'] : [];
+        if (empty($changes)) {
+          continue;
+        }
+        $summarySource = isset($newMap[$entityId]) ? $newMap[$entityId] : ($oldMap[$entityId] ?? []);
+        $summary = audit_log_format_item_summary($summarySource);
+        $parts = [];
+        $metaPayload = [];
+        foreach ($changes as $field => $diff) {
+          if ($field === 'id' || $field === 'position') {
+            continue;
+          }
+          $before = is_array($diff) && array_key_exists('before', $diff) ? $diff['before'] : null;
+          $after = is_array($diff) && array_key_exists('after', $diff) ? $diff['after'] : null;
+          $label = $fieldLabels[$field] ?? ucwords(str_replace(['_', '-'], ' ', (string)$field));
+          $beforeText = audit_log_format_value($field, $before);
+          $afterText = audit_log_format_value($field, $after);
+          if ($beforeText === $afterText) {
+            continue;
+          }
+          $parts[] = sprintf('%s: %s → %s', $label, $beforeText, $afterText);
+          $metaPayload[] = [
+            'field' => $field,
+            'label' => $label,
+            'before' => $before,
+            'after' => $after,
+          ];
+        }
+        if (empty($parts)) {
+          continue;
+        }
+        $message = sprintf('%s módosította a következő tételt: %s (%s).', $actorText, $summary, implode('; ', $parts));
+        audit_log_record($user, 'item.updated', $message, ['item_id' => $entityId, 'changes' => $metaPayload], 'item', $entityId);
+      }
+    } elseif ($entity === 'round_meta') {
+      $rid = $entityId !== null ? (int)$entityId : null;
+      $roundLabel = $rid !== null ? ($ROUND_MAP[$rid]['label'] ?? (string)$rid) : 'Ismeretlen kör';
+      $before = isset($event['meta']['before']) && is_array($event['meta']['before']) ? $event['meta']['before'] : [];
+      $after = isset($event['meta']['after']) && is_array($event['meta']['after']) ? $event['meta']['after'] : [];
+      $diffs = audit_log_diff_assoc($before, $after);
+      $parts = [];
+      $metaChanges = [];
+      foreach ($diffs as $field => $diff) {
+        $label = $roundMetaLabels[$field] ?? ucwords(str_replace(['_', '-'], ' ', (string)$field));
+        $beforeText = audit_log_format_value($field, $diff['before'] ?? null);
+        $afterText = audit_log_format_value($field, $diff['after'] ?? null);
+        $parts[] = sprintf('%s: %s → %s', $label, $beforeText, $afterText);
+        $metaChanges[] = [
+          'field' => $field,
+          'label' => $label,
+          'before' => $diff['before'] ?? null,
+          'after' => $diff['after'] ?? null,
+        ];
+      }
+      if ($eventAction === 'cleared') {
+        $message = sprintf('%s törölte a(z) %s kör beállításait.', $actorText, $roundLabel);
+      } else {
+        if (empty($parts)) {
+          continue;
+        }
+        $message = sprintf('%s módosította a(z) %s kör beállításait: %s.', $actorText, $roundLabel, implode('; ', $parts));
+      }
+      audit_log_record($user, 'round_meta.' . $eventAction, $message, ['round' => $entityId, 'changes' => $metaChanges], 'round_meta', $entityId);
+    } elseif ($entity === 'dataset') {
+      $datasetEventLogged = true;
+      $meta = isset($event['meta']) && is_array($event['meta']) ? $event['meta'] : [];
+      if ($eventAction === 'import') {
+        $mode = (string)($meta['mode'] ?? 'ismeretlen mód');
+        $modeLabel = $mode === 'append' ? 'hozzáadás' : ($mode === 'replace' ? 'felülírás' : $mode);
+        $count = isset($meta['imported_count']) ? (int)$meta['imported_count'] : 0;
+        $message = sprintf('%s importálta a CSV adatokat (%s) – Tételek: %d.', $actorText, $modeLabel, $count);
+        audit_log_record($user, 'dataset.import', $message, $meta, 'dataset', null);
+      } elseif ($eventAction === 'delete_round') {
+        global $ROUND_MAP;
+        $rid = isset($meta['round']) ? (int)$meta['round'] : null;
+        $roundLabel = $rid !== null ? ($ROUND_MAP[$rid]['label'] ?? (string)$rid) : 'Ismeretlen kör';
+        $count = isset($meta['deleted_count']) ? (int)$meta['deleted_count'] : 0;
+        $message = sprintf('%s törölte a(z) %s kört, eltávolított tételek: %d.', $actorText, $roundLabel, $count);
+        audit_log_record($user, 'dataset.delete_round', $message, $meta, 'dataset', null);
+      } else {
+        $message = sprintf('%s mentést hajtott végre az adatokon.', $actorText);
+        audit_log_record($user, 'dataset.save', $message, $meta, 'dataset', null);
+      }
+    }
+  }
+  if (!$datasetEventLogged) {
+    if ($action === 'import') {
+      $mode = (string)($actionMeta['mode'] ?? 'ismeretlen mód');
+      $modeLabel = $mode === 'append' ? 'hozzáadás' : ($mode === 'replace' ? 'felülírás' : $mode);
+      $count = isset($actionMeta['imported_count']) ? (int)$actionMeta['imported_count'] : count($events);
+      $message = sprintf('%s importálta a CSV adatokat (%s) – Tételek: %d.', $actorText, $modeLabel, $count);
+      audit_log_record($user, 'dataset.import', $message, $actionMeta, 'dataset', null);
+    } elseif ($action === 'delete_round') {
+      $rid = isset($actionMeta['round']) ? (int)$actionMeta['round'] : null;
+      $roundLabel = $rid !== null ? ($ROUND_MAP[$rid]['label'] ?? (string)$rid) : 'Ismeretlen kör';
+      $count = isset($actionMeta['deleted_count']) ? (int)$actionMeta['deleted_count'] : 0;
+      $message = sprintf('%s törölte a(z) %s kört, eltávolított tételek: %d.', $actorText, $roundLabel, $count);
+      audit_log_record($user, 'dataset.delete_round', $message, $actionMeta, 'dataset', null);
+    }
+  }
+}
+
+function audit_log_normalize_date_filter($value, $endOfDay = false) {
+  $raw = trim((string)$value);
+  if ($raw === '') {
+    return null;
+  }
+  if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $raw)) {
+    return null;
+  }
+  try {
+    $timezone = @date_default_timezone_get();
+    if (!is_string($timezone) || $timezone === '') {
+      $timezone = 'UTC';
+    }
+    $time = $endOfDay ? '23:59:59' : '00:00:00';
+    $dt = new DateTimeImmutable($raw . ' ' . $time, new DateTimeZone($timezone));
+    return $dt->setTimezone(new DateTimeZone('UTC'))->format('c');
+  } catch (Throwable $e) {
+    return null;
+  }
+}
+
+function audit_log_query(array $filters, $page = 1, $perPage = 25, $forDownload = false) {
+  $page = max(1, (int)$page);
+  $perPage = max(1, (int)$perPage);
+  $where = [];
+  $params = [];
+  $actionLabels = audit_log_action_labels();
+  $userFilter = isset($filters['user']) ? trim((string)$filters['user']) : '';
+  if ($userFilter !== '') {
+    $where[] = 'LOWER(actor_name) LIKE :user';
+    $lowerUser = function_exists('mb_strtolower') ? mb_strtolower($userFilter, 'UTF-8') : strtolower($userFilter);
+    $params[':user'] = '%' . $lowerUser . '%';
+  }
+  $actionFilter = isset($filters['action']) ? (string)$filters['action'] : '';
+  if ($actionFilter !== '' && isset($actionLabels[$actionFilter])) {
+    $where[] = 'action = :action';
+    $params[':action'] = $actionFilter;
+  }
+  $fromFilter = audit_log_normalize_date_filter($filters['from'] ?? null, false);
+  if ($fromFilter !== null) {
+    $where[] = 'created_at >= :from';
+    $params[':from'] = $fromFilter;
+  }
+  $toFilter = audit_log_normalize_date_filter($filters['to'] ?? null, true);
+  if ($toFilter !== null) {
+    $where[] = 'created_at <= :to';
+    $params[':to'] = $toFilter;
+  }
+  $whereSql = $where ? ' WHERE ' . implode(' AND ', $where) : '';
+  $result = [
+    'entries' => [],
+    'total' => 0,
+    'page' => $page,
+    'pages' => 1,
+    'per_page' => $perPage,
+  ];
+  try {
+    $pdo = auth_db();
+    $countSql = 'SELECT COUNT(*) FROM audit_log' . $whereSql;
+    $countStmt = $pdo->prepare($countSql);
+    foreach ($params as $key => $value) {
+      if ($key === ':user') {
+        $countStmt->bindValue($key, $value, PDO::PARAM_STR);
+      } else {
+        $countStmt->bindValue($key, $value);
+      }
+    }
+    $dbStart = microtime(true);
+    $countStmt->execute();
+    app_perf_track_db($dbStart);
+    $total = (int)$countStmt->fetchColumn();
+    if ($forDownload) {
+      $perPage = max(1, $total);
+      $page = 1;
+    } else {
+      $pages = max(1, (int)ceil($total / $perPage));
+      if ($page > $pages) {
+        $page = $pages;
+      }
+    }
+    $pages = max(1, (int)ceil(($total ?: 1) / $perPage));
+    $offset = ($page - 1) * $perPage;
+    $sql = 'SELECT id, created_at, action, actor_id, actor_name, actor_role, entity, entity_id, message, meta'
+         . ' FROM audit_log' . $whereSql . ' ORDER BY created_at DESC LIMIT :limit OFFSET :offset';
+    $stmt = $pdo->prepare($sql);
+    foreach ($params as $key => $value) {
+      if ($key === ':user') {
+        $stmt->bindValue($key, $value, PDO::PARAM_STR);
+      } else {
+        $stmt->bindValue($key, $value);
+      }
+    }
+    $stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
+    $stmt->bindValue(':offset', max(0, (int)$offset), PDO::PARAM_INT);
+    $dbStart = microtime(true);
+    $stmt->execute();
+    app_perf_track_db($dbStart);
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    $entries = [];
+    foreach ($rows as $row) {
+      $row['meta'] = isset($row['meta']) && $row['meta'] !== null && $row['meta'] !== ''
+        ? json_decode($row['meta'], true)
+        : null;
+      $entries[] = $row;
+    }
+    $result['entries'] = $entries;
+    $result['total'] = $total;
+    $result['page'] = $page;
+    $result['pages'] = max(1, (int)ceil(($total ?: 1) / $perPage));
+    $result['per_page'] = $perPage;
+    return $result;
+  } catch (Throwable $e) {
+    error_log('Audit napló lekérdezési hiba: ' . $e->getMessage());
+    return $result;
+  }
+}
+
 function read_change_log_entries() {
   global $CHANGE_LOG_FILE;
   if (!is_file($CHANGE_LOG_FILE)) {
@@ -1851,6 +2365,22 @@ if (!function_exists('auth_user_is_admin')) {
   }
 }
 
+if (!function_exists('auth_role_label')) {
+  function auth_role_label($role) {
+    $normalized = auth_normalize_role($role);
+    switch ($normalized) {
+      case 'full-admin':
+        return 'Admin';
+      case 'editor':
+        return 'Szerkesztő';
+      case 'viewer':
+        return 'Megtekintő';
+      default:
+        return 'Felhasználó';
+    }
+  }
+}
+
 if (!function_exists('auth_user_can')) {
   function auth_user_can($user, $capability) {
     $role = auth_user_role($user);
@@ -1866,6 +2396,7 @@ if (!function_exists('auth_user_can')) {
       'delete' => ['full-admin', 'editor'],
       'import' => ['full-admin', 'editor'],
       'manage_users' => ['full-admin'],
+      'view_logs' => ['full-admin'],
     ];
     if (!isset($map[$cap])) {
       return false;
@@ -1889,6 +2420,7 @@ if (!function_exists('auth_build_permissions')) {
       'canExport' => auth_user_can($user, 'export'),
       'canPrint' => auth_user_can($user, 'print'),
       'canManageUsers' => auth_user_can($user, 'manage_users'),
+      'canViewLogs' => auth_user_can($user, 'view_logs'),
     ];
   }
 }
@@ -1910,8 +2442,8 @@ if (!function_exists('app_features_for_user')) {
       $toolbar['print_all'] = false;
       $groupActions['print'] = false;
     }
-    if (empty($permissions['canManageUsers'])) {
-      $toolbar['download_archive'] = $toolbar['download_archive'] ?? false;
+    if (empty($permissions['canViewLogs'])) {
+      $toolbar['audit_log'] = false;
     }
     if (empty($permissions['canEdit'])) {
       $toolbar['undo'] = false;
@@ -1921,7 +2453,7 @@ if (!function_exists('app_features_for_user')) {
     }
     if (!empty($permissions['readOnly'])) {
       $toolbar['import_all'] = false;
-      $toolbar['download_archive'] = false;
+      $toolbar['audit_log'] = false;
     }
 
     $result['toolbar'] = $toolbar;
