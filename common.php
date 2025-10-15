@@ -304,7 +304,30 @@ $CFG_DEFAULT = [
       "lon" => 19.35
     ],
     "max_waypoints" => 10,
-    "geocode_origin_on_start" => true
+    "geocode_origin_on_start" => true,
+    "road_sort" => [
+      "enabled" => true,
+      "return_to_origin" => false,
+      "cache_limit" => 48,
+      "storage" => 'local'
+    ],
+    "osrm" => [
+      "base_url" => 'https://router.project-osrm.org',
+      "profile" => 'driving',
+      "request_timeout_ms" => 8000,
+      "trip" => [
+        "enabled" => true,
+        "max_size" => 90
+      ],
+      "table" => [
+        "enabled" => true,
+        "max_size" => 90
+      ],
+      "route" => [
+        "enabled" => true,
+        "max_points" => 90
+      ]
+    ]
   ],
   "text" => [
     "toolbar" => [
@@ -332,6 +355,9 @@ $CFG_DEFAULT = [
       "sort_mode_custom" => "Egyéni (drag & drop)",
       "sort_mode_custom_hint" => "Fogd és vidd a címeket a sorrend módosításához",
       "custom_sort_handle_hint" => "Fogd meg és húzd a cím átrendezéséhez"
+    ],
+    "routing" => [
+      "status_total" => "Összesen: {distance} · {duration}"
     ],
     "group" => [
       "sum_template" => "Összesen: {parts}",

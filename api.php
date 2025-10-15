@@ -263,7 +263,30 @@ if ($action === 'cfg') {
         'lon' => isset($CFG['routing']['origin_coordinates']['lon']) ? (float)$CFG['routing']['origin_coordinates']['lon'] : null,
       ],
       "max_waypoints" => (int)($CFG['routing']['max_waypoints'] ?? 10),
-      "geocode_origin_on_start" => !empty($CFG['routing']['geocode_origin_on_start'])
+      "geocode_origin_on_start" => !empty($CFG['routing']['geocode_origin_on_start']),
+      "road_sort" => [
+        "enabled" => !empty($CFG['routing']['road_sort']['enabled']),
+        "return_to_origin" => !empty($CFG['routing']['road_sort']['return_to_origin']),
+        "cache_limit" => isset($CFG['routing']['road_sort']['cache_limit']) ? (int)$CFG['routing']['road_sort']['cache_limit'] : 48,
+        "storage" => isset($CFG['routing']['road_sort']['storage']) ? (string)$CFG['routing']['road_sort']['storage'] : 'local'
+      ],
+      "osrm" => [
+        "base_url" => isset($CFG['routing']['osrm']['base_url']) ? (string)$CFG['routing']['osrm']['base_url'] : 'https://router.project-osrm.org',
+        "profile" => isset($CFG['routing']['osrm']['profile']) ? (string)$CFG['routing']['osrm']['profile'] : 'driving',
+        "request_timeout_ms" => isset($CFG['routing']['osrm']['request_timeout_ms']) ? (int)$CFG['routing']['osrm']['request_timeout_ms'] : 8000,
+        "trip" => [
+          "enabled" => !isset($CFG['routing']['osrm']['trip']['enabled']) || !empty($CFG['routing']['osrm']['trip']['enabled']),
+          "max_size" => isset($CFG['routing']['osrm']['trip']['max_size']) ? (int)$CFG['routing']['osrm']['trip']['max_size'] : 90
+        ],
+        "table" => [
+          "enabled" => !isset($CFG['routing']['osrm']['table']['enabled']) || !empty($CFG['routing']['osrm']['table']['enabled']),
+          "max_size" => isset($CFG['routing']['osrm']['table']['max_size']) ? (int)$CFG['routing']['osrm']['table']['max_size'] : 90
+        ],
+        "route" => [
+          "enabled" => !isset($CFG['routing']['osrm']['route']['enabled']) || !empty($CFG['routing']['osrm']['route']['enabled']),
+          "max_points" => isset($CFG['routing']['osrm']['route']['max_points']) ? (int)$CFG['routing']['osrm']['route']['max_points'] : 90
+        ]
+      ]
     ],
     "text" => $CFG['text'] ?? [],
     "items" => $CFG['items'] ?? [],
