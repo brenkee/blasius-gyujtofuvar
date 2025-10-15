@@ -185,7 +185,8 @@ h1{font-size:18px;margin:0 0 6px}
 .groups{display:grid;gap:12px;padding: 8px;}
 .group{border:1px solid var(--border);border-radius:12px;background:var(--panel)}
 .group-header{display:flex;flex-direction:column;gap:8px;padding:10px;border-bottom:1px solid var(--border);background: #f0f2f5;}
-.group-title{font-weight:800;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.group-title{font-weight:800;display:flex;align-items:center;gap:6px;flex-wrap:wrap;cursor:pointer}
+.group-title:focus{outline:2px solid rgba(37,99,235,0.6);outline-offset:2px}
 .group-title .__sum{display: flex;flex: auto;justify-content: flex-end;}
 .group-drag-indicator{display:none;font-size:14px;color:var(--muted);align-items:center;justify-content:center}
 .group-controls{display:flex;flex-wrap:nowrap;gap:12px;align-items:center}
