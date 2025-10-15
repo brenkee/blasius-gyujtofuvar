@@ -170,7 +170,8 @@ h1{font-size:18px;margin:0 0 6px}
 .view-switch{display:none;align-items:center;gap:8px;margin:0;padding:0 4px}
 .view-switch[hidden]{display:none}
 .view-switch-btn{appearance:none;border:1px solid var(--border);background:var(--panel);color:var(--muted);border-radius:12px;padding:10px;min-width:0;display:inline-flex;align-items:center;justify-content:center;width:42px;height:42px;cursor:pointer;transition:background .2s ease,color .2s ease,border-color .2s ease,box-shadow .2s ease;flex-shrink:0}
-.view-switch-btn svg{width:20px;height:20px;display:block}
+.view-switch-btn svg,
+.view-switch-btn img{width:20px;height:20px;display:block}
 .view-switch-btn:is(:hover,.is-active){color:var(--accent)}
 .view-switch-btn.is-active{border-color:var(--accent);background:rgba(37,99,235,0.08);box-shadow:0 0 0 2px rgba(37,99,235,0.18)}
 :root.dark .view-switch-btn.is-active{background:rgba(96,165,250,0.16);box-shadow:0 0 0 2px rgba(96,165,250,0.22)}
