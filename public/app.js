@@ -155,10 +155,10 @@
     btn.setAttribute('aria-label', resolvedLabel);
     btn.title = resolvedLabel;
     const safeLabel = esc(resolvedLabel);
-    const iconSvg = mode === VIEW_MODES.MAP
+    const iconMarkup = mode === VIEW_MODES.MAP
       ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a7 7 0 00-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 00-7-7zm0 9.5a2.5 2.5 0 110-5 2.5 2.5 0 010 5z"></path></svg>'
-      : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"></path></svg>';
-    btn.innerHTML = iconSvg + `<span class="visually-hidden">${safeLabel}</span>`;
+      : '<img src="/pic/listview.svg" alt="" aria-hidden="true">';
+    btn.innerHTML = iconMarkup + `<span class="visually-hidden">${safeLabel}</span>`;
     btn.addEventListener('click', ()=>{
       applyViewMode(mode);
     });
