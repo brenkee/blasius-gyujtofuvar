@@ -189,8 +189,8 @@ h1{font-size:18px;margin:0 0 6px}
 .group-title:focus{outline:2px solid rgba(37,99,235,0.6);outline-offset:2px}
 .group-title .__sum{display: flex;flex: auto;justify-content: flex-end;}
 .group-drag-indicator{display:none;font-size:14px;color:var(--muted);align-items:center;justify-content:center}
-.group-controls{display:flex;flex-wrap:nowrap;gap:12px;align-items:center}
-.group-tools{display:flex;gap:6px;flex-wrap:wrap}
+.group-controls{display:flex;flex-wrap:nowrap;gap:12px;align-items:center;justify-content: space-around;}
+.group-tools{display:flex;gap:6px;flex-wrap:wrap;justify-content: space-around;}
 .group-planned-date{display:flex;gap:8px;flex-wrap:nowrap;align-items:center}
 .group-planned-date .planned-date-label{font-size:12px;font-weight:600;color:var(--muted);white-space:nowrap}
 .group-planned-date input{width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text);transition:background-color .3s ease,border-color .3s ease}
