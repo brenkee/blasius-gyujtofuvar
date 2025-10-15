@@ -121,6 +121,14 @@ $LOGOUT_TOKEN = csrf_get_token();
           $menuIconStyles[] = '--menu-icon-bar-radius:' . $barRadius;
         }
         $menuIconStyleAttr = $menuIconStyles ? htmlspecialchars(implode(';', $menuIconStyles), ENT_QUOTES) : '';
+        $logoutButtonColor = trim((string)($CFG['ui']['toolbar']['logout_button_color'] ?? ''));
+        if ($logoutButtonColor !== '' && !preg_match('/^[#a-zA-Z0-9(),.%\s-]+$/', $logoutButtonColor)) {
+          $logoutButtonColor = '';
+        }
+        $toolbarMenuStyleAttr = '';
+        if ($logoutButtonColor !== '') {
+          $toolbarMenuStyleAttr = htmlspecialchars('--toolbar-logout-button-color:' . $logoutButtonColor, ENT_QUOTES);
+        }
         $toolbarMenuLabel = $toolbarText['more_actions']['label'] ?? 'Menü';
         $toolbarMenuTitle = $toolbarText['more_actions']['title'] ?? $toolbarMenuLabel;
         $hasImportAll = !empty($toolbarFeatures['import_all']);
@@ -135,34 +143,33 @@ $LOGOUT_TOKEN = csrf_get_token();
 
         $toolbarItems = [];
         if (!empty($toolbarFeatures['expand_all'])) {
-          $toolbarItems['expand_all'] = '<button id="expandAll" title="' . htmlspecialchars($toolbarText['expand_all']['title'] ?? '', ENT_QUOTES) . '">' . htmlspecialchars($toolbarText['expand_all']['label'] ?? 'Összes kinyit', ENT_QUOTES) . '</button>';
+          $toolbarItems['expand_all'] = '<button id="expandAll" class="toolbar-btn" title="' . htmlspecialchars($toolbarText['expand_all']['title'] ?? '', ENT_QUOTES) . '">' . htmlspecialchars($toolbarText['expand_all']['label'] ?? 'Összes kinyit', ENT_QUOTES) . '</button>';
         }
         if (!empty($toolbarFeatures['collapse_all'])) {
-          $toolbarItems['collapse_all'] = '<button id="collapseAll" title="' . htmlspecialchars($toolbarText['collapse_all']['title'] ?? '', ENT_QUOTES) . '">' . htmlspecialchars($toolbarText['collapse_all']['label'] ?? 'Összes összezár', ENT_QUOTES) . '</button>';
+          $toolbarItems['collapse_all'] = '<button id="collapseAll" class="toolbar-btn" title="' . htmlspecialchars($toolbarText['collapse_all']['title'] ?? '', ENT_QUOTES) . '">' . htmlspecialchars($toolbarText['collapse_all']['label'] ?? 'Összes összezár', ENT_QUOTES) . '</button>';
         }
         if ($toolbarMenuHasItems) {
           ob_start();
           ?>
-          <div class="toolbar-menu-container">
-            <button
-              id="toolbarMenuToggle"
-              type="button"
-              class="toolbar-menu-toggle"
-              aria-haspopup="true"
-              aria-expanded="false"
-              aria-controls="toolbarMenu"
-              title="<?= htmlspecialchars($toolbarMenuTitle) ?>"
-              aria-label="<?= htmlspecialchars($toolbarMenuLabel) ?>"
-              <?= $menuIconStyleAttr !== '' ? 'style="' . $menuIconStyleAttr . '"' : '' ?>
-            >
-              <span class="hamburger-icon" aria-hidden="true">
-                <span></span>
-                <span></span>
-                <span></span>
-              </span>
-              <span class="visually-hidden"><?= htmlspecialchars($toolbarMenuLabel) ?></span>
-            </button>
-            <div id="toolbarMenu" class="toolbar-menu" hidden>
+          <button
+            id="toolbarMenuToggle"
+            type="button"
+            class="toolbar-btn toolbar-menu-toggle"
+            aria-haspopup="true"
+            aria-expanded="false"
+            aria-controls="toolbarMenu"
+            title="<?= htmlspecialchars($toolbarMenuTitle) ?>"
+            aria-label="<?= htmlspecialchars($toolbarMenuLabel) ?>"
+            <?= $menuIconStyleAttr !== '' ? 'style="' . $menuIconStyleAttr . '"' : '' ?>
+          >
+            <span class="hamburger-icon" aria-hidden="true">
+              <span></span>
+              <span></span>
+              <span></span>
+            </span>
+            <span class="visually-hidden"><?= htmlspecialchars($toolbarMenuLabel) ?></span>
+          </button>
+          <div id="toolbarMenu" class="toolbar-menu" hidden<?= $toolbarMenuStyleAttr !== '' ? ' style="' . $toolbarMenuStyleAttr . '"' : '' ?>>
               <?php $menuSectionRendered = false; ?>
               <?php if ($hasImportAll): ?>
                 <button id="importBtn" type="button" title="<?= htmlspecialchars($toolbarText['import_all']['title'] ?? '') ?>">
@@ -199,27 +206,30 @@ $LOGOUT_TOKEN = csrf_get_token();
                 <?php if ($menuSectionRendered): ?>
                   <hr class="toolbar-menu-separator" role="presentation" />
                 <?php endif; ?>
-                <a class="toolbar-menu-link" href="<?= htmlspecialchars(app_url_path('admin.php'), ENT_QUOTES) ?>">Admin</a>
+                <form method="get" action="<?= htmlspecialchars(app_url_path('admin.php'), ENT_QUOTES) ?>" class="toolbar-menu-form">
+                  <button type="submit">Admin</button>
+                </form>
                 <?php $menuSectionRendered = true; ?>
               <?php endif; ?>
               <?php if ($hasUserMenuItems): ?>
                 <?php if ($menuSectionRendered): ?>
                   <hr class="toolbar-menu-separator" role="presentation" />
                 <?php endif; ?>
-                <a class="toolbar-menu-link" href="<?= htmlspecialchars(app_url_path('password.php'), ENT_QUOTES) ?>">Profilom</a>
-                <form method="post" action="<?= htmlspecialchars(app_url_path('logout.php'), ENT_QUOTES) ?>" class="toolbar-menu-form">
+                <form method="get" action="<?= htmlspecialchars(app_url_path('password.php'), ENT_QUOTES) ?>" class="toolbar-menu-form">
+                  <button type="submit">Profilom</button>
+                </form>
+                <form method="post" action="<?= htmlspecialchars(app_url_path('logout.php'), ENT_QUOTES) ?>" class="toolbar-menu-form toolbar-menu-form--logout">
                   <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($LOGOUT_TOKEN, ENT_QUOTES) ?>">
                   <button type="submit">Kilépés</button>
                 </form>
                 <?php $menuSectionRendered = true; ?>
               <?php endif; ?>
-            </div>
           </div>
           <?php
           $toolbarItems['menu'] = trim(ob_get_clean());
         }
         if (!empty($toolbarFeatures['undo']) && !empty($CFG['history']['undo_enabled'])) {
-          $toolbarItems['undo'] = '<button id="undoBtn" title="' . htmlspecialchars($toolbarText['undo']['title'] ?? '', ENT_QUOTES) . '" disabled>' . htmlspecialchars($toolbarText['undo']['label'] ?? 'Visszavonás', ENT_QUOTES) . '</button>';
+          $toolbarItems['undo'] = '<button id="undoBtn" class="toolbar-btn" title="' . htmlspecialchars($toolbarText['undo']['title'] ?? '', ENT_QUOTES) . '" disabled>' . htmlspecialchars($toolbarText['undo']['label'] ?? 'Visszavonás', ENT_QUOTES) . '</button>';
         }
         $toolbarItems['pin_counter'] = '<span class="toolbar-pin-counter" title="' . htmlspecialchars($badgeTitle, ENT_QUOTES) . '"><span class="toolbar-pin-counter-label">' . htmlspecialchars($badgeText, ENT_QUOTES) . '</span> <span id="pinCount" class="badge">0</span></span>';
 

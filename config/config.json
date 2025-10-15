@@ -133,7 +133,8 @@
                 "bar_height": "2px",
                 "color": "#111827",
                 "bar_radius": "2px"
-            }
+            },
+            "logout_button_color": "#ef4444"
         },
         "colors": {
             "light": {

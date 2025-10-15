@@ -157,7 +157,7 @@
     const safeLabel = esc(resolvedLabel);
     const iconSvg = mode === VIEW_MODES.MAP
       ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a7 7 0 00-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 00-7-7zm0 9.5a2.5 2.5 0 110-5 2.5 2.5 0 010 5z"></path></svg>'
-      : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"></path></svg>';
+      : '<img src="/pic/listview.svg" alt="" aria-hidden="true">';
     btn.innerHTML = iconSvg + `<span class="visually-hidden">${safeLabel}</span>`;
     btn.addEventListener('click', ()=>{
       applyViewMode(mode);
@@ -4024,12 +4024,28 @@
   const toolbarMenuToggle = document.getElementById('toolbarMenuToggle');
   const toolbarMenu = document.getElementById('toolbarMenu');
   if (toolbarMenuToggle && toolbarMenu) {
+    const positionToolbarMenu = ()=>{
+      const toggleRect = toolbarMenuToggle.getBoundingClientRect();
+      const menuRect = toolbarMenu.getBoundingClientRect();
+      const viewportWidth = document.documentElement.clientWidth;
+      const padding = 12;
+      const desiredLeft = toggleRect.right - menuRect.width;
+      const maxLeft = viewportWidth - menuRect.width - padding;
+      const minLeft = padding;
+      const left = Math.min(Math.max(desiredLeft, minLeft), Math.max(maxLeft, minLeft));
+      const top = Math.max(toggleRect.bottom + 6, padding);
+      toolbarMenu.style.left = `${Math.round(left)}px`;
+      toolbarMenu.style.top = `${Math.round(top)}px`;
+    };
     const closeToolbarMenu = ()=>{
       toolbarMenu.hidden = true;
       toolbarMenuToggle.setAttribute('aria-expanded', 'false');
     };
     const openToolbarMenu = ()=>{
       toolbarMenu.hidden = false;
+      toolbarMenu.style.visibility = 'hidden';
+      positionToolbarMenu();
+      toolbarMenu.style.visibility = '';
       toolbarMenuToggle.setAttribute('aria-expanded', 'true');
     };
     toolbarMenuToggle.addEventListener('click', event => {
@@ -4073,6 +4089,19 @@
         if (firstFocusable instanceof HTMLElement) firstFocusable.focus();
       }
     });
+    const recalcToolbarMenu = ()=>{
+      if (!toolbarMenu.hidden) {
+        toolbarMenu.style.visibility = 'hidden';
+        positionToolbarMenu();
+        toolbarMenu.style.visibility = '';
+      }
+    };
+    window.addEventListener('resize', ()=>{
+      recalcToolbarMenu();
+    });
+    window.addEventListener('scroll', ()=>{
+      recalcToolbarMenu();
+    }, true);
   }
 
   const importBtn = document.getElementById('importBtn');
