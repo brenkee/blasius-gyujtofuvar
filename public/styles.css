@@ -170,7 +170,7 @@ h1{font-size:18px;margin:0 0 6px}
 .quick-search-status.is-empty{border-color:var(--qs-status-empty-border);background:var(--qs-status-empty-bg);color:var(--qs-status-empty-color);font-size:13px}
 .view-switch{display:none;align-items:center;gap:8px;margin:0;padding:0 4px}
 .view-switch[hidden]{display:none}
-.view-switch-btn{appearance:none;border:1px solid var(--border);background:var(--panel);color:var(--muted);border-radius:12px;padding:10px;min-width:0;display:inline-flex;align-items:center;justify-content:center;width:42px;height:42px;cursor:pointer;transition:background .2s ease,color .2s ease,border-color .2s ease,box-shadow .2s ease;flex-shrink:0}
+.view-switch-btn{appearance:none;border:1px solid var(--border);background:var(--panel);color:var(--muted);border-radius:8px;padding:10px;min-width:0;display:inline-flex;align-items:center;justify-content:center;width:42px;height:42px;cursor:pointer;transition:background .2s ease,color .2s ease,border-color .2s ease,box-shadow .2s ease;flex-shrink:0}
 .view-switch-btn svg,
 .view-switch-btn img{width:20px;height:20px;display:block}
 .view-switch-btn:is(:hover,.is-active){color:var(--accent)}
