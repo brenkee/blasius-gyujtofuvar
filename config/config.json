@@ -29,7 +29,7 @@
             "import_all": true,
             "export_all": true,
             "print_all": true,
-            "download_archive": true,
+            "audit_log": true,
             "theme_toggle": false,
             "undo": true
         },
@@ -53,9 +53,9 @@
     "files": {
         "data_file": "data/app.db",
         "export_file": "backups/fuvar_export.csv",
-        "export_download_name": "fuvar_export.csv",
-        "archive_file": "temp/fuvar_archive.log"
+        "export_download_name": "fuvar_export.csv"
     },
+    "log_retention_days": 180,
     "backup": {
         "enabled": true,
         "dir": "backups",
@@ -349,9 +349,9 @@
                 "label": "↩",
                 "title": "Visszavonás"
             },
-            "download_archive": {
-                "label": "Archívum",
-                "title": "Archívum letöltése (TXT)"
+            "audit_log": {
+                "label": "Napló",
+                "title": "Admin napló megnyitása"
             }
         },
         "badges": {
