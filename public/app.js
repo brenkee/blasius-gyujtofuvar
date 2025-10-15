@@ -1081,12 +1081,47 @@
     return (template || '').replace(/\{(\w+)\}/g, (_, k)=> (k in vars ? String(vars[k]) : ''));
   }
 
-  const getFieldDefs = ()=> (cfg('items.fields', []) || []).filter(f => f && f.enabled !== false);
-  const getMetricDefs = ()=> (cfg('items.metrics', []) || []).filter(f => f && f.enabled !== false);
+  let cachedFieldDefs = null;
+  let cachedFieldMap = null;
+  let cachedMetricDefs = null;
+
+  function invalidateDefinitionCaches(){
+    cachedFieldDefs = null;
+    cachedMetricDefs = null;
+    cachedFieldMap = null;
+  }
+
+  function getFieldDefs(){
+    if (!cachedFieldDefs) {
+      const raw = cfg('items.fields', []) || [];
+      cachedFieldDefs = raw.filter(f => f && f.enabled !== false);
+      cachedFieldMap = null;
+    }
+    return cachedFieldDefs;
+  }
+
+  function getMetricDefs(){
+    if (!cachedMetricDefs) {
+      const raw = cfg('items.metrics', []) || [];
+      cachedMetricDefs = raw.filter(f => f && f.enabled !== false);
+    }
+    return cachedMetricDefs;
+  }
   const getAddressFieldId = ()=> cfg('items.address_field_id', 'address');
   const getLabelFieldId = ()=> cfg('items.label_field_id', 'label');
   const getNoteFieldId = ()=> cfg('items.note_field_id', 'note');
-  const getFieldDefById = (fid)=> getFieldDefs().find(field => field && field.id === fid);
+  const getFieldDefById = (fid)=> {
+    if (!fid) return undefined;
+    if (!cachedFieldMap) {
+      cachedFieldMap = new Map();
+      getFieldDefs().forEach(field => {
+        if (field && field.id != null) {
+          cachedFieldMap.set(field.id, field);
+        }
+      });
+    }
+    return cachedFieldMap.get(fid);
+  };
 
   const DEFAULT_DEADLINE_STEPS = [
     {minDays: 7, color: '#16a34a'},
@@ -1952,7 +1987,10 @@
     j.__http_ok = r.ok; j.__status = r.status;
     return j;
   }
-  async function loadCfg(){ state.cfg = await fetchJSON(EP.cfg); }
+  async function loadCfg(){
+    state.cfg = await fetchJSON(EP.cfg);
+    invalidateDefinitionCaches();
+  }
   function applyLoadedData(payload){
     const j = payload || {};
     state.items = Array.isArray(j.items)
