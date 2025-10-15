@@ -15,6 +15,7 @@ $LOGOUT_TOKEN = csrf_get_token();
 <title><?= htmlspecialchars($CFG['app']['title']) ?></title>
 <link rel="icon" type="image/png" href="<?= htmlspecialchars(base_url('pic/favicon.png'), ENT_QUOTES) ?>" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@halfmoon/ui@2.0.1/dist/css/halfmoon-variables.min.css">
 <link rel="stylesheet" href="<?= htmlspecialchars(base_url('public/styles.css'), ENT_QUOTES) ?>">
 <?php
   $endpointPaths = [
@@ -61,9 +62,9 @@ $LOGOUT_TOKEN = csrf_get_token();
   <p><code>php scripts/init-db.php</code> futtatásával megpróbálhatod manuálisan létrehozni az adatbázist.</p>
 </div>
 <?php endif; ?>
-<div class="app">
-  <aside class="panel">
-    <div id="panelTop" class="panel-top">
+<div class="app page-shell" data-mobile-view="list">
+  <header class="top-navbar">
+    <div class="panel-brand">
       <?php
         $appTitle = $CFG['app']['title'] ?? '';
         $logoCfg = $CFG['app']['logo'] ?? null;
@@ -135,10 +136,10 @@ $LOGOUT_TOKEN = csrf_get_token();
 
         $toolbarItems = [];
         if (!empty($toolbarFeatures['expand_all'])) {
-          $toolbarItems['expand_all'] = '<button id="expandAll" title="' . htmlspecialchars($toolbarText['expand_all']['title'] ?? '', ENT_QUOTES) . '">' . htmlspecialchars($toolbarText['expand_all']['label'] ?? 'Összes kinyit', ENT_QUOTES) . '</button>';
+          $toolbarItems['expand_all'] = '<button id="expandAll" class="btn btn-inline btn-secondary" title="' . htmlspecialchars($toolbarText['expand_all']['title'] ?? '', ENT_QUOTES) . '">' . htmlspecialchars($toolbarText['expand_all']['label'] ?? 'Összes kinyit', ENT_QUOTES) . '</button>';
         }
         if (!empty($toolbarFeatures['collapse_all'])) {
-          $toolbarItems['collapse_all'] = '<button id="collapseAll" title="' . htmlspecialchars($toolbarText['collapse_all']['title'] ?? '', ENT_QUOTES) . '">' . htmlspecialchars($toolbarText['collapse_all']['label'] ?? 'Összes összezár', ENT_QUOTES) . '</button>';
+          $toolbarItems['collapse_all'] = '<button id="collapseAll" class="btn btn-inline btn-secondary" title="' . htmlspecialchars($toolbarText['collapse_all']['title'] ?? '', ENT_QUOTES) . '">' . htmlspecialchars($toolbarText['collapse_all']['label'] ?? 'Összes összezár', ENT_QUOTES) . '</button>';
         }
         if ($toolbarMenuHasItems) {
           ob_start();
@@ -147,7 +148,7 @@ $LOGOUT_TOKEN = csrf_get_token();
             <button
               id="toolbarMenuToggle"
               type="button"
-              class="toolbar-menu-toggle"
+              class="toolbar-menu-toggle btn btn-inline btn-secondary"
               aria-haspopup="true"
               aria-expanded="false"
               aria-controls="toolbarMenu"
@@ -219,7 +220,7 @@ $LOGOUT_TOKEN = csrf_get_token();
           $toolbarItems['menu'] = trim(ob_get_clean());
         }
         if (!empty($toolbarFeatures['undo']) && !empty($CFG['history']['undo_enabled'])) {
-          $toolbarItems['undo'] = '<button id="undoBtn" title="' . htmlspecialchars($toolbarText['undo']['title'] ?? '', ENT_QUOTES) . '" disabled>' . htmlspecialchars($toolbarText['undo']['label'] ?? 'Visszavonás', ENT_QUOTES) . '</button>';
+          $toolbarItems['undo'] = '<button id="undoBtn" class="btn btn-inline btn-secondary" title="' . htmlspecialchars($toolbarText['undo']['title'] ?? '', ENT_QUOTES) . '" disabled>' . htmlspecialchars($toolbarText['undo']['label'] ?? 'Visszavonás', ENT_QUOTES) . '</button>';
         }
         $toolbarItems['pin_counter'] = '<span class="toolbar-pin-counter" title="' . htmlspecialchars($badgeTitle, ENT_QUOTES) . '"><span class="toolbar-pin-counter-label">' . htmlspecialchars($badgeText, ENT_QUOTES) . '</span> <span id="pinCount" class="badge">0</span></span>';
 
@@ -247,30 +248,34 @@ $LOGOUT_TOKEN = csrf_get_token();
         }
         $hasToolbarItems = !empty($orderedToolbarItems);
       ?>
-      <div class="panel-top-header">
-        <div class="panel-brand">
-          <?php if ($logoSrc !== ''): ?>
-            <img src="<?= $logoSrc ?>" alt="<?= htmlspecialchars($logoAlt, ENT_QUOTES) ?>" class="panel-brand-logo"<?= $logoWidthAttr ?><?= $logoHeightAttr ?>>
-          <?php else: ?>
-            <h1 class="panel-title"><?= htmlspecialchars($appTitle) ?></h1>
-          <?php endif; ?>
-        </div>
-        <?php if ($hasToolbarItems): ?>
-          <div class="toolbar">
-            <?php foreach ($orderedToolbarItems as $toolbarItemHtml): ?>
-              <?= $toolbarItemHtml ?>
-            <?php endforeach; ?>
-          </div>
-        <?php endif; ?>
+      <?php if ($logoSrc !== ''): ?>
+        <img src="<?= $logoSrc ?>" alt="<?= htmlspecialchars($logoAlt, ENT_QUOTES) ?>" class="panel-brand-logo"<?= $logoWidthAttr ?><?= $logoHeightAttr ?>>
+      <?php else: ?>
+        <h1 class="panel-title"><?= htmlspecialchars($appTitle) ?></h1>
+      <?php endif; ?>
+    </div>
+    <?php if ($hasToolbarItems): ?>
+      <div class="toolbar nav-actions">
+        <?php foreach ($orderedToolbarItems as $toolbarItemHtml): ?>
+          <?= $toolbarItemHtml ?>
+        <?php endforeach; ?>
       </div>
-    </div>
-    <div id="panelContent" class="panel-content">
-      <div id="newAddress" class="new-address-container"></div>
-      <div id="groups" class="groups"></div>
-      <img id="devlogo" src="pic/devlogo.webp">
-    </div>
-  </aside>
-  <main id="map"></main>
+    <?php endif; ?>
+  </header>
+  <div class="main-layout">
+    <aside class="sidebar-panel">
+      <div id="panelTop" class="panel-header"></div>
+      <div id="panelContent" class="panel-body panel-content">
+        <div id="newAddress" class="new-address-container"></div>
+        <div id="groups" class="group-list groups"></div>
+        <img id="devlogo" src="pic/devlogo.webp" alt="Dev logo" class="dev-logo">
+      </div>
+    </aside>
+    <section class="map-container">
+      <div id="map"></div>
+    </section>
+  </div>
 </div>
+<script defer src="https://cdn.jsdelivr.net/npm/@halfmoon/ui@2.0.1/dist/js/halfmoon.min.js"></script>
 </body>
 </html>

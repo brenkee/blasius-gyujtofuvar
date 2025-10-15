@@ -85,6 +85,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Profilom – <?= htmlspecialchars($CFG['app']['title']) ?></title>
   <link rel="icon" type="image/png" href="<?= htmlspecialchars(base_url('pic/favicon.png'), ENT_QUOTES) ?>" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@halfmoon/ui@2.0.1/dist/css/halfmoon-variables.min.css" />
   <link rel="stylesheet" href="<?= htmlspecialchars(base_url('public/styles.css'), ENT_QUOTES) ?>" />
 </head>
 <body class="auth-body">
@@ -117,10 +118,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           <span>Új jelszó megerősítése</span>
           <input type="password" name="confirm_password" autocomplete="new-password" minlength="12" />
         </label>
-        <button type="submit" class="auth-submit">Változtatások mentése</button>
-        <a class="auth-link" href="<?= htmlspecialchars($returnTo ?: app_url_path(''), ENT_QUOTES) ?>">Mégse, vissza az alkalmazásba</a>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Változtatások mentése</button>
+          <a class="btn btn-secondary" href="<?= htmlspecialchars($returnTo ?: app_url_path(''), ENT_QUOTES) ?>">Mégse</a>
+        </div>
       </form>
     </section>
   </main>
+  <script defer src="https://cdn.jsdelivr.net/npm/@halfmoon/ui@2.0.1/dist/js/halfmoon.min.js"></script>
 </body>
 </html>
