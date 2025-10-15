@@ -116,8 +116,14 @@ function append_change_events($rev, $actorId, $requestId, $batchId, array $event
 function commit_dataset_update(array $newItems, array $newRoundMeta, $actorId, $requestId, $batchId, $action, array $actionMeta = []) {
   global $DATA_FILE, $CURRENT_USER;
   return state_lock(function() use ($DATA_FILE, $newItems, $newRoundMeta, $actorId, $requestId, $batchId, $action, $actionMeta, $CURRENT_USER) {
+    $readStart = microtime(true);
     [$oldItems, $oldRoundMeta] = data_store_read($DATA_FILE);
-    $writeOk = data_store_write($DATA_FILE, $newItems, $newRoundMeta);
+    app_perf_log_event('dataset_read', microtime(true) - $readStart, ['count' => count($oldItems)]);
+    $normalizedItems = normalize_items($newItems);
+    $normalizedMeta = normalize_round_meta($newRoundMeta);
+    $writeStart = microtime(true);
+    $writeOk = data_store_write($DATA_FILE, $normalizedItems, $normalizedMeta, true);
+    app_perf_log_event('dataset_write', microtime(true) - $writeStart, ['count' => count($normalizedItems)]);
     if ($writeOk === false) {
       throw new RuntimeException('write_failed');
     }
@@ -125,8 +131,8 @@ function commit_dataset_update(array $newItems, array $newRoundMeta, $actorId, $
     $newRev = $currentRev + 1;
     write_revision_locked($newRev);
     $events = array_merge(
-      compute_item_changes($oldItems, $newItems),
-      compute_round_meta_changes($oldRoundMeta, $newRoundMeta)
+      compute_item_changes($oldItems, $normalizedItems),
+      compute_round_meta_changes($oldRoundMeta, $normalizedMeta)
     );
     if (empty($events)) {
       $events[] = ['entity' => 'dataset', 'entity_id' => null, 'action' => $action, 'meta' => $actionMeta];
@@ -142,8 +148,8 @@ function commit_dataset_update(array $newItems, array $newRoundMeta, $actorId, $
       }, $events);
     }
     append_change_events($newRev, $actorId, $requestId, $batchId, $events, $actionMeta);
-    audit_log_dataset_events($events, $oldItems, $newItems, $oldRoundMeta, $newRoundMeta, $action, $actionMeta, $CURRENT_USER);
-    return ['rev' => $newRev, 'events' => $events];
+    audit_log_dataset_events($events, $oldItems, $normalizedItems, $oldRoundMeta, $normalizedMeta, $action, $actionMeta, $CURRENT_USER);
+    return ['rev' => $newRev, 'events' => $events, 'items' => $normalizedItems, 'round_meta' => $normalizedMeta];
   });
 }
 
@@ -317,25 +323,9 @@ if ($action === 'changes') {
   }
 
   while (true) {
-    $entries = read_change_log_entries();
-    $filtered = [];
-    $maxRev = $since;
-    foreach ($entries as $entry) {
-      $rev = isset($entry['rev']) ? (int)$entry['rev'] : 0;
-      if ($rev <= $since) {
-        continue;
-      }
-      if ($rev > $maxRev) {
-        $maxRev = $rev;
-      }
-      if ($excludeActor && isset($entry['actor_id']) && $entry['actor_id'] === $excludeActor) {
-        continue;
-      }
-      if (!empty($excludeBatchList) && isset($entry['batch_id']) && in_array($entry['batch_id'], $excludeBatchList, true)) {
-        continue;
-      }
-      $filtered[] = $entry;
-    }
+    $collect = change_log_collect_since($since, $excludeActor, $excludeBatchList);
+    $filtered = $collect['events'] ?? [];
+    $maxRev = isset($collect['latest_rev']) ? (int)$collect['latest_rev'] : $since;
 
     if (!empty($filtered)) {
       $jsonHeader();
@@ -396,7 +386,7 @@ if ($action === 'save') {
     echo json_encode(['ok' => false, 'error' => 'write_failed'], JSON_UNESCAPED_UNICODE);
     exit;
   }
-  backup_now($CFG, $DATA_FILE);
+  backup_now($CFG, $DATA_FILE, $result['items'] ?? null, $result['round_meta'] ?? null);
   echo json_encode(['ok' => true, 'rev' => $result['rev'] ?? null]);
   exit;
 }
@@ -800,7 +790,7 @@ if ($action === 'import_csv') {
     $iid = isset($item['id']) ? trim((string)$item['id']) : '';
     if ($iid !== '') { $importedIds[] = $iid; }
   }
-  backup_now($CFG, $DATA_FILE);
+  backup_now($CFG, $DATA_FILE, $result['items'] ?? null, $result['round_meta'] ?? null);
   echo json_encode([
     'ok' => true,
     'items' => $finalItems,
@@ -864,7 +854,7 @@ if ($action === 'delete_round') {
     exit;
   }
 
-  backup_now($CFG, $DATA_FILE);
+  backup_now($CFG, $DATA_FILE, $result['items'] ?? null, $result['round_meta'] ?? null);
   echo json_encode(['ok'=>true,'deleted'=>count($removed),'rev'=>$result['rev'] ?? null]);
   exit;
 }

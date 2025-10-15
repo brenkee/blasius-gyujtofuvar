@@ -5,6 +5,9 @@ if (!isset($GLOBALS['APP_PERF'])) {
   $GLOBALS['APP_PERF'] = [
     'start' => microtime(true),
     'db' => 0.0,
+    'io' => 0.0,
+    'io_bytes' => 0,
+    'events' => [],
   ];
 }
 
@@ -19,6 +22,45 @@ if (!function_exists('app_perf_track_db')) {
       return;
     }
     $GLOBALS['APP_PERF']['db'] = ($GLOBALS['APP_PERF']['db'] ?? 0.0) + $delta;
+  }
+}
+
+if (!function_exists('app_perf_track_io')) {
+  function app_perf_track_io($start, $bytes = 0, $end = null) {
+    $endTime = $end ?? microtime(true);
+    if (!is_float($start)) {
+      return;
+    }
+    $delta = $endTime - $start;
+    if (!is_float($delta) || $delta < 0) {
+      return;
+    }
+    $GLOBALS['APP_PERF']['io'] = ($GLOBALS['APP_PERF']['io'] ?? 0.0) + $delta;
+    if (is_numeric($bytes) && $bytes > 0) {
+      $GLOBALS['APP_PERF']['io_bytes'] = ($GLOBALS['APP_PERF']['io_bytes'] ?? 0) + (int)$bytes;
+    }
+  }
+}
+
+if (!function_exists('app_perf_log_event')) {
+  function app_perf_log_event($name, $duration, array $meta = []) {
+    if (!is_string($name) || $name === '') {
+      return;
+    }
+    $durationFloat = (float)$duration;
+    if ($durationFloat <= 0) {
+      return;
+    }
+    $events = $GLOBALS['APP_PERF']['events'] ?? [];
+    $events[] = [
+      'name' => $name,
+      'duration' => $durationFloat,
+      'meta' => $meta,
+    ];
+    usort($events, function ($a, $b) {
+      return ($b['duration'] ?? 0.0) <=> ($a['duration'] ?? 0.0);
+    });
+    $GLOBALS['APP_PERF']['events'] = array_slice($events, 0, 6);
   }
 }
 
@@ -37,8 +79,44 @@ if (!function_exists('app_perf_register_shutdown')) {
       $start = isset($perf['start']) && is_float($perf['start']) ? $perf['start'] : microtime(true);
       $total = microtime(true) - $start;
       $db = isset($perf['db']) && is_float($perf['db']) ? $perf['db'] : 0.0;
-      header(sprintf('X-App-Perf-Total: %.5f', max(0, $total)));
-      header(sprintf('X-App-Perf-DB: %.5f', max(0, $db)));
+      $io = isset($perf['io']) && is_float($perf['io']) ? $perf['io'] : 0.0;
+      $bytes = isset($perf['io_bytes']) && is_numeric($perf['io_bytes']) ? (int)$perf['io_bytes'] : 0;
+      $total = $total < 0 ? 0.0 : $total;
+      $db = $db < 0 ? 0.0 : $db;
+      $io = $io < 0 ? 0.0 : $io;
+      $ratioDb = $total > 0 ? min(1.0, $db / $total) : 0.0;
+      $ratioIo = $total > 0 ? min(1.0, $io / $total) : 0.0;
+      header(sprintf('X-App-Perf-Total: %.5f', $total));
+      header(sprintf('X-App-Perf-DB: %.5f', $db));
+      header(sprintf('X-App-Perf-IO: %.5f', $io));
+      header('X-App-Perf-Bytes: ' . $bytes);
+      header(sprintf('X-App-Perf-Ratio: db=%.3f;io=%.3f', $ratioDb, $ratioIo));
+      if (!empty($perf['events']) && is_array($perf['events'])) {
+        $parts = [];
+        foreach (array_slice($perf['events'], 0, 4) as $event) {
+          $label = preg_replace('/[^A-Za-z0-9_\-]/', '', (string)($event['name'] ?? ''));
+          if ($label === '') {
+            continue;
+          }
+          $duration = isset($event['duration']) ? (float)$event['duration'] : 0.0;
+          $meta = isset($event['meta']) && is_array($event['meta']) ? $event['meta'] : [];
+          $metaParts = [];
+          foreach ($meta as $key => $value) {
+            if (!is_scalar($value)) {
+              continue;
+            }
+            $metaParts[] = sprintf('%s=%s', preg_replace('/[^A-Za-z0-9_\-]/', '', (string)$key), (string)$value);
+          }
+          $chunk = sprintf('%s:%.4f', $label, max(0, $duration));
+          if (!empty($metaParts)) {
+            $chunk .= '(' . implode(';', $metaParts) . ')';
+          }
+          $parts[] = $chunk;
+        }
+        if (!empty($parts)) {
+          header('X-App-Perf-Events: ' . implode(',', $parts));
+        }
+      }
     });
   }
 }
@@ -583,10 +661,16 @@ $DATA_INIT_ERROR = null;
  * Biztonságos backup: létezés-ellenőrzés és mtime használat védetten.
  * Elkerüli a "filemtime(): stat failed" warningokat versenyhelyzet esetén.
  */
-function generate_export_csv($cfg, $dataFile, $roundFilter = null, &$error = null) {
+function generate_export_csv($cfg, $dataFile, $roundFilter = null, &$error = null, $itemsOverride = null, $roundMetaOverride = null) {
   $error = null;
+  $buildStart = microtime(true);
 
-  [$items, $roundMeta] = data_store_read($dataFile);
+  if (is_array($itemsOverride)) {
+    $items = normalize_items($itemsOverride);
+    $roundMeta = normalize_round_meta(is_array($roundMetaOverride) ? $roundMetaOverride : []);
+  } else {
+    [$items, $roundMeta] = data_store_read($dataFile);
+  }
   $items = array_values(array_filter(is_array($items) ? $items : []));
   $roundMeta = is_array($roundMeta) ? $roundMeta : [];
   if (!empty($roundMeta)) {
@@ -774,10 +858,15 @@ function generate_export_csv($cfg, $dataFile, $roundFilter = null, &$error = nul
     return null;
   }
 
-  return "\xEF\xBB\xBF" . $csvBody;
+  $csv = "\xEF\xBB\xBF" . $csvBody;
+  app_perf_log_event('export_csv', microtime(true) - $buildStart, [
+    'items' => count($items),
+    'rounds' => count($roundMeta),
+  ]);
+  return $csv;
 }
 
-function backup_now($cfg, $dataFile) {
+function backup_now($cfg, $dataFile, ?array $itemsOverride = null, ?array $roundMetaOverride = null) {
   if (empty($cfg['backup']['enabled'])) return;
 
   $dir = __DIR__ . '/' . ($cfg['backup']['dir'] ?? 'backups');
@@ -806,7 +895,7 @@ function backup_now($cfg, $dataFile) {
   }
 
   $error = null;
-  $csv = generate_export_csv($cfg, $dataFile, null, $error);
+  $csv = generate_export_csv($cfg, $dataFile, null, $error, $itemsOverride, $roundMetaOverride);
   if ($csv === null) {
     return;
   }
@@ -1037,6 +1126,51 @@ function normalize_round_meta($roundMeta) {
     ksort($out, SORT_STRING);
   }
   return $out;
+}
+
+if (!isset($GLOBALS['DATA_STORE_CACHE'])) {
+  $GLOBALS['DATA_STORE_CACHE'] = [];
+}
+
+function data_store_cache_key($file) {
+  $path = (string)$file;
+  if ($path === '') {
+    return '';
+  }
+  if ($path[0] !== '/' && strpos($path, '://') === false) {
+    $real = realpath(__DIR__ . '/' . $path);
+    if ($real !== false) {
+      return $real;
+    }
+  } else {
+    $real = realpath($path);
+    if ($real !== false) {
+      return $real;
+    }
+  }
+  return $path;
+}
+
+function data_store_cache_get($file) {
+  $key = data_store_cache_key($file);
+  $entry = $GLOBALS['DATA_STORE_CACHE'][$key] ?? null;
+  if (!is_array($entry) || !array_key_exists('items', $entry) || !array_key_exists('round_meta', $entry)) {
+    return null;
+  }
+  return [$entry['items'], $entry['round_meta']];
+}
+
+function data_store_cache_set($file, array $items, array $roundMeta) {
+  $key = data_store_cache_key($file);
+  $GLOBALS['DATA_STORE_CACHE'][$key] = [
+    'items' => $items,
+    'round_meta' => $roundMeta,
+  ];
+}
+
+function data_store_cache_forget($file) {
+  $key = data_store_cache_key($file);
+  unset($GLOBALS['DATA_STORE_CACHE'][$key]);
 }
 
 function normalize_items(array $items) {
@@ -1280,7 +1414,12 @@ function data_store_read_json($file) {
   if (!is_file($file)) {
     return [$items, $roundMeta];
   }
+  $ioStart = microtime(true);
   $raw = file_get_contents($file);
+  $ioEnd = microtime(true);
+  $bytes = $raw === false ? 0 : strlen($raw);
+  app_perf_track_io($ioStart, $bytes, $ioEnd);
+  app_perf_log_event('data_read', $ioEnd - $ioStart, ['bytes' => $bytes]);
   $decoded = json_decode($raw ?: '[]', true);
   if (!is_array($decoded)) {
     return [$items, $roundMeta];
@@ -1299,28 +1438,59 @@ function data_store_read_json($file) {
   return [$items, $roundMeta];
 }
 
-function data_store_write_json($file, $items, $roundMeta) {
-  $normalizedItems = normalize_items(is_array($items) ? $items : []);
-  $normalizedMeta = normalize_round_meta($roundMeta);
+function data_store_write_json($file, array $items, array $roundMeta) {
   $payload = [
-    'items' => array_values($normalizedItems),
-    'round_meta' => !empty($normalizedMeta) ? $normalizedMeta : (object)[]
+    'items' => array_values($items),
+    'round_meta' => !empty($roundMeta) ? $roundMeta : (object)[]
   ];
-  return file_put_contents($file, json_encode($payload, JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT));
+  $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+  if ($json === false) {
+    return false;
+  }
+  $ioStart = microtime(true);
+  $result = file_put_contents($file, $json);
+  $ioEnd = microtime(true);
+  $bytes = strlen($json);
+  app_perf_track_io($ioStart, $bytes, $ioEnd);
+  app_perf_log_event('data_write', $ioEnd - $ioStart, ['bytes' => $bytes]);
+  return $result;
 }
 
 function data_store_read($file) {
-  if (data_store_is_sqlite($file)) {
-    return data_store_read_sqlite($file);
+  $cached = data_store_cache_get($file);
+  if ($cached !== null) {
+    return $cached;
   }
-  return data_store_read_json($file);
+  if (data_store_is_sqlite($file)) {
+    $result = data_store_read_sqlite($file);
+  } else {
+    $result = data_store_read_json($file);
+  }
+  if (is_array($result) && count($result) === 2) {
+    data_store_cache_set($file, $result[0], $result[1]);
+  }
+  return $result;
 }
 
-function data_store_write($file, $items, $roundMeta) {
-  if (data_store_is_sqlite($file)) {
-    return data_store_write_sqlite($file, $items, $roundMeta);
+function data_store_write($file, $items, $roundMeta, $alreadyNormalized = false) {
+  if ($alreadyNormalized) {
+    $normalizedItems = array_values(is_array($items) ? $items : []);
+    $normalizedMeta = is_array($roundMeta) ? $roundMeta : [];
+  } else {
+    $normalizedItems = normalize_items(is_array($items) ? $items : []);
+    $normalizedMeta = normalize_round_meta($roundMeta);
   }
-  return data_store_write_json($file, $items, $roundMeta);
+  if (data_store_is_sqlite($file)) {
+    $result = data_store_write_sqlite($file, $normalizedItems, $normalizedMeta);
+  } else {
+    $result = data_store_write_json($file, $normalizedItems, $normalizedMeta);
+  }
+  if ($result === false) {
+    data_store_cache_forget($file);
+  } else {
+    data_store_cache_set($file, $normalizedItems, $normalizedMeta);
+  }
+  return $result;
 }
 
 function state_lock(callable $callback) {
@@ -1369,6 +1539,125 @@ function write_revision_locked($rev) {
   file_put_contents($REVISION_FILE, $payload, LOCK_EX);
 }
 
+if (!isset($GLOBALS['CHANGE_LOG_STATE'])) {
+  $GLOBALS['CHANGE_LOG_STATE'] = [
+    'cache' => [
+      'entries' => [],
+      'latest_rev' => 0,
+      'size' => 0,
+      'mtime' => 0,
+      'offset' => 0,
+    ],
+    'cleanup' => [
+      'scheduled' => false,
+      'last_run' => 0,
+      'running' => false,
+    ],
+  ];
+}
+
+function change_log_cache_update(?array $entry = null) {
+  global $CHANGE_LOG_FILE;
+  $state = $GLOBALS['CHANGE_LOG_STATE']['cache'] ?? [];
+  if ($entry !== null) {
+    $entries = isset($state['entries']) && is_array($state['entries']) ? $state['entries'] : [];
+    $entries[] = $entry;
+    $state['entries'] = $entries;
+    $rev = isset($entry['rev']) ? (int)$entry['rev'] : 0;
+    if ($rev > ($state['latest_rev'] ?? 0)) {
+      $state['latest_rev'] = $rev;
+    }
+  }
+  clearstatcache(false, $CHANGE_LOG_FILE);
+  $stat = @stat($CHANGE_LOG_FILE);
+  if (is_array($stat)) {
+    $state['size'] = isset($stat['size']) ? (int)$stat['size'] : ($state['size'] ?? 0);
+    $state['mtime'] = isset($stat['mtime']) ? (int)$stat['mtime'] : ($state['mtime'] ?? 0);
+    $state['offset'] = $state['size'] ?? 0;
+  }
+  $GLOBALS['CHANGE_LOG_STATE']['cache'] = $state;
+}
+
+function change_log_schedule_cleanup($cutoffTimestamp) {
+  if (!isset($GLOBALS['CHANGE_LOG_STATE']['cleanup'])) {
+    $GLOBALS['CHANGE_LOG_STATE']['cleanup'] = ['scheduled' => false, 'last_run' => 0, 'running' => false];
+  }
+  $cleanupState =& $GLOBALS['CHANGE_LOG_STATE']['cleanup'];
+  if (!empty($cleanupState['scheduled']) || !empty($cleanupState['running'])) {
+    return;
+  }
+  $minInterval = 45; // seconds
+  if (time() - ($cleanupState['last_run'] ?? 0) < $minInterval) {
+    return;
+  }
+  $cleanupState['scheduled'] = true;
+  register_shutdown_function(function () use ($cutoffTimestamp) {
+    change_log_cleanup($cutoffTimestamp);
+  });
+}
+
+function change_log_cleanup($cutoffTimestamp) {
+  global $CHANGE_LOG_FILE;
+  if (!isset($GLOBALS['CHANGE_LOG_STATE']['cleanup'])) {
+    $GLOBALS['CHANGE_LOG_STATE']['cleanup'] = ['scheduled' => false, 'last_run' => 0, 'running' => false];
+  }
+  $cleanupState =& $GLOBALS['CHANGE_LOG_STATE']['cleanup'];
+  $cleanupState['scheduled'] = false;
+  $cleanupState['running'] = true;
+  $cleanupState['last_run'] = time();
+  if (!is_file($CHANGE_LOG_FILE)) {
+    $cleanupState['running'] = false;
+    return;
+  }
+  $fh = @fopen($CHANGE_LOG_FILE, 'c+');
+  if (!$fh) {
+    $cleanupState['running'] = false;
+    return;
+  }
+  $retained = [];
+  $bytesTouched = 0;
+  $ioStart = microtime(true);
+  if (flock($fh, LOCK_EX)) {
+    rewind($fh);
+    while (($line = fgets($fh)) !== false) {
+      $bytesTouched += strlen($line);
+      $lineTrim = trim($line);
+      if ($lineTrim === '') {
+        continue;
+      }
+      $keep = true;
+      $decoded = json_decode($lineTrim, true);
+      if (is_array($decoded) && isset($decoded['ts'])) {
+        $ts = strtotime((string)$decoded['ts']);
+        if ($ts !== false && $ts < $cutoffTimestamp) {
+          $keep = false;
+        }
+      }
+      if ($keep) {
+        $retained[] = $lineTrim;
+      }
+    }
+    ftruncate($fh, 0);
+    rewind($fh);
+    if (!empty($retained)) {
+      $payload = implode("\n", $retained) . "\n";
+      $bytesTouched += strlen($payload);
+      fwrite($fh, $payload);
+    }
+    fflush($fh);
+    flock($fh, LOCK_UN);
+  }
+  fclose($fh);
+  $ioEnd = microtime(true);
+  if ($bytesTouched > 0) {
+    app_perf_track_io($ioStart, $bytesTouched, $ioEnd);
+    app_perf_log_event('change_log_prune', $ioEnd - $ioStart, ['kept' => count($retained)]);
+  }
+  unset($GLOBALS['CHANGE_LOG_STATE']['cache']);
+  clearstatcache(false, $CHANGE_LOG_FILE);
+  $cleanupState['running'] = false;
+}
+
 function append_change_log_locked(array $entry) {
   global $CHANGE_LOG_FILE;
 
@@ -1376,50 +1665,22 @@ function append_change_log_locked(array $entry) {
     $entry['ts'] = gmdate('c');
   }
 
-  $maxAgeSeconds = 86400; // 1 day
-  $cutoff = time() - $maxAgeSeconds;
-  $newLine = json_encode($entry, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
-
-  $fh = @fopen($CHANGE_LOG_FILE, 'c+');
-  if (!$fh) {
-    file_put_contents($CHANGE_LOG_FILE, $newLine . "\n", FILE_APPEND | LOCK_EX);
+  $line = json_encode($entry, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  if ($line === false) {
     return;
   }
-
-  $retained = [];
-  if (flock($fh, LOCK_EX)) {
-    rewind($fh);
-    while (($line = fgets($fh)) !== false) {
-      $line = trim($line);
-      if ($line === '') continue;
-
-      $keep = true;
-      $decoded = json_decode($line, true);
-      if (is_array($decoded) && isset($decoded['ts'])) {
-        $ts = strtotime((string)$decoded['ts']);
-        if ($ts !== false && $ts < $cutoff) {
-          $keep = false;
-        }
-      }
-
-      if ($keep) {
-        $retained[] = $line;
-      }
-    }
-
-    $retained[] = $newLine;
-
-    ftruncate($fh, 0);
-    rewind($fh);
-    fwrite($fh, implode("\n", $retained) . "\n");
-    fflush($fh);
-    flock($fh, LOCK_UN);
-  } else {
-    // Fallback if we could not acquire the lock.
-    file_put_contents($CHANGE_LOG_FILE, $newLine . "\n", FILE_APPEND | LOCK_EX);
+  $payload = $line . "\n";
+  $ioStart = microtime(true);
+  $writeResult = file_put_contents($CHANGE_LOG_FILE, $payload, FILE_APPEND | LOCK_EX);
+  $ioEnd = microtime(true);
+  if ($writeResult !== false) {
+    $bytes = strlen($payload);
+    app_perf_track_io($ioStart, $bytes, $ioEnd);
+    app_perf_log_event('change_log_write', $ioEnd - $ioStart, ['bytes' => $bytes]);
+    change_log_cache_update($entry);
+    $maxAgeSeconds = 86400; // 1 day
+    change_log_schedule_cleanup(time() - $maxAgeSeconds);
   }
-
-  fclose($fh);
 }
 
 function normalized_actor_id($raw) {
@@ -2057,26 +2318,122 @@ function audit_log_query(array $filters, $page = 1, $perPage = 25, $forDownload 
 function read_change_log_entries() {
   global $CHANGE_LOG_FILE;
   if (!is_file($CHANGE_LOG_FILE)) {
+    $GLOBALS['CHANGE_LOG_STATE']['cache'] = [
+      'entries' => [],
+      'latest_rev' => 0,
+      'size' => 0,
+      'mtime' => 0,
+      'offset' => 0,
+    ];
     return [];
   }
-  $fh = fopen($CHANGE_LOG_FILE, 'r');
+  $cache = $GLOBALS['CHANGE_LOG_STATE']['cache'] ?? [];
+  $entries = isset($cache['entries']) && is_array($cache['entries']) ? $cache['entries'] : [];
+  $prevSize = isset($cache['size']) ? (int)$cache['size'] : 0;
+  $prevMtime = isset($cache['mtime']) ? (int)$cache['mtime'] : 0;
+  clearstatcache(false, $CHANGE_LOG_FILE);
+  $stat = @stat($CHANGE_LOG_FILE);
+  $size = is_array($stat) && isset($stat['size']) ? (int)$stat['size'] : $prevSize;
+  $mtime = is_array($stat) && isset($stat['mtime']) ? (int)$stat['mtime'] : $prevMtime;
+  if ($size === $prevSize && $mtime === $prevMtime && !empty($entries)) {
+    return $entries;
+  }
+  $needsFullReload = $size < $prevSize || $mtime < $prevMtime || empty($cache);
+  $offset = isset($cache['offset']) ? (int)$cache['offset'] : 0;
+  $fh = @fopen($CHANGE_LOG_FILE, 'r');
   if (!$fh) {
-    return [];
+    return $entries;
   }
-  $entries = [];
+  $bytesRead = 0;
+  $ioStart = microtime(true);
   if (flock($fh, LOCK_SH)) {
+    if ($needsFullReload) {
+      $entries = [];
+      $offset = 0;
+      rewind($fh);
+    } else {
+      if ($offset > 0) {
+        if ($offset > $size) {
+          $entries = [];
+          $offset = 0;
+          rewind($fh);
+        } else {
+          fseek($fh, $offset);
+        }
+      }
+    }
     while (($line = fgets($fh)) !== false) {
+      $bytesRead += strlen($line);
       $line = trim($line);
-      if ($line === '') continue;
+      if ($line === '') {
+        continue;
+      }
       $decoded = json_decode($line, true);
       if (is_array($decoded) && isset($decoded['rev'])) {
         $entries[] = $decoded;
       }
     }
+    $offset = ftell($fh);
     flock($fh, LOCK_UN);
   }
   fclose($fh);
+  $ioEnd = microtime(true);
+  if ($bytesRead > 0) {
+    app_perf_track_io($ioStart, $bytesRead, $ioEnd);
+    app_perf_log_event('change_log_read', $ioEnd - $ioStart, ['bytes' => $bytesRead]);
+  }
+  $latestRev = 0;
+  foreach ($entries as $entry) {
+    if (!is_array($entry)) {
+      continue;
+    }
+    $rev = isset($entry['rev']) ? (int)$entry['rev'] : 0;
+    if ($rev > $latestRev) {
+      $latestRev = $rev;
+    }
+  }
+  $GLOBALS['CHANGE_LOG_STATE']['cache'] = [
+    'entries' => $entries,
+    'latest_rev' => $latestRev,
+    'size' => $size,
+    'mtime' => $mtime,
+    'offset' => $offset,
+  ];
   return $entries;
+}
+
+function change_log_collect_since($since, $excludeActor = null, array $excludeBatchList = []) {
+  $since = (int)$since;
+  $entries = read_change_log_entries();
+  $filtered = [];
+  $maxRev = $since;
+  $batchLookup = [];
+  foreach ($excludeBatchList as $bid) {
+    if (!is_string($bid) || $bid === '') {
+      continue;
+    }
+    $batchLookup[$bid] = true;
+  }
+  foreach ($entries as $entry) {
+    if (!is_array($entry)) {
+      continue;
+    }
+    $rev = isset($entry['rev']) ? (int)$entry['rev'] : 0;
+    if ($rev <= $since) {
+      continue;
+    }
+    if ($rev > $maxRev) {
+      $maxRev = $rev;
+    }
+    if ($excludeActor && isset($entry['actor_id']) && $entry['actor_id'] === $excludeActor) {
+      continue;
+    }
+    if (!empty($batchLookup) && isset($entry['batch_id']) && isset($batchLookup[$entry['batch_id']])) {
+      continue;
+    }
+    $filtered[] = $entry;
+  }
+  return ['events' => $filtered, 'latest_rev' => $maxRev];
 }
 
 if (!function_exists('app_session_start')) {
