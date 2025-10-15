@@ -55,7 +55,7 @@
         "export_file": "backups/fuvar_export.csv",
         "export_download_name": "fuvar_export.csv"
     },
-    "log_retention_days": 180,
+    "log_retention_days": 1,
     "backup": {
         "enabled": true,
         "dir": "backups",
