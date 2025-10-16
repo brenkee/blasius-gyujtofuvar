@@ -902,15 +902,7 @@
       }
     }
     if (Array.isArray(routeGeometrySource)) {
-      const coords = [];
-      for (const entry of routeGeometrySource) {
-        if (!Array.isArray(entry) || entry.length < 2) continue;
-        const latNum = Number(entry[0]);
-        const lonNum = Number(entry[1]);
-        if (!Number.isFinite(latNum) || !Number.isFinite(lonNum)) continue;
-        coords.push([latNum, lonNum]);
-        if (coords.length >= 2000) break;
-      }
+      const coords = normalizeRouteLatLngs(routeGeometrySource, {ensureOrigin: true});
       if (coords.length) {
         sanitized.route_geometry = coords;
       }
@@ -1318,7 +1310,22 @@
       updateRouteStatusBar(null);
       return;
     }
-    state.activeRouteStatus = {...info};
+    const normalized = {...info};
+    if (!info.pending) {
+      const distNum = Number(info.distance);
+      const durNum = Number(info.duration);
+      if (!Number.isFinite(distNum) || distNum < 0) {
+        normalized.distance = 0;
+      } else {
+        normalized.distance = distNum;
+      }
+      if (!Number.isFinite(durNum) || durNum < 0) {
+        normalized.duration = 0;
+      } else {
+        normalized.duration = durNum;
+      }
+    }
+    state.activeRouteStatus = normalized;
     updateRouteStatusBar(state.activeRouteStatus);
   }
 
@@ -1975,6 +1982,41 @@
     return 2*R*Math.asin(Math.sqrt(a));
   }
 
+  function normalizeRouteLatLngs(rawCoords, opts = {}){
+    const ensureOrigin = !!opts.ensureOrigin;
+    const coords = [];
+    if (Array.isArray(rawCoords)) {
+      for (const entry of rawCoords) {
+        if (!Array.isArray(entry) || entry.length < 2) continue;
+        const lat = Number(entry[0]);
+        const lon = Number(entry[1]);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+        coords.push([lat, lon]);
+        if (coords.length >= 2000) break;
+      }
+    }
+    if (ensureOrigin && coords.length) {
+      const originLat = Number(state.ORIGIN?.lat);
+      const originLon = Number(state.ORIGIN?.lon);
+      if (Number.isFinite(originLat) && Number.isFinite(originLon)) {
+        const first = coords[0];
+        const firstLat = Number(first?.[0]);
+        const firstLon = Number(first?.[1]);
+        let needsOrigin = !Number.isFinite(firstLat) || !Number.isFinite(firstLon);
+        if (!needsOrigin) {
+          const distKm = haversineKm(originLat, originLon, firstLat, firstLon);
+          needsOrigin = !Number.isFinite(distKm) || distKm > 0.02;
+        }
+        if (needsOrigin) {
+          coords.unshift([originLat, originLon]);
+        } else {
+          coords[0] = [originLat, originLon];
+        }
+      }
+    }
+    return coords;
+  }
+
   // --- Sorfejléc „meta” (súly/térfogat, vagy piros „!” ha mindkettő hiányzik)
   function metaHTML(it){
     const metrics = getMetricDefs();
@@ -2536,15 +2578,8 @@
   function drawRoutePolyline(rid, geometry){
     if (!mapRef) return;
     const idNum = Number(rid);
-    const latLngs = Array.isArray(geometry)
-      ? geometry.map(pair => {
-          if (!Array.isArray(pair) || pair.length < 2) return null;
-          const lat = Number(pair[0]);
-          const lon = Number(pair[1]);
-          if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
-          return L.latLng(lat, lon);
-        }).filter(Boolean)
-      : [];
+    const normalizedCoords = normalizeRouteLatLngs(geometry, {ensureOrigin: true});
+    const latLngs = normalizedCoords.map(pair => L.latLng(pair[0], pair[1]));
     if (latLngs.length < 2) {
       removeRouteLayer(idNum);
       return;
@@ -2761,6 +2796,9 @@
     try {
       const {data} = await orsRequest('/optimization', {jobs, vehicles: [vehicle]});
       const route = data && Array.isArray(data.routes) ? data.routes[0] : null;
+      const summary = route && typeof route === 'object' ? route.summary || {} : {};
+      const summaryDistance = Number(summary?.distance ?? NaN);
+      const summaryDuration = Number(summary?.duration ?? NaN);
       let sequence = [];
       if (route && Array.isArray(route.activities)) {
         route.activities.forEach(activity => {
@@ -2785,11 +2823,18 @@
       }
       const coords = [[Number(origin?.lon), Number(origin?.lat)], ...orderedItems.map(it => [Number(it.lon), Number(it.lat)])];
       const directions = await requestDirections(coords, profile);
+      const geometry = normalizeRouteLatLngs(directions.geometry, {ensureOrigin: true});
+      const distance = Number.isFinite(directions.distance)
+        ? directions.distance
+        : (Number.isFinite(summaryDistance) ? summaryDistance : 0);
+      const duration = Number.isFinite(directions.duration)
+        ? directions.duration
+        : (Number.isFinite(summaryDuration) ? summaryDuration : 0);
       return {
         order: orderedItems.map(it => String(it.id)),
-        geometry: Array.isArray(directions.geometry) ? directions.geometry : [],
-        distance: Number.isFinite(directions.distance) ? directions.distance : 0,
-        duration: Number.isFinite(directions.duration) ? directions.duration : 0,
+        geometry,
+        distance,
+        duration,
         source: 'optimization'
       };
     } catch (err) {
@@ -2863,20 +2908,23 @@
     const coordList = [[Number(origin?.lon), Number(origin?.lat)], ...orderedItems.map(it => [Number(it.lon), Number(it.lat)])];
     try {
       const directions = await requestDirections(coordList, profile);
-      if (Array.isArray(directions.geometry) && directions.geometry.length >= 2) {
+      const geometry = normalizeRouteLatLngs(directions.geometry, {ensureOrigin: true});
+      const distance = Number.isFinite(directions.distance) ? directions.distance : totalDistance;
+      const duration = Number.isFinite(directions.duration) ? directions.duration : totalDuration;
+      if (geometry.length >= 2) {
         return {
           order: orderedItems.map(it => String(it.id)),
-          geometry: directions.geometry,
-          distance: Number.isFinite(directions.distance) ? directions.distance : totalDistance,
-          duration: Number.isFinite(directions.duration) ? directions.duration : totalDuration,
+          geometry,
+          distance: Number.isFinite(distance) ? distance : 0,
+          duration: Number.isFinite(duration) ? duration : 0,
           source: 'matrix'
         };
       }
       return {
         order: orderedItems.map(it => String(it.id)),
         geometry: [],
-        distance: Number.isFinite(totalDistance) ? totalDistance : 0,
-        duration: Number.isFinite(totalDuration) ? totalDuration : 0,
+        distance: Number.isFinite(distance) ? distance : (Number.isFinite(totalDistance) ? totalDistance : 0),
+        duration: Number.isFinite(duration) ? duration : (Number.isFinite(totalDuration) ? totalDuration : 0),
         source: 'matrix'
       };
     } catch (directionError) {
@@ -2905,15 +2953,7 @@
       delete entry.route_hash;
     }
     if (Array.isArray(result.geometry) && result.geometry.length >= 2) {
-      const coords = [];
-      for (const pair of result.geometry) {
-        if (!Array.isArray(pair) || pair.length < 2) continue;
-        const lat = Number(pair[0]);
-        const lon = Number(pair[1]);
-        if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-        coords.push([lat, lon]);
-        if (coords.length >= 2000) break;
-      }
+      const coords = normalizeRouteLatLngs(result.geometry, {ensureOrigin: true});
       if (coords.length >= 2) {
         entry.route_geometry = coords;
       } else {
