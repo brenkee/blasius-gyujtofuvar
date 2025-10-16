@@ -370,7 +370,23 @@ if (!function_exists('routing_fetch_matrix')) {
     {
         $routing = $cfg['routing'] ?? [];
         $profile = $routing['profile'] ?? 'driving-car';
-        $chunkSize = isset($routing['matrix_chunk_size']) ? max(1, (int)$routing['matrix_chunk_size']) : 40;
+        $maxLocations = isset($routing['matrix_max_locations']) ? (int)$routing['matrix_max_locations'] : 40;
+        if ($maxLocations < 3) {
+            $maxLocations = 40;
+        }
+        $chunkSize = isset($routing['matrix_chunk_size']) ? (int)$routing['matrix_chunk_size'] : ($maxLocations - 1);
+        if ($chunkSize < 1) {
+            $chunkSize = $maxLocations - 1;
+        }
+        if ($chunkSize < 1) {
+            $chunkSize = 1;
+        }
+        if ($chunkSize > $maxLocations - 1) {
+            $chunkSize = $maxLocations - 1;
+        }
+        if ($chunkSize < 1) {
+            $chunkSize = 1;
+        }
         $locations = [];
         $ids = [];
         $ids[] = null; // origin placeholder
@@ -380,32 +396,47 @@ if (!function_exists('routing_fetch_matrix')) {
             $locations[] = [(float)$job['lon'], (float)$job['lat']];
         }
         $count = count($locations);
-        $distances = array_fill(0, $count, array_fill(0, $count, null));
-        $durations = array_fill(0, $count, array_fill(0, $count, null));
-        $allDestinations = range(0, $count - 1);
-        for ($start = 0; $start < $count; $start += $chunkSize) {
-            $sources = range($start, min($count - 1, $start + $chunkSize - 1));
-            $payload = [
-                'locations' => $locations,
-                'metrics' => ['distance', 'duration'],
-                'sources' => $sources,
-                'destinations' => $allDestinations,
-            ];
-            $response = routing_http_request('POST', '/matrix/' . $profile, $payload, $cfg);
-            if (!isset($response['distances']) || !is_array($response['distances'])) {
-                throw new RuntimeException('routing_matrix_missing_distances');
-            }
-            $distanceRows = $response['distances'];
-            $durationRows = $response['durations'] ?? [];
-            foreach ($sources as $idx => $sourceIndex) {
-                $rowDistances = $distanceRows[$idx] ?? [];
-                $rowDurations = $durationRows[$idx] ?? [];
-                foreach ($allDestinations as $destIndex) {
-                    $distances[$sourceIndex][$destIndex] = isset($rowDistances[$destIndex]) ? (float)$rowDistances[$destIndex] : INF;
-                    $durations[$sourceIndex][$destIndex] = isset($rowDurations[$destIndex]) ? (float)$rowDurations[$destIndex] : INF;
+        $distances = array_fill(0, $count, array_fill(0, $count, INF));
+        $durations = array_fill(0, $count, array_fill(0, $count, INF));
+        $destinations = range(0, $count - 1);
+        for ($sourceIndex = 0; $sourceIndex < $count; $sourceIndex++) {
+            for ($destStart = 0; $destStart < $count; $destStart += $chunkSize) {
+                $destChunk = array_slice($destinations, $destStart, $chunkSize);
+                if (empty($destChunk)) {
+                    continue;
                 }
+                $subset = array_values(array_unique(array_merge([$sourceIndex], $destChunk)));
+                $subsetLocations = [];
+                $indexMap = [];
+                foreach ($subset as $pos => $originalIndex) {
+                    $subsetLocations[] = $locations[$originalIndex];
+                    $indexMap[$originalIndex] = $pos;
+                }
+                $sourceLocal = [$indexMap[$sourceIndex]];
+                $destLocal = [];
+                foreach ($destChunk as $destIndex) {
+                    $destLocal[] = $indexMap[$destIndex];
+                }
+                $payload = [
+                    'locations' => $subsetLocations,
+                    'metrics' => ['distance', 'duration'],
+                    'sources' => $sourceLocal,
+                    'destinations' => $destLocal,
+                ];
+                $response = routing_http_request('POST', '/matrix/' . $profile, $payload, $cfg);
+                if (!isset($response['distances']) || !is_array($response['distances'])) {
+                    throw new RuntimeException('routing_matrix_missing_distances');
+                }
+                $distanceRow = $response['distances'][0] ?? [];
+                $durationRow = $response['durations'][0] ?? [];
+                foreach ($destChunk as $idx => $destIndex) {
+                    $distances[$sourceIndex][$destIndex] = isset($distanceRow[$idx]) ? (float)$distanceRow[$idx] : INF;
+                    $durations[$sourceIndex][$destIndex] = isset($durationRow[$idx]) ? (float)$durationRow[$idx] : INF;
+                }
+                routing_pause_between_requests($cfg);
             }
-            routing_pause_between_requests($cfg);
+            $distances[$sourceIndex][$sourceIndex] = 0.0;
+            $durations[$sourceIndex][$sourceIndex] = 0.0;
         }
         return [
             'locations' => $locations,

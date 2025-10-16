@@ -313,6 +313,7 @@ $CFG_DEFAULT = [
     "geocode_origin_on_start" => true,
     "cache_ttl_minutes" => 720,
     "matrix_chunk_size" => 40,
+    "matrix_max_locations" => 40,
     "request_pause_ms" => 220
   ],
   "text" => [
