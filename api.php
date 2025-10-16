@@ -864,5 +864,47 @@ if ($action === 'delete_round') {
   exit;
 }
 
+if ($action === 'log_route_error') {
+  if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    $jsonHeader();
+    http_response_code(405);
+    echo json_encode(['ok' => false, 'error' => 'method_not_allowed'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+  $jsonHeader();
+  $rawBody = file_get_contents('php://input');
+  $payload = json_decode($rawBody, true);
+  if (!is_array($payload)) {
+    $payload = [
+      'context' => 'unknown',
+      'details' => $rawBody
+    ];
+  }
+  $context = isset($payload['context']) ? trim((string)$payload['context']) : '';
+  $details = $payload['details'] ?? null;
+  $timestamp = isset($payload['timestamp']) ? trim((string)$payload['timestamp']) : gmdate('c');
+  $parts = ['Routing client error'];
+  if ($timestamp !== '') {
+    $parts[] = 'ts: ' . $timestamp;
+  }
+  if ($context !== '') {
+    $parts[] = 'context: ' . $context;
+  }
+  if ($details !== null) {
+    if (is_string($details)) {
+      $parts[] = 'details: ' . $details;
+    } else {
+      $encoded = json_encode($details, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+      if ($encoded === false) {
+        $encoded = print_r($details, true);
+      }
+      $parts[] = 'details: ' . $encoded;
+    }
+  }
+  error_log(implode(' | ', $parts));
+  echo json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
+  exit;
+}
+
 http_response_code(404);
 echo 'Unknown action';

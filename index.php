@@ -28,6 +28,7 @@ $LOGOUT_TOKEN = csrf_get_token();
     'importCsv' => 'api.php?action=import_csv',
     'exportAll' => 'api.php?action=export',
     'deleteRound' => 'api.php?action=delete_round',
+    'logRouteError' => 'api.php?action=log_route_error',
     'auditLog' => 'log.php',
     'printAll' => 'print.php',
   ];
@@ -272,7 +273,6 @@ $LOGOUT_TOKEN = csrf_get_token();
   </aside>
   <main class="map-area">
     <div id="map"></div>
-    <div id="routeStatus" class="route-status" hidden></div>
   </main>
 </div>
 </body>

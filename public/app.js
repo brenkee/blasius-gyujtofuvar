@@ -18,7 +18,7 @@
     routeCache: new Map(),
     routeLayers: new Map(),
     pendingRouteRequests: new Map(),
-    activeRouteStatus: null,
+    routeStatusByRound: new Map(),
     ORIGIN: {lat:47.4500, lon:19.3500}, // Maglód tartalék
     filterText: '',
     clientId: null,
@@ -44,7 +44,6 @@
   const themeToggle = document.getElementById('themeToggle');
   const panelTopEl = document.getElementById('panelTop');
   const appRootEl = document.querySelector('.app');
-  const routeStatusEl = document.getElementById('routeStatus');
   const VIEW_MODE_STORAGE_KEY = 'app_view_mode_v1';
   const VIEW_MODES = Object.freeze({LIST:'list', MAP:'map'});
   const QUICK_SEARCH_DEBOUNCE_MS = 250;
@@ -924,7 +923,8 @@
 
   function applyRoundMeta(metaObj){
     state.roundMeta = {};
-    setActiveRouteStatus(null);
+    state.routeStatusByRound.clear();
+    renderAllRoundRouteStatuses();
     if (!metaObj || typeof metaObj !== 'object' || Array.isArray(metaObj)) return;
     Object.entries(metaObj).forEach(([rid, entry]) => {
       const normalized = sanitizeRoundMetaEntry(entry);
@@ -1273,60 +1273,171 @@
     return parts.join(' ');
   }
 
-  function updateRouteStatusBar(info){
-    if (!routeStatusEl) return;
-    if (!info) {
-      routeStatusEl.textContent = '';
-      routeStatusEl.hidden = true;
-      routeStatusEl.dataset.round = '';
-      return;
+  function formatDurationMinutes(duration){
+    const num = Number(duration);
+    if (!Number.isFinite(num) || num <= 0) {
+      return '0 perc';
     }
-    routeStatusEl.hidden = false;
-    const roundId = info.roundId != null ? info.roundId : '';
-    routeStatusEl.dataset.round = String(roundId);
-    if (info.pending) {
-      const pendingTpl = text('routing.status_pending', 'Útvonal számítása…');
-      const labelFunc = (typeof roundLabel === 'function') ? roundLabel : null;
-      const roundName = roundId !== '' && labelFunc ? labelFunc(roundId) : '';
-      routeStatusEl.textContent = roundName ? `${pendingTpl} (${roundName})` : pendingTpl;
-      return;
-    }
-    const template = text('routing.status_template', '{round}: {distance} · {duration}');
-    const labelFunc = (typeof roundLabel === 'function') ? roundLabel : null;
-    const distanceText = Number.isFinite(Number(info.distance)) ? formatDistanceMeters(info.distance) : formatDistanceMeters(0);
-    const durationText = Number.isFinite(Number(info.duration)) ? formatDurationSeconds(info.duration) : formatDurationSeconds(0);
-    const roundDisplay = roundId !== '' && labelFunc ? labelFunc(roundId) : (roundId !== '' ? String(roundId) : '');
-    routeStatusEl.textContent = format(template, {
-      round: roundDisplay,
-      round_id: roundId,
-      distance: distanceText,
-      duration: durationText
-    });
+    const minutes = Math.max(1, Math.round(num / 60));
+    return `${minutes} perc`;
   }
 
-  function setActiveRouteStatus(info){
+  function safeErrorDetails(error){
+    if (error == null) {
+      return null;
+    }
+    if (typeof error === 'string') {
+      return {message: error};
+    }
+    if (typeof error !== 'object') {
+      return {message: String(error)};
+    }
+    const result = {};
+    const fields = ['message', 'name', 'code', 'status', 'statusText', 'type'];
+    fields.forEach(field => {
+      const value = error[field];
+      if (value == null) return;
+      result[field] = typeof value === 'string' ? value : String(value);
+    });
+    if (error.body != null) {
+      result.body = typeof error.body === 'string' ? error.body : (()=>{
+        try { return JSON.stringify(error.body); }
+        catch (_) { return String(error.body); }
+      })();
+    }
+    if (!result.message) {
+      try {
+        result.message = String(error);
+      } catch (_) {
+        result.message = 'Unknown error';
+      }
+    }
+    if (error.stack) {
+      result.stack = String(error.stack);
+    }
+    return result;
+  }
+
+  function logRouteError(context, details = {}){
+    const url = EP.logRouteError;
+    if (!url) return;
+    try {
+      const payload = {
+        context: context || 'unknown',
+        details,
+        timestamp: new Date().toISOString()
+      };
+      fetch(url, {
+        method: 'POST',
+        headers: buildHeaders({'Content-Type': 'application/json'}),
+        body: JSON.stringify(payload)
+      }).catch(err => {
+        console.error('Route error log request failed', err);
+      });
+    } catch (err) {
+      console.error('Failed to dispatch route error log', err);
+    }
+  }
+
+  function getStoredRouteStatus(rid){
+    const entry = getRoundMetaEntry(rid);
+    if (!entry || entry.sort_mode !== 'route') return null;
+    const distance = Number(entry.route_distance_m);
+    const duration = Number(entry.route_duration_s);
+    const hasDistance = Number.isFinite(distance) && distance >= 0;
+    const hasDuration = Number.isFinite(duration) && duration >= 0;
+    if (!hasDistance && !hasDuration) {
+      return null;
+    }
+    const normalized = {pending: false};
+    if (hasDistance) {
+      normalized.distance = distance;
+    }
+    if (hasDuration) {
+      normalized.duration = duration;
+    }
+    return normalized;
+  }
+
+  function setRoundRouteStatus(rid, info){
+    const idNum = Number(rid);
+    if (!Number.isFinite(idNum)) return;
     if (!info) {
-      state.activeRouteStatus = null;
-      updateRouteStatusBar(null);
+      state.routeStatusByRound.delete(idNum);
+      renderRoundRouteStatus(idNum);
       return;
     }
-    const normalized = {...info};
-    if (!info.pending) {
+    if (info.hidden) {
+      state.routeStatusByRound.set(idNum, {hidden: true});
+      renderRoundRouteStatus(idNum);
+      return;
+    }
+    const normalized = {pending: !!info.pending};
+    if (!normalized.pending) {
       const distNum = Number(info.distance);
       const durNum = Number(info.duration);
-      if (!Number.isFinite(distNum) || distNum < 0) {
-        normalized.distance = 0;
-      } else {
+      if (Number.isFinite(distNum) && distNum >= 0) {
         normalized.distance = distNum;
       }
-      if (!Number.isFinite(durNum) || durNum < 0) {
-        normalized.duration = 0;
-      } else {
+      if (Number.isFinite(durNum) && durNum >= 0) {
         normalized.duration = durNum;
       }
     }
-    state.activeRouteStatus = normalized;
-    updateRouteStatusBar(state.activeRouteStatus);
+    state.routeStatusByRound.set(idNum, normalized);
+    renderRoundRouteStatus(idNum);
+  }
+
+  function renderRoundRouteStatus(rid){
+    const idNum = Number(rid);
+    if (!Number.isFinite(idNum)) return;
+    const el = document.querySelector(`[data-round-route-status="${idNum}"]`);
+    if (!(el instanceof HTMLElement)) return;
+    const runtime = state.routeStatusByRound.get(idNum) || null;
+    const entry = getRoundMetaEntry(idNum);
+    const isRouteMode = runtime?.pending || (entry && entry.sort_mode === 'route');
+    if (runtime && runtime.hidden) {
+      el.hidden = true;
+      el.textContent = '';
+      el.removeAttribute('data-state');
+      return;
+    }
+    if (!isRouteMode) {
+      el.hidden = true;
+      el.textContent = '';
+      el.removeAttribute('data-state');
+      return;
+    }
+    if (runtime && runtime.pending) {
+      el.textContent = text('routing.status_pending', 'Útvonal számítása…');
+      el.hidden = false;
+      el.dataset.state = 'pending';
+      return;
+    }
+    const source = runtime || getStoredRouteStatus(idNum);
+    if (!source) {
+      el.hidden = true;
+      el.textContent = '';
+      el.removeAttribute('data-state');
+      return;
+    }
+    const distance = Number.isFinite(Number(source.distance)) ? Number(source.distance) : Number(entry?.route_distance_m ?? 0);
+    const duration = Number.isFinite(Number(source.duration)) ? Number(source.duration) : Number(entry?.route_duration_s ?? 0);
+    const template = text('routing.status_header_template', 'Útvonal adatai: {distance} | {duration}');
+    el.textContent = format(template, {
+      distance: formatDistanceMeters(distance),
+      duration: formatDurationMinutes(duration)
+    });
+    el.hidden = false;
+    el.dataset.state = 'ready';
+  }
+
+  function renderAllRoundRouteStatuses(){
+    document.querySelectorAll('[data-round-route-status]').forEach(node => {
+      const rid = Number(node.getAttribute('data-round-route-status') || 'NaN');
+      if (Number.isFinite(rid)) {
+        renderRoundRouteStatus(rid);
+      }
+    });
   }
 
   let cachedFieldDefs = null;
@@ -2298,7 +2409,8 @@
     });
     state.routeLayers = new Map();
     state.pendingRouteRequests = new Map();
-    setActiveRouteStatus(null);
+    state.routeStatusByRound.clear();
+    renderAllRoundRouteStatuses();
     updatePinCount();
     requestMarkerOverlapRefresh();
   }
@@ -2578,44 +2690,52 @@
   function drawRoutePolyline(rid, geometry){
     if (!mapRef) return;
     const idNum = Number(rid);
-    const normalizedCoords = normalizeRouteLatLngs(geometry, {ensureOrigin: true});
-    const latLngs = normalizedCoords.map(pair => L.latLng(pair[0], pair[1]));
-    if (latLngs.length < 2) {
-      removeRouteLayer(idNum);
-      return;
-    }
-    let polyline = state.routeLayers.get(idNum);
-    const colorFn = typeof colorForRound === 'function' ? colorForRound : (()=> '#2563eb');
-    const color = colorFn(idNum);
-    if (!polyline) {
-      polyline = L.polyline(latLngs, {color, weight: 4, opacity: 0.85});
-      polyline.addTo(mapRef);
-      state.routeLayers.set(idNum, polyline);
-    } else {
-      polyline.setLatLngs(latLngs);
-      polyline.setStyle({color});
-      if (!mapRef.hasLayer(polyline)) {
-        polyline.addTo(mapRef);
+    try {
+      const normalizedCoords = normalizeRouteLatLngs(geometry, {ensureOrigin: true});
+      const latLngs = normalizedCoords.map(pair => L.latLng(pair[0], pair[1]));
+      if (latLngs.length < 2) {
+        removeRouteLayer(idNum);
+        return;
       }
+      let polyline = state.routeLayers.get(idNum);
+      const colorFn = typeof colorForRound === 'function' ? colorForRound : (()=> '#2563eb');
+      const color = colorFn(idNum);
+      if (!polyline) {
+        polyline = L.polyline(latLngs, {color, weight: 4, opacity: 0.85});
+        polyline.addTo(mapRef);
+        state.routeLayers.set(idNum, polyline);
+      } else {
+        polyline.setLatLngs(latLngs);
+        polyline.setStyle({color});
+        if (!mapRef.hasLayer(polyline)) {
+          polyline.addTo(mapRef);
+        }
+      }
+    } catch (err) {
+      console.error('Útvonal kirajzolása sikertelen', err);
+      logRouteError('draw_route_polyline_failed', {
+        roundId: idNum,
+        error: safeErrorDetails(err)
+      });
+      removeRouteLayer(idNum);
     }
   }
 
   function clearRouteArtifacts(rid){
     removeRouteLayer(rid);
-    if (state.activeRouteStatus && Number(state.activeRouteStatus.roundId) === Number(rid)) {
-      setActiveRouteStatus(null);
-    }
+    setRoundRouteStatus(rid, {hidden: true});
   }
 
   function syncRouteOverlays(){
     if (!mapRef) return;
     const activeRounds = new Set();
-    let fallbackStatus = null;
     if (state.roundMeta && typeof state.roundMeta === 'object') {
       Object.entries(state.roundMeta).forEach(([ridStr, entry]) => {
         const ridNum = Number(ridStr);
+        if (!Number.isFinite(ridNum)) return;
         if (!entry || entry.sort_mode !== 'route') {
           removeRouteLayer(ridNum);
+          renderRoundRouteStatus(ridNum);
           return;
         }
         activeRounds.add(ridNum);
@@ -2624,27 +2744,15 @@
         } else {
           removeRouteLayer(ridNum);
         }
-        if (!state.activeRouteStatus && !fallbackStatus) {
-          const distance = Number(entry.route_distance_m);
-          const duration = Number(entry.route_duration_s);
-          if (Number.isFinite(distance) || Number.isFinite(duration)) {
-            fallbackStatus = {roundId: ridNum, distance, duration};
-          }
-        }
+        renderRoundRouteStatus(ridNum);
       });
     }
     Array.from(state.routeLayers.keys()).forEach(ridNum => {
       if (!activeRounds.has(ridNum)) {
         removeRouteLayer(ridNum);
+        renderRoundRouteStatus(ridNum);
       }
     });
-    if (state.activeRouteStatus) {
-      updateRouteStatusBar(state.activeRouteStatus);
-    } else if (fallbackStatus) {
-      updateRouteStatusBar(fallbackStatus);
-    } else {
-      updateRouteStatusBar(null);
-    }
   }
 
   function scheduleRouteComputation(rid, opts = {}){
@@ -2694,9 +2802,9 @@
       await applyRouteResult(rid, cached, routeKey, {fromCache: true});
       return;
     }
-    setActiveRouteStatus({roundId: rid, pending: true});
+    setRoundRouteStatus(rid, {pending: true});
     try {
-      const result = await requestRouteResult(state.ORIGIN, eligible);
+      const result = await requestRouteResult(state.ORIGIN, eligible, {roundId: rid});
       const key = routeKey || computeRouteKey(state.ORIGIN, eligible);
       if (key) {
         state.routeCache.set(key, result);
@@ -2705,7 +2813,10 @@
     } catch (error) {
       console.error('Útvonal számítása sikertelen', error);
       clearRouteArtifacts(rid);
-      setActiveRouteStatus(null);
+      logRouteError('compute_route_failed', {
+        roundId: rid,
+        error: safeErrorDetails(error)
+      });
       alert('Útvonaltervezés sikertelen, próbáld újra később');
     }
   }
@@ -2726,6 +2837,11 @@
       response = await fetch(url, {method: 'POST', headers, body});
     } catch (networkError) {
       console.error('ORS request network error', {endpoint: path, error: networkError});
+      logRouteError('ors_request_network_error', {
+        endpoint: path,
+        payloadSize: body ? body.length : 0,
+        error: safeErrorDetails(networkError)
+      });
       throw networkError;
     }
     const text = await response.text();
@@ -2734,6 +2850,11 @@
       const err = new Error('ors_request_failed');
       err.status = response.status;
       err.body = text;
+      logRouteError('ors_request_failed', {
+        endpoint: path,
+        status: response.status,
+        body: text
+      });
       throw err;
     }
     let data = null;
@@ -2744,7 +2865,7 @@
     return {data, text};
   }
 
-  async function requestDirections(coords, profile){
+  async function requestDirections(coords, profile, opts = {}){
     const validCoords = Array.isArray(coords) ? coords.filter(pair => Array.isArray(pair) && pair.length >= 2) : [];
     if (validCoords.length < 2) {
       return {geometry: [], distance: 0, duration: 0};
@@ -2756,7 +2877,18 @@
       format: 'geojson',
       units: 'm'
     };
-    const {data} = await orsRequest(`/v2/directions/${profile}`, body);
+    let data;
+    try {
+      ({data} = await orsRequest(`/v2/directions/${profile}`, body));
+    } catch (err) {
+      logRouteError('ors_directions_failed', {
+        roundId: opts.roundId ?? null,
+        profile,
+        coordinateCount: validCoords.length,
+        error: safeErrorDetails(err)
+      });
+      throw err;
+    }
     const feature = data && Array.isArray(data.features) ? data.features[0] : null;
     const coordsGeo = feature?.geometry?.coordinates;
     const summary = feature?.properties?.summary || {};
@@ -2776,10 +2908,11 @@
     };
   }
 
-  async function requestRouteResult(origin, items){
+  async function requestRouteResult(origin, items, opts = {}){
     const profile = routingProfile();
     const jobs = [];
     const jobToItem = new Map();
+    const roundId = opts.roundId ?? null;
     items.forEach((item, index) => {
       const lat = Number(item?.lat);
       const lon = Number(item?.lon);
@@ -2822,7 +2955,7 @@
         throw new Error('ors_optimization_empty');
       }
       const coords = [[Number(origin?.lon), Number(origin?.lat)], ...orderedItems.map(it => [Number(it.lon), Number(it.lat)])];
-      const directions = await requestDirections(coords, profile);
+      const directions = await requestDirections(coords, profile, {roundId});
       const geometry = normalizeRouteLatLngs(directions.geometry, {ensureOrigin: true});
       const distance = Number.isFinite(directions.distance)
         ? directions.distance
@@ -2841,13 +2974,19 @@
       if (err && err.body) {
         console.error('ORS optimization error', {body: err.body});
       }
-      return requestRouteResultViaMatrix(origin, items, profile);
+      logRouteError('ors_optimization_failed', {
+        roundId,
+        error: safeErrorDetails(err),
+        body: err?.body ?? null
+      });
+      return requestRouteResultViaMatrix(origin, items, profile, {roundId});
     }
   }
 
-  async function requestRouteResultViaMatrix(origin, items, profile){
+  async function requestRouteResultViaMatrix(origin, items, profile, opts = {}){
     const coords = [[Number(origin?.lon), Number(origin?.lat)]];
     const pointItems = [];
+    const roundId = opts.roundId ?? null;
     items.forEach(item => {
       const lat = Number(item?.lat);
       const lon = Number(item?.lon);
@@ -2858,7 +2997,18 @@
     if (!pointItems.length) {
       return {order: [], geometry: [], distance: 0, duration: 0, source: 'matrix'};
     }
-    const {data} = await orsRequest(`/v2/matrix/${profile}`, {locations: coords, metrics: ['distance', 'duration']});
+    let data;
+    try {
+      ({data} = await orsRequest(`/v2/matrix/${profile}`, {locations: coords, metrics: ['distance', 'duration']}));
+    } catch (err) {
+      logRouteError('ors_matrix_failed', {
+        roundId,
+        profile,
+        locationCount: coords.length,
+        error: safeErrorDetails(err)
+      });
+      throw err;
+    }
     const distances = Array.isArray(data?.distances) ? data.distances : [];
     const durations = Array.isArray(data?.durations) ? data.durations : [];
     const orderIndices = [];
@@ -2907,7 +3057,7 @@
     });
     const coordList = [[Number(origin?.lon), Number(origin?.lat)], ...orderedItems.map(it => [Number(it.lon), Number(it.lat)])];
     try {
-      const directions = await requestDirections(coordList, profile);
+      const directions = await requestDirections(coordList, profile, {roundId});
       const geometry = normalizeRouteLatLngs(directions.geometry, {ensureOrigin: true});
       const distance = Number.isFinite(directions.distance) ? directions.distance : totalDistance;
       const duration = Number.isFinite(directions.duration) ? directions.duration : totalDuration;
@@ -2929,6 +3079,12 @@
       };
     } catch (directionError) {
       console.error('ORS directions error', directionError);
+      logRouteError('ors_directions_geometry_failed', {
+        roundId,
+        profile,
+        waypointCount: coordList.length,
+        error: safeErrorDetails(directionError)
+      });
       return {
         order: orderedItems.map(it => String(it.id)),
         geometry: [],
@@ -2941,7 +3097,7 @@
 
   async function applyRouteResult(rid, result, hash, opts = {}){
     if (!result || !Array.isArray(result.order) || result.order.length === 0) {
-      setActiveRouteStatus(null);
+      setRoundRouteStatus(rid, {hidden: true});
       return;
     }
     const entry = ensureRoundMetaEntry(rid);
@@ -2972,7 +3128,10 @@
     } else {
       delete entry.route_duration_s;
     }
-    setActiveRouteStatus({roundId: rid, distance: entry.route_distance_m ?? result.distance ?? 0, duration: entry.route_duration_s ?? result.duration ?? 0});
+    setRoundRouteStatus(rid, {
+      distance: entry.route_distance_m ?? result.distance ?? 0,
+      duration: entry.route_duration_s ?? result.duration ?? 0
+    });
     renderEverything();
     if (CAN_EDIT) {
       await saveAll();
@@ -3133,6 +3292,7 @@
           ${dragIndicator}
           ${sumTxt ? `<span class="__sum" style="margin-left:8px;color:#6b7280;font-weight:600;font-size:12px;">${esc(sumTxt)}</span>` : ''}
         </div>
+        <div class="group-route-status" data-round-route-status="${rid}" hidden></div>
         <div class="group-controls">
           ${plannedDateHtml}
           ${plannedTimeHtml}
@@ -4393,6 +4553,7 @@
       }
 
       groupsEl.appendChild(groupEl);
+      renderRoundRouteStatus(rid);
     });
 
     renumberAll();
