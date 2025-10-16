@@ -32,7 +32,8 @@
     conflictOverlay: null,
     markerOverlapCounts: new Map(),
     displayIndexById: new Map(),
-    viewMode: 'list'
+    viewMode: 'list',
+    isMobileViewport: false
   };
 
   const history = [];
@@ -47,6 +48,8 @@
   const appRootEl = document.querySelector('.app');
   const VIEW_MODE_STORAGE_KEY = 'app_view_mode_v1';
   const VIEW_MODES = Object.freeze({LIST:'list', MAP:'map'});
+  const MOBILE_VIEWPORT_MAX_WIDTH = 768;
+  const MOBILE_VIEWPORT_QUERY = '(max-width: 768px)';
   const QUICK_SEARCH_DEBOUNCE_MS = 250;
   const canUseLocalStorage = (()=>{
     try {
@@ -56,6 +59,7 @@
     }
   })();
   const viewSwitchButtons = new Map();
+  let mobileViewportMedia = null;
   let pendingMapResize = null;
   let mobileLayoutFrame = null;
   let mapRef = null;
@@ -117,6 +121,39 @@
       mobileLayoutFrame = null;
       updateMobileLayoutMetrics();
     });
+  }
+
+  function applyMobileViewportMatch(matches){
+    const next = !!matches;
+    if (state.isMobileViewport === next) return;
+    state.isMobileViewport = next;
+    renderAllGroupHeaderTotals();
+  }
+
+  function initMobileViewportTracking(){
+    if (typeof window === 'undefined') {
+      state.isMobileViewport = false;
+      return;
+    }
+    if (typeof window.matchMedia === 'function') {
+      try {
+        mobileViewportMedia = window.matchMedia(MOBILE_VIEWPORT_QUERY);
+        applyMobileViewportMatch(mobileViewportMedia.matches);
+        const handler = event => applyMobileViewportMatch(event.matches);
+        if (typeof mobileViewportMedia.addEventListener === 'function') {
+          mobileViewportMedia.addEventListener('change', handler);
+        } else if (typeof mobileViewportMedia.addListener === 'function') {
+          mobileViewportMedia.addListener(handler);
+        }
+        return;
+      } catch (err) {
+        mobileViewportMedia = null;
+      }
+    }
+    const fallback = typeof window.innerWidth === 'number'
+      ? window.innerWidth <= MOBILE_VIEWPORT_MAX_WIDTH
+      : false;
+    state.isMobileViewport = fallback;
   }
 
   function requestMapResize(){
@@ -202,7 +239,18 @@
     appRootEl.setAttribute('data-mobile-view', state.viewMode);
   }
   scheduleMobileLayoutUpdate();
-  window.addEventListener('resize', ()=>{ scheduleMobileLayoutUpdate(); });
+  window.addEventListener('resize', ()=>{
+    scheduleMobileLayoutUpdate();
+    if (!mobileViewportMedia) {
+      const next = typeof window.innerWidth === 'number'
+        ? window.innerWidth <= MOBILE_VIEWPORT_MAX_WIDTH
+        : false;
+      if (state.isMobileViewport !== next) {
+        state.isMobileViewport = next;
+        renderAllGroupHeaderTotals();
+      }
+    }
+  });
 
   const flashTimers = new WeakMap();
 
@@ -3704,9 +3752,13 @@
     const metrics = getMetricDefs();
     const sums = {};
     const counts = {};
+    let addressCount = 0;
     metrics.forEach(metric => { sums[metric.id] = 0; counts[metric.id] = 0; });
     state.items.forEach(it=>{
       if ((+it.round||0)!==rid) return;
+      if (!isItemCompletelyBlank(it)) {
+        addressCount += 1;
+      }
       metrics.forEach(metric => {
         const raw = it[metric.id];
         if (raw === '' || raw == null) return;
@@ -3716,16 +3768,27 @@
         counts[metric.id] += 1;
       });
     });
-    return {sums, counts};
+    return {sums, counts, addressCount};
   }
 
   function formatMetricSum(metric, value, context='group'){
     const precision = Number.isFinite(Number(metric.precision)) ? Number(metric.precision) : 0;
-    const val = Number.isFinite(value) ? value.toFixed(precision) : (0).toFixed(precision);
+    const numericValue = Number.isFinite(value) ? Number(value) : 0;
+    const metricId = metric && metric.id != null ? String(metric.id) : '';
+    const treatAsWhole = metricId === 'weight' || metricId === 'volume';
+    const shouldRoundToInt = context === 'row' || treatAsWhole;
+    let strVal;
+    if (shouldRoundToInt) {
+      let intVal = Math.round(numericValue);
+      if (Object.is(intVal, -0)) intVal = 0;
+      strVal = String(intVal);
+    } else {
+      strVal = numericValue.toFixed(precision);
+    }
     const tplKey = context === 'row' ? 'row_format' : 'group_format';
     const tpl = metric[tplKey];
-    if (tpl) return format(tpl, {value: val, sum: val, unit: metric.unit ?? '', label: metric.label ?? ''});
-    return `${val}${metric.unit ? ' '+metric.unit : ''}`;
+    if (tpl) return format(tpl, {value: strVal, sum: strVal, unit: metric.unit ?? '', label: metric.label ?? ''});
+    return `${strVal}${metric.unit ? ' '+metric.unit : ''}`;
   }
 
   function groupTotalsText(rid, totals){
@@ -3737,8 +3800,20 @@
       const sum = Number(totals.sums?.[metric.id] ?? 0);
       return formatMetricSum(metric, sum, 'group');
     }).filter(Boolean);
+    const addressCount = Number(totals.addressCount ?? 0);
+    if (addressCount > 0) {
+      parts.push(`${addressCount} Cím`);
+    }
     if (!parts.length) return '';
-    const template = cfg('text.group.sum_template', 'Összesen: {parts}');
+    const baseTemplateRaw = cfg('text.group.sum_template', 'Összesen: {parts}');
+    const baseTemplate = (typeof baseTemplateRaw === 'string' && baseTemplateRaw.trim() !== '')
+      ? baseTemplateRaw
+      : 'Összesen: {parts}';
+    const mobileTemplateRaw = cfg('text.group.sum_mobile_template', '∑: {parts}');
+    const mobileTemplate = (typeof mobileTemplateRaw === 'string' && mobileTemplateRaw.trim() !== '')
+      ? mobileTemplateRaw
+      : '∑: {parts}';
+    const template = state.isMobileViewport ? mobileTemplate : baseTemplate;
     return format(template, {parts: parts.join(sep), round: roundLabel(rid)});
   }
 
@@ -3864,6 +3939,15 @@
     } else {
       span.style.display = 'none';
     }
+  }
+
+  function renderAllGroupHeaderTotals(){
+    document.querySelectorAll('[data-group-header]').forEach(el => {
+      const ridAttr = el instanceof HTMLElement ? el.getAttribute('data-group-header') : null;
+      if (!ridAttr) return;
+      const rid = Number.parseInt(ridAttr, 10);
+      renderGroupHeaderTotalsForRound(Number.isNaN(rid) ? 0 : rid);
+    });
   }
 
   function renderGroupRouteInfoForRound(rid){
@@ -5929,6 +6013,7 @@
     try{
       loadCollapsePrefs();
       await loadCfg();
+      initMobileViewportTracking();
       applyThemeVariables();
       applyPanelSizes();
       applyPanelSticky();

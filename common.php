@@ -340,6 +340,7 @@ $CFG_DEFAULT = [
     ],
     "group" => [
       "sum_template" => "Összesen: {parts}",
+      "sum_mobile_template" => "∑: {parts}",
       "sum_separator" => " · ",
       "actions" => [
         "open" => "Kinyit",
