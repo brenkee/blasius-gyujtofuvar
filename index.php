@@ -273,6 +273,7 @@ $LOGOUT_TOKEN = csrf_get_token();
   </aside>
   <main class="map-area">
     <div id="map"></div>
+    <div id="mapRouteStatus" class="map-route-status" hidden></div>
   </main>
 </div>
 </body>

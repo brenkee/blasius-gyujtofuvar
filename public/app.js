@@ -19,7 +19,10 @@
     routeLayers: new Map(),
     pendingRouteRequests: new Map(),
     routeStatusByRound: new Map(),
+    routeFitQueue: new Set(),
+    routeDrawErrorNotified: new Set(),
     ORIGIN: {lat:47.4500, lon:19.3500}, // Maglód tartalék
+    ROUTE_DESTINATION: null,
     filterText: '',
     clientId: null,
     baselineRevision: 0,
@@ -44,6 +47,7 @@
   const themeToggle = document.getElementById('themeToggle');
   const panelTopEl = document.getElementById('panelTop');
   const appRootEl = document.querySelector('.app');
+  const mapRouteStatusEl = document.getElementById('mapRouteStatus');
   const VIEW_MODE_STORAGE_KEY = 'app_view_mode_v1';
   const VIEW_MODES = Object.freeze({LIST:'list', MAP:'map'});
   const QUICK_SEARCH_DEBOUNCE_MS = 250;
@@ -931,6 +935,7 @@
       if (!normalized) return;
       state.roundMeta[String(rid)] = normalized;
     });
+    renderAllRoundRouteStatuses();
   }
 
   function getPlannedDateForRound(rid){
@@ -1216,6 +1221,11 @@
       `profile:${profile}`,
       `origin:${lat.toFixed(6)},${lon.toFixed(6)}`
     ];
+    if (state.ROUTE_DESTINATION && Number.isFinite(state.ROUTE_DESTINATION.lat) && Number.isFinite(state.ROUTE_DESTINATION.lon)) {
+      parts.push(`destination:${Number(state.ROUTE_DESTINATION.lat).toFixed(6)},${Number(state.ROUTE_DESTINATION.lon).toFixed(6)}`);
+    } else if (!!cfg('routing.finish_at_origin', false)) {
+      parts.push('destination:origin');
+    }
     const normalized = items.map(item => {
       const latNum = Number(item?.lat);
       const lonNum = Number(item?.lon);
@@ -1387,57 +1397,103 @@
     renderRoundRouteStatus(idNum);
   }
 
-  function renderRoundRouteStatus(rid){
-    const idNum = Number(rid);
-    if (!Number.isFinite(idNum)) return;
-    const el = document.querySelector(`[data-round-route-status="${idNum}"]`);
-    if (!(el instanceof HTMLElement)) return;
-    const runtime = state.routeStatusByRound.get(idNum) || null;
-    const entry = getRoundMetaEntry(idNum);
-    const isRouteMode = runtime?.pending || (entry && entry.sort_mode === 'route');
-    if (runtime && runtime.hidden) {
-      el.hidden = true;
-      el.textContent = '';
-      el.removeAttribute('data-state');
-      return;
+  function renderMapRouteStatusBar(){
+    if (!mapRouteStatusEl) return;
+    const ids = new Set();
+    if (state.roundMeta && typeof state.roundMeta === 'object') {
+      Object.keys(state.roundMeta).forEach(key => {
+        const num = Number(key);
+        if (Number.isFinite(num)) ids.add(num);
+      });
     }
-    if (!isRouteMode) {
-      el.hidden = true;
-      el.textContent = '';
-      el.removeAttribute('data-state');
-      return;
-    }
-    if (runtime && runtime.pending) {
-      el.textContent = text('routing.status_pending', 'Útvonal számítása…');
-      el.hidden = false;
-      el.dataset.state = 'pending';
-      return;
-    }
-    const source = runtime || getStoredRouteStatus(idNum);
-    if (!source) {
-      el.hidden = true;
-      el.textContent = '';
-      el.removeAttribute('data-state');
-      return;
-    }
-    const distance = Number.isFinite(Number(source.distance)) ? Number(source.distance) : Number(entry?.route_distance_m ?? 0);
-    const duration = Number.isFinite(Number(source.duration)) ? Number(source.duration) : Number(entry?.route_duration_s ?? 0);
-    const template = text('routing.status_header_template', 'Útvonal adatai: {distance} | {duration}');
-    el.textContent = format(template, {
-      distance: formatDistanceMeters(distance),
-      duration: formatDurationMinutes(duration)
+    state.routeStatusByRound.forEach((_, key) => {
+      if (Number.isFinite(key)) ids.add(Number(key));
     });
-    el.hidden = false;
-    el.dataset.state = 'ready';
+    const baseOrder = Array.isArray(ROUND_ORDER) && ROUND_ORDER.length
+      ? ROUND_ORDER.slice()
+      : Array.from(ids).sort((a, b) => a - b);
+    const missing = Array.from(ids).filter(id => !baseOrder.includes(id)).sort((a, b) => a - b);
+    missing.forEach(id => baseOrder.push(id));
+    const entries = [];
+    baseOrder.forEach(rid => {
+      if (!Number.isFinite(rid)) return;
+      const runtime = state.routeStatusByRound.get(rid) || null;
+      if (runtime && runtime.hidden) return;
+      const meta = getRoundMetaEntry(rid);
+      const isRouteMode = runtime?.pending || (meta && meta.sort_mode === 'route');
+      if (!isRouteMode) return;
+      const color = colorForRound(rid);
+      const label = roundLabel(rid);
+      if (runtime && runtime.pending) {
+        entries.push({
+          rid,
+          state: 'pending',
+          text: text('routing.status_pending', 'Útvonal számítása…'),
+          color,
+          label
+        });
+        return;
+      }
+      const source = runtime || getStoredRouteStatus(rid);
+      if (!source) return;
+      const distanceRaw = Number(source.distance);
+      const durationRaw = Number(source.duration);
+      const fallbackDistance = Number(meta?.route_distance_m ?? NaN);
+      const fallbackDuration = Number(meta?.route_duration_s ?? NaN);
+      const distance = Number.isFinite(distanceRaw) && distanceRaw >= 0
+        ? distanceRaw
+        : (Number.isFinite(fallbackDistance) && fallbackDistance >= 0 ? fallbackDistance : 0);
+      const duration = Number.isFinite(durationRaw) && durationRaw >= 0
+        ? durationRaw
+        : (Number.isFinite(fallbackDuration) && fallbackDuration >= 0 ? fallbackDuration : 0);
+      const template = text('routing.status_header_template', 'Útvonal adatai: {distance} | {duration}');
+      const textValue = format(template, {
+        distance: formatDistanceMeters(distance),
+        duration: formatDurationMinutes(duration)
+      });
+      entries.push({
+        rid,
+        state: 'ready',
+        text: textValue,
+        color,
+        label
+      });
+    });
+    mapRouteStatusEl.innerHTML = '';
+    if (!entries.length) {
+      mapRouteStatusEl.hidden = true;
+      return;
+    }
+    const fragment = document.createDocumentFragment();
+    entries.forEach(entry => {
+      const row = document.createElement('div');
+      row.className = 'map-route-status__entry';
+      row.dataset.round = String(entry.rid);
+      row.dataset.state = entry.state;
+      const dot = document.createElement('span');
+      dot.className = 'map-route-status__dot';
+      dot.style.background = entry.color || '#2563eb';
+      row.appendChild(dot);
+      const labelEl = document.createElement('span');
+      labelEl.className = 'map-route-status__label';
+      labelEl.textContent = entry.label;
+      row.appendChild(labelEl);
+      const valueEl = document.createElement('span');
+      valueEl.className = 'map-route-status__value';
+      valueEl.textContent = entry.text;
+      row.appendChild(valueEl);
+      fragment.appendChild(row);
+    });
+    mapRouteStatusEl.appendChild(fragment);
+    mapRouteStatusEl.hidden = false;
+  }
+
+  function renderRoundRouteStatus(){
+    renderMapRouteStatusBar();
   }
 
   function renderAllRoundRouteStatuses(){
-    document.querySelectorAll('[data-round-route-status]').forEach(node => {
-      const rid = Number(node.getAttribute('data-round-route-status') || 'NaN');
-      if (Number.isFinite(rid)) {
-        renderRoundRouteStatus(rid);
-      }
-    });
+    renderMapRouteStatusBar();
   }
 
   let cachedFieldDefs = null;
@@ -2410,6 +2466,8 @@
     state.routeLayers = new Map();
     state.pendingRouteRequests = new Map();
     state.routeStatusByRound.clear();
+    state.routeFitQueue = new Set();
+    state.routeDrawErrorNotified = new Set();
     renderAllRoundRouteStatuses();
     updatePinCount();
     requestMarkerOverlapRefresh();
@@ -2687,43 +2745,149 @@
     state.routeLayers.delete(idNum);
   }
 
-  function drawRoutePolyline(rid, geometry){
-    if (!mapRef) return;
-    const idNum = Number(rid);
+  function decodePolyline(encoded){
+    if (typeof encoded !== 'string' || encoded.trim() === '') return [];
+    const coords = [];
+    let index = 0;
+    let lat = 0;
+    let lon = 0;
     try {
-      const normalizedCoords = normalizeRouteLatLngs(geometry, {ensureOrigin: true});
-      const latLngs = normalizedCoords.map(pair => L.latLng(pair[0], pair[1]));
-      if (latLngs.length < 2) {
-        removeRouteLayer(idNum);
-        return;
+      while (index < encoded.length) {
+        let result = 0;
+        let shift = 0;
+        let byte;
+        do {
+          byte = encoded.charCodeAt(index++) - 63;
+          result |= (byte & 0x1f) << shift;
+          shift += 5;
+        } while (byte >= 0x20 && index < encoded.length);
+        const deltaLat = (result & 1) ? ~(result >> 1) : (result >> 1);
+        lat += deltaLat;
+
+        result = 0;
+        shift = 0;
+        do {
+          byte = encoded.charCodeAt(index++) - 63;
+          result |= (byte & 0x1f) << shift;
+          shift += 5;
+        } while (byte >= 0x20 && index < encoded.length);
+        const deltaLon = (result & 1) ? ~(result >> 1) : (result >> 1);
+        lon += deltaLon;
+
+        coords.push([lat / 1e5, lon / 1e5]);
       }
-      let polyline = state.routeLayers.get(idNum);
-      const colorFn = typeof colorForRound === 'function' ? colorForRound : (()=> '#2563eb');
-      const color = colorFn(idNum);
-      if (!polyline) {
-        polyline = L.polyline(latLngs, {color, weight: 4, opacity: 0.85});
-        polyline.addTo(mapRef);
-        state.routeLayers.set(idNum, polyline);
-      } else {
-        polyline.setLatLngs(latLngs);
-        polyline.setStyle({color});
-        if (!mapRef.hasLayer(polyline)) {
-          polyline.addTo(mapRef);
+    } catch (_) {
+      return [];
+    }
+    return coords.map(pair => [Number(pair[0]), Number(pair[1])]).filter(point => (
+      Number.isFinite(point[0]) && Number.isFinite(point[1])
+    ));
+  }
+
+  function extractRouteCoordinates(geometry){
+    if (!geometry) return [];
+    if (Array.isArray(geometry)) {
+      return geometry;
+    }
+    if (typeof geometry === 'string') {
+      const trimmed = geometry.trim();
+      if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          return extractRouteCoordinates(parsed);
+        } catch (_) {
+          return decodePolyline(geometry);
         }
       }
+      return decodePolyline(geometry);
+    }
+    if (geometry && typeof geometry === 'object') {
+      if (geometry.type === 'Feature' && geometry.geometry) {
+        return extractRouteCoordinates(geometry.geometry);
+      }
+      if (Array.isArray(geometry.coordinates)) {
+        return geometry.coordinates.map(pair => {
+          if (!Array.isArray(pair) || pair.length < 2) return null;
+          const lon = Number(pair[0]);
+          const lat = Number(pair[1]);
+          if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+          return [lat, lon];
+        }).filter(Boolean);
+      }
+    }
+    return [];
+  }
+
+  function notifyRouteDrawFailure(rid, code, details = {}){
+    const idNum = Number(rid);
+    if (!Number.isFinite(idNum)) return;
+    logRouteError(code || 'draw_route_failed', {
+      roundId: idNum,
+      ...details
+    });
+    if (!state.routeDrawErrorNotified.has(idNum)) {
+      state.routeDrawErrorNotified.add(idNum);
+      alert('Az útvonal nem rajzolható ki');
+    }
+  }
+
+  function drawRouteOnMap(rid, geometry, opts = {}){
+    if (!mapRef) return false;
+    const idNum = Number(rid);
+    if (!Number.isFinite(idNum)) return false;
+    const hadLayer = state.routeLayers.has(idNum);
+    removeRouteLayer(idNum);
+    try {
+      const rawCoords = extractRouteCoordinates(geometry);
+      const normalizedCoords = normalizeRouteLatLngs(rawCoords, {ensureOrigin: true});
+      const latLngs = normalizedCoords.map(pair => L.latLng(pair[0], pair[1]));
+      if (latLngs.length < 2) {
+        notifyRouteDrawFailure(idNum, 'draw_route_geometry_missing', {
+          geometryLength: Array.isArray(rawCoords) ? rawCoords.length : 0
+        });
+        return false;
+      }
+      const colorFn = typeof colorForRound === 'function' ? colorForRound : (() => '#2563eb');
+      const color = colorFn(idNum);
+      const polyline = L.polyline(latLngs, {
+        color,
+        weight: 4,
+        opacity: 0.7,
+        lineCap: 'round',
+        lineJoin: 'round'
+      });
+      polyline.addTo(mapRef);
+      state.routeLayers.set(idNum, polyline);
+      state.routeDrawErrorNotified.delete(idNum);
+      const shouldFit = opts.fitBounds === true || (!hadLayer && opts.fitBounds !== false);
+      if (shouldFit) {
+        const bounds = polyline.getBounds();
+        if (bounds && typeof bounds.isValid === 'function' && bounds.isValid()) {
+          const paddingRaw = cfgNumber('map.route_fit_padding_px', NaN);
+          const paddingPx = Number.isFinite(paddingRaw) && paddingRaw > 0 ? paddingRaw : 48;
+          const maxZoomSetting = cfgNumber('map.route_fit_max_zoom', NaN);
+          const fitOpts = {padding: [paddingPx, paddingPx]};
+          if (Number.isFinite(maxZoomSetting) && maxZoomSetting > 0) {
+            fitOpts.maxZoom = maxZoomSetting;
+          }
+          mapRef.fitBounds(bounds, fitOpts);
+          keepMapWithinBounds();
+        }
+      }
+      return true;
     } catch (err) {
-      console.error('Útvonal kirajzolása sikertelen', err);
-      logRouteError('draw_route_polyline_failed', {
-        roundId: idNum,
+      notifyRouteDrawFailure(idNum, 'draw_route_exception', {
         error: safeErrorDetails(err)
       });
-      removeRouteLayer(idNum);
+      return false;
     }
   }
 
   function clearRouteArtifacts(rid){
     removeRouteLayer(rid);
     setRoundRouteStatus(rid, {hidden: true});
+    state.routeFitQueue.delete(Number(rid));
+    state.routeDrawErrorNotified.delete(Number(rid));
   }
 
   function syncRouteOverlays(){
@@ -2735,24 +2899,27 @@
         if (!Number.isFinite(ridNum)) return;
         if (!entry || entry.sort_mode !== 'route') {
           removeRouteLayer(ridNum);
-          renderRoundRouteStatus(ridNum);
           return;
         }
         activeRounds.add(ridNum);
         if (Array.isArray(entry.route_geometry) && entry.route_geometry.length >= 2) {
-          drawRoutePolyline(ridNum, entry.route_geometry);
+          const shouldFit = state.routeFitQueue.has(ridNum);
+          const fitOptions = shouldFit ? {fitBounds: true} : {};
+          drawRouteOnMap(ridNum, entry.route_geometry, fitOptions);
+          if (shouldFit) {
+            state.routeFitQueue.delete(ridNum);
+          }
         } else {
           removeRouteLayer(ridNum);
         }
-        renderRoundRouteStatus(ridNum);
       });
     }
     Array.from(state.routeLayers.keys()).forEach(ridNum => {
       if (!activeRounds.has(ridNum)) {
         removeRouteLayer(ridNum);
-        renderRoundRouteStatus(ridNum);
       }
     });
+    renderMapRouteStatusBar();
   }
 
   function scheduleRouteComputation(rid, opts = {}){
@@ -2913,6 +3080,7 @@
     const jobs = [];
     const jobToItem = new Map();
     const roundId = opts.roundId ?? null;
+    const destination = state.ROUTE_DESTINATION;
     items.forEach((item, index) => {
       const lat = Number(item?.lat);
       const lon = Number(item?.lon);
@@ -2926,6 +3094,11 @@
       profile,
       start: [Number(origin?.lon), Number(origin?.lat)]
     };
+    if (destination && Number.isFinite(destination.lat) && Number.isFinite(destination.lon)) {
+      vehicle.end = [Number(destination.lon), Number(destination.lat)];
+    } else if (!!cfg('routing.finish_at_origin', false)) {
+      vehicle.end = [Number(origin?.lon), Number(origin?.lat)];
+    }
     try {
       const {data} = await orsRequest('/optimization', {jobs, vehicles: [vehicle]});
       const route = data && Array.isArray(data.routes) ? data.routes[0] : null;
@@ -2954,8 +3127,57 @@
       if (!orderedItems.length) {
         throw new Error('ors_optimization_empty');
       }
-      const coords = [[Number(origin?.lon), Number(origin?.lat)], ...orderedItems.map(it => [Number(it.lon), Number(it.lat)])];
-      const directions = await requestDirections(coords, profile, {roundId});
+      const stepCoords = [];
+      if (route && Array.isArray(route.steps)) {
+        let endCoord = null;
+        route.steps.forEach(step => {
+          if (!step || !Array.isArray(step.location) || step.location.length < 2) return;
+          const lonVal = Number(step.location[0]);
+          const latVal = Number(step.location[1]);
+          if (!Number.isFinite(latVal) || !Number.isFinite(lonVal)) return;
+          if (step.type === 'job') {
+            stepCoords.push([lonVal, latVal]);
+          } else if (step.type === 'end') {
+            endCoord = [lonVal, latVal];
+          }
+        });
+        if (endCoord) {
+          stepCoords.push(endCoord);
+        }
+      }
+      const directionsCoords = [];
+      const originLon = Number(origin?.lon);
+      const originLat = Number(origin?.lat);
+      if (Number.isFinite(originLon) && Number.isFinite(originLat)) {
+        directionsCoords.push([originLon, originLat]);
+      }
+      if (stepCoords.length) {
+        stepCoords.forEach(coord => {
+          const lonVal = Number(coord?.[0]);
+          const latVal = Number(coord?.[1]);
+          if (!Number.isFinite(lonVal) || !Number.isFinite(latVal)) return;
+          directionsCoords.push([lonVal, latVal]);
+        });
+      } else {
+        orderedItems.forEach(it => {
+          const lonVal = Number(it?.lon);
+          const latVal = Number(it?.lat);
+          if (!Number.isFinite(lonVal) || !Number.isFinite(latVal)) return;
+          directionsCoords.push([lonVal, latVal]);
+        });
+      }
+      const endFromVehicle = Array.isArray(vehicle.end) ? vehicle.end : null;
+      if (endFromVehicle && endFromVehicle.length >= 2) {
+        const endLon = Number(endFromVehicle[0]);
+        const endLat = Number(endFromVehicle[1]);
+        if (Number.isFinite(endLon) && Number.isFinite(endLat)) {
+          const last = directionsCoords[directionsCoords.length - 1];
+          if (!last || Math.abs(last[0] - endLon) > 1e-6 || Math.abs(last[1] - endLat) > 1e-6) {
+            directionsCoords.push([endLon, endLat]);
+          }
+        }
+      }
+      const directions = await requestDirections(directionsCoords, profile, {roundId});
       const geometry = normalizeRouteLatLngs(directions.geometry, {ensureOrigin: true});
       const distance = Number.isFinite(directions.distance)
         ? directions.distance
@@ -2987,6 +3209,8 @@
     const coords = [[Number(origin?.lon), Number(origin?.lat)]];
     const pointItems = [];
     const roundId = opts.roundId ?? null;
+    const destination = state.ROUTE_DESTINATION;
+    const finishAtOrigin = !!cfg('routing.finish_at_origin', false);
     items.forEach(item => {
       const lat = Number(item?.lat);
       const lon = Number(item?.lon);
@@ -3056,6 +3280,25 @@
       prevMatrixIndex = matrixIndex;
     });
     const coordList = [[Number(origin?.lon), Number(origin?.lat)], ...orderedItems.map(it => [Number(it.lon), Number(it.lat)])];
+    if (destination && Number.isFinite(destination.lat) && Number.isFinite(destination.lon)) {
+      const destLon = Number(destination.lon);
+      const destLat = Number(destination.lat);
+      if (Number.isFinite(destLon) && Number.isFinite(destLat)) {
+        const lastCoord = coordList[coordList.length - 1];
+        if (!lastCoord || Math.abs(lastCoord[0] - destLon) > 1e-6 || Math.abs(lastCoord[1] - destLat) > 1e-6) {
+          coordList.push([destLon, destLat]);
+        }
+      }
+    } else if (finishAtOrigin) {
+      const originLon = Number(origin?.lon);
+      const originLat = Number(origin?.lat);
+      if (Number.isFinite(originLon) && Number.isFinite(originLat)) {
+        const lastCoord = coordList[coordList.length - 1];
+        if (!lastCoord || Math.abs(lastCoord[0] - originLon) > 1e-6 || Math.abs(lastCoord[1] - originLat) > 1e-6) {
+          coordList.push([originLon, originLat]);
+        }
+      }
+    }
     try {
       const directions = await requestDirections(coordList, profile, {roundId});
       const geometry = normalizeRouteLatLngs(directions.geometry, {ensureOrigin: true});
@@ -3096,6 +3339,7 @@
   }
 
   async function applyRouteResult(rid, result, hash, opts = {}){
+    const roundIdNum = Number(rid);
     if (!result || !Array.isArray(result.order) || result.order.length === 0) {
       setRoundRouteStatus(rid, {hidden: true});
       return;
@@ -3112,11 +3356,24 @@
       const coords = normalizeRouteLatLngs(result.geometry, {ensureOrigin: true});
       if (coords.length >= 2) {
         entry.route_geometry = coords;
+        if (Number.isFinite(roundIdNum)) {
+          state.routeFitQueue.add(roundIdNum);
+          state.routeDrawErrorNotified.delete(roundIdNum);
+        }
       } else {
         delete entry.route_geometry;
+        notifyRouteDrawFailure(rid, 'route_geometry_invalid', {
+          geometryLength: result.geometry.length
+        });
       }
     } else {
       delete entry.route_geometry;
+      if (result && Object.prototype.hasOwnProperty.call(result, 'geometry')) {
+        const geomLength = Array.isArray(result.geometry) ? result.geometry.length : 0;
+        notifyRouteDrawFailure(rid, 'route_geometry_missing', {
+          geometryLength: geomLength
+        });
+      }
     }
     if (Number.isFinite(result.distance)) {
       entry.route_distance_m = Number(result.distance);
@@ -3292,7 +3549,6 @@
           ${dragIndicator}
           ${sumTxt ? `<span class="__sum" style="margin-left:8px;color:#6b7280;font-weight:600;font-size:12px;">${esc(sumTxt)}</span>` : ''}
         </div>
-        <div class="group-route-status" data-round-route-status="${rid}" hidden></div>
         <div class="group-controls">
           ${plannedDateHtml}
           ${plannedTimeHtml}
@@ -5339,7 +5595,11 @@
     renderGroups();
     state.items.forEach((it,idx)=>{ if (it.lat!=null&&it.lon!=null) upsertMarker(it, idx); });
     syncRouteOverlays();
-    const b = markerLayer.getBounds(); if (b.isValid()) map.fitBounds(b.pad(0.2));
+    const hasRouteOverlay = state.routeLayers instanceof Map && state.routeLayers.size > 0;
+    if (!hasRouteOverlay) {
+      const b = markerLayer.getBounds();
+      if (b.isValid()) map.fitBounds(b.pad(0.2));
+    }
     updateUndoButton();
   }
 
@@ -5385,6 +5645,10 @@
       if (originCoords && Number.isFinite(originCoords.lat) && Number.isFinite(originCoords.lon)) {
         state.ORIGIN = {lat: Number(originCoords.lat), lon: Number(originCoords.lon)};
       }
+      const destinationCoords = cfg('routing.destination_coordinates', null);
+      if (destinationCoords && Number.isFinite(destinationCoords.lat) && Number.isFinite(destinationCoords.lon)) {
+        state.ROUTE_DESTINATION = {lat: Number(destinationCoords.lat), lon: Number(destinationCoords.lon)};
+      }
       if (cfg('routing.geocode_origin_on_start', true)) {
         const originName = cfg('routing.origin', 'Maglód');
         try{
@@ -5394,6 +5658,21 @@
             if (j && j.lat && j.lon){ state.ORIGIN = {lat:j.lat, lon:j.lon}; }
           }
         }catch(e){}
+      }
+      if (!state.ROUTE_DESTINATION) {
+        const destinationNameRaw = cfg('routing.destination', '');
+        const destinationName = (destinationNameRaw ?? '').toString().trim();
+        if (destinationName) {
+          try {
+            const resp = await fetch(EP.geocode + '&' + new URLSearchParams({q: destinationName}), {cache: 'force-cache'});
+            if (resp.ok) {
+              const geo = await resp.json();
+              if (geo && geo.lat && geo.lon) {
+                state.ROUTE_DESTINATION = {lat: geo.lat, lon: geo.lon};
+              }
+            }
+          } catch (_) {}
+        }
       }
 
       await ensureClientId();
