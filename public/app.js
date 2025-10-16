@@ -2457,6 +2457,7 @@
     if (!jobs.length) return null;
     const hasOrigin = Number.isFinite(origin?.lat) && Number.isFinite(origin?.lon);
     if (!hasOrigin) return null;
+    const settings = routingSettings();
     const payload = {
       jobs: jobs.map(job => ({
         id: job.jobId,
@@ -2464,12 +2465,13 @@
       })),
       vehicles: [{
         id: 1,
-        profile: routingSettings().profile,
+        profile: settings.profile,
         start: [origin.lon, origin.lat],
         return_to_depot: false
       }]
     };
-    const data = await orsFetch('/optimization', payload);
+    const profile = encodeURIComponent(settings.profile);
+    const data = await orsFetch(`/optimization?profile=${profile}`, payload);
     const route = data?.routes?.[0];
     if (!route) return null;
     const steps = Array.isArray(route.steps) ? route.steps : [];
