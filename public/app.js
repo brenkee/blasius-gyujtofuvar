@@ -2306,6 +2306,19 @@
 
       coords.push([lat / factor, lon / factor]);
     }
+    if (!Number.isFinite(precisionDigits) && coords.length) {
+      const invalidCount = coords.reduce((acc, pair) => {
+        if (!Array.isArray(pair) || pair.length < 2) return acc + 1;
+        const [latVal, lonVal] = pair;
+        if (Math.abs(latVal) > 90 || Math.abs(lonVal) > 180) {
+          return acc + 1;
+        }
+        return acc;
+      }, 0);
+      if (invalidCount > coords.length / 2) {
+        return decodeOrsPolyline(str, 6);
+      }
+    }
     return coords;
   }
 
@@ -2569,6 +2582,7 @@
       coordinates: coords,
       instructions: false,
       geometry: true,
+      geometry_format: 'geojson',
       format: 'geojson',
       units: 'm'
     };
