@@ -240,6 +240,11 @@
         }
     },
     "routing": {
+        "enabled": true,
+        "provider": "openrouteservice",
+        "api_key": "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImJkOGQwMjc0YjI2ZjQzN2VhNzE3NGEzZTE1ZjJlMjZlIiwiaCI6Im11cm11cjY0In0=",
+        "base_url": "https://api.openrouteservice.org",
+        "profile": "driving-car",
         "origin": "Maglód",
         "origin_coordinates": {
             "lat": 47.45,

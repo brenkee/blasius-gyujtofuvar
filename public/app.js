@@ -16,6 +16,11 @@
     markersById: new Map(),
     rowsById: new Map(),
     ORIGIN: {lat:47.4500, lon:19.3500}, // Maglód tartalék
+    routeCache: new Map(),
+    routeRequests: new Map(),
+    roundRouteResults: new Map(),
+    routePolylines: new Map(),
+    lastRoutingErrorAt: 0,
     filterText: '',
     clientId: null,
     baselineRevision: 0,
@@ -911,13 +916,22 @@
   function getRoundSortMode(rid){
     const entry = getRoundMetaEntry(rid);
     if (!entry || typeof entry.sort_mode !== 'string') return 'default';
-    return entry.sort_mode === 'custom' ? 'custom' : 'default';
+    const raw = entry.sort_mode.toLowerCase();
+    if (raw === 'custom') return 'custom';
+    if (raw === 'route' && routingEnabled()) return 'route';
+    return 'default';
   }
 
   function setRoundSortMode(rid, mode){
     if (!CAN_SORT) return;
     const entry = ensureRoundMetaEntry(rid);
-    entry.sort_mode = mode === 'custom' ? 'custom' : 'default';
+    if (mode === 'custom') {
+      entry.sort_mode = 'custom';
+    } else if (mode === 'route' && routingEnabled()) {
+      entry.sort_mode = 'route';
+    } else {
+      entry.sort_mode = 'default';
+    }
   }
 
   function sanitizeCustomOrderList(order){
@@ -1433,6 +1447,7 @@
   // ======= MAP
   const map = L.map('map',{zoomControl:true, preferCanvas:true});
   mapRef = map;
+  const routeLayer = L.featureGroup().addTo(map);
   const markerLayer = L.featureGroup().addTo(map);
   let markerOverlapRefreshTimer = null;
   function updatePinCount(){ if (pinCountEl) pinCountEl.textContent = markerLayer.getLayers().length.toString(); }
@@ -2138,6 +2153,529 @@
   }
 
   // ======= AUTO SORT (kör + körön belül távolság)
+  const ROUTE_STATUS = Object.freeze({
+    PENDING: 'pending',
+    READY: 'ready',
+    ERROR: 'error'
+  });
+
+  let pendingRouteRender = null;
+
+  function scheduleRouteRender(){
+    if (pendingRouteRender != null) return;
+    pendingRouteRender = window.setTimeout(()=>{
+      pendingRouteRender = null;
+      try {
+        renderEverything();
+      } catch (err) {
+        console.error('route render failed', err);
+      }
+    }, 0);
+  }
+
+  function routingEnabled(){
+    const cfgRouting = cfg('routing', {}) || {};
+    if (!cfgRouting || cfgRouting.enabled === false) return false;
+    const provider = (cfgRouting.provider || '').toString().toLowerCase();
+    if (provider !== 'openrouteservice') return false;
+    const apiKey = (cfgRouting.api_key || '').toString().trim();
+    const baseUrl = (cfgRouting.base_url || '').toString().trim();
+    return apiKey !== '' && baseUrl !== '';
+  }
+
+  function routingSettings(){
+    const cfgRouting = cfg('routing', {}) || {};
+    const apiKey = (cfgRouting.api_key || '').toString().trim();
+    const rawBase = (cfgRouting.base_url || 'https://api.openrouteservice.org').toString().trim();
+    const baseUrl = rawBase.replace(/\/+$/, '');
+    const profileRaw = (cfgRouting.profile || 'driving-car').toString().trim();
+    return {
+      apiKey,
+      baseUrl: baseUrl || 'https://api.openrouteservice.org',
+      profile: profileRaw || 'driving-car'
+    };
+  }
+
+  function routeItemKey(entry){
+    const item = entry?.it ?? {};
+    if (item.id != null) return `id:${item.id}`;
+    const lat = Number(item.lat);
+    const lon = Number(item.lon);
+    if (Number.isFinite(lat) && Number.isFinite(lon)) {
+      return `coord:${lat.toFixed(6)},${lon.toFixed(6)}`;
+    }
+    return `idx:${entry.idx}`;
+  }
+
+  function buildRouteJobs(entries){
+    return entries.map((entry, index) => {
+      const item = entry?.it ?? {};
+      const lat = Number(item.lat);
+      const lon = Number(item.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+      return {
+        entry,
+        itemKey: routeItemKey(entry),
+        lat,
+        lon,
+        jobId: index + 1
+      };
+    }).filter(Boolean);
+  }
+
+  function routeCacheKey(origin, jobs){
+    if (!jobs.length) {
+      if (Number.isFinite(origin?.lat) && Number.isFinite(origin?.lon)) {
+        return `origin:${origin.lat.toFixed(6)},${origin.lon.toFixed(6)}`;
+      }
+      return '';
+    }
+    const originPart = Number.isFinite(origin?.lat) && Number.isFinite(origin?.lon)
+      ? `origin:${origin.lat.toFixed(6)},${origin.lon.toFixed(6)}`
+      : 'origin:unknown';
+    const parts = jobs.map(job => `${job.itemKey}:${job.lat.toFixed(6)},${job.lon.toFixed(6)}`).sort();
+    return [originPart, ...parts].join('|');
+  }
+
+  function greedyOrderByGreatCircle(jobs, origin){
+    const remaining = jobs.slice();
+    if (!remaining.length) return [];
+    if (!(Number.isFinite(origin?.lat) && Number.isFinite(origin?.lon))) {
+      return remaining;
+    }
+    let startIdx = 0;
+    let bestStart = Infinity;
+    for (let i = 0; i < remaining.length; i += 1) {
+      const candidate = remaining[i];
+      const dist = haversineKm(origin.lat, origin.lon, candidate.lat, candidate.lon);
+      if (dist < bestStart) {
+        bestStart = dist;
+        startIdx = i;
+      }
+    }
+    const sorted = [];
+    let current = remaining.splice(startIdx, 1)[0];
+    sorted.push(current);
+    while (remaining.length) {
+      let nextIdx = 0;
+      let bestDist = Infinity;
+      for (let i = 0; i < remaining.length; i += 1) {
+        const candidate = remaining[i];
+        const dist = haversineKm(current.lat, current.lon, candidate.lat, candidate.lon);
+        if (dist < bestDist) {
+          bestDist = dist;
+          nextIdx = i;
+        }
+      }
+      current = remaining.splice(nextIdx, 1)[0];
+      sorted.push(current);
+    }
+    return sorted;
+  }
+
+  function geojsonToLatLngs(geometry){
+    if (!geometry) return [];
+    const coords = Array.isArray(geometry.coordinates) ? geometry.coordinates : [];
+    return coords.map(pair => {
+      if (!Array.isArray(pair) || pair.length < 2) return null;
+      const lon = Number(pair[0]);
+      const lat = Number(pair[1]);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+      return [lat, lon];
+    }).filter(Boolean);
+  }
+
+  function removeRoutePolyline(rid){
+    const existing = state.routePolylines.get(rid);
+    if (existing) {
+      routeLayer.removeLayer(existing);
+      state.routePolylines.delete(rid);
+    }
+  }
+
+  function applyRoutePolyline(rid, latlngs){
+    removeRoutePolyline(rid);
+    if (!Array.isArray(latlngs) || !latlngs.length) return;
+    const color = colorForRound(rid);
+    const polyline = L.polyline(latlngs, {
+      color,
+      weight: 5,
+      opacity: 0.85
+    });
+    routeLayer.addLayer(polyline);
+    state.routePolylines.set(rid, polyline);
+  }
+
+  function setRoundRouteInfo(rid, info){
+    if (!info) {
+      state.roundRouteResults.delete(rid);
+    } else {
+      state.roundRouteResults.set(rid, info);
+    }
+    renderGroupRouteInfoForRound(rid);
+    const mode = getRoundSortMode(rid);
+    if (!info || info.status !== ROUTE_STATUS.READY || mode !== 'route') {
+      removeRoutePolyline(rid);
+    } else {
+      applyRoutePolyline(rid, info.latlngs);
+    }
+  }
+
+  function clearRoundRoute(rid){
+    setRoundRouteInfo(rid, null);
+  }
+
+  function logRoutingError(context, payload){
+    if (payload == null) {
+      console.error('[routing] ' + context);
+      return;
+    }
+    if (typeof payload === 'string') {
+      console.error('[routing] ' + context + ':', payload);
+      return;
+    }
+    if (payload && typeof payload === 'object' && typeof payload.responseText === 'string') {
+      console.error('[routing] ' + context + ':', payload.responseText);
+      return;
+    }
+    console.error('[routing] ' + context + ':', payload);
+  }
+
+  function showRoutingFailureMessage(){
+    const now = Date.now();
+    if (now - state.lastRoutingErrorAt < 5000) return;
+    state.lastRoutingErrorAt = now;
+    alert('Útvonaltervezés sikertelen, próbáld újra később.');
+  }
+  async function orsFetch(path, payload){
+    const settings = routingSettings();
+    const base = (settings.baseUrl || '').toString().trim().replace(/\/+$/, '');
+    const url = `${base}${path}`;
+    const headers = new Headers({
+      'Authorization': settings.apiKey,
+      'Content-Type': 'application/json'
+    });
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload)
+    });
+    const text = await response.text();
+    let data = null;
+    try {
+      data = JSON.parse(text);
+    } catch (err) {
+      data = null;
+    }
+    if (!response.ok) {
+      const error = new Error('ors_error');
+      error.status = response.status;
+      error.responseText = text;
+      error.data = data;
+      throw error;
+    }
+    return data;
+  }
+
+  async function orsOptimization(origin, jobs){
+    if (!jobs.length) return null;
+    const hasOrigin = Number.isFinite(origin?.lat) && Number.isFinite(origin?.lon);
+    if (!hasOrigin) return null;
+    const payload = {
+      jobs: jobs.map(job => ({
+        id: job.jobId,
+        location: [job.lon, job.lat]
+      })),
+      vehicles: [{
+        id: 1,
+        profile: routingSettings().profile,
+        start: [origin.lon, origin.lat],
+        return_to_depot: false
+      }]
+    };
+    const data = await orsFetch('/optimization', payload);
+    const route = data?.routes?.[0];
+    if (!route) return null;
+    const steps = Array.isArray(route.steps) ? route.steps : [];
+    const jobMap = new Map(jobs.map(job => [job.jobId, job]));
+    const orderKeys = [];
+    steps.forEach(step => {
+      if (!step || (step.type && step.type !== 'job')) return;
+      const jobId = Number.isFinite(step?.id) ? Number(step.id) : Number(step?.job);
+      if (!Number.isFinite(jobId)) return;
+      const job = jobMap.get(jobId);
+      if (job) orderKeys.push(job.itemKey);
+    });
+    if (!orderKeys.length) return null;
+    const summary = route.summary || {};
+    const distance = Number(summary.distance);
+    const duration = Number(summary.duration);
+    return {
+      orderKeys,
+      distance: Number.isFinite(distance) ? distance : null,
+      duration: Number.isFinite(duration) ? duration : null
+    };
+  }
+
+  async function orsMatrix(origin, jobs){
+    if (!jobs.length) return null;
+    const hasOrigin = Number.isFinite(origin?.lat) && Number.isFinite(origin?.lon);
+    const coords = [];
+    if (hasOrigin) {
+      coords.push([origin.lon, origin.lat]);
+    }
+    jobs.forEach(job => {
+      coords.push([job.lon, job.lat]);
+    });
+    if (coords.length < 2) return null;
+    const payload = {
+      locations: coords,
+      metrics: ['distance', 'duration']
+    };
+    const profile = encodeURIComponent(routingSettings().profile);
+    const data = await orsFetch(`/v2/matrix/${profile}`, payload);
+    return data;
+  }
+
+  function orderKeysFromMatrix(matrix, jobs){
+    if (!matrix) return null;
+    const distances = Array.isArray(matrix.distances) ? matrix.distances : null;
+    if (!distances || !distances.length) return null;
+    const total = distances.length;
+    if (total <= 1) return null;
+    const unvisited = new Set();
+    for (let idx = 1; idx < total; idx += 1) {
+      unvisited.add(idx);
+    }
+    const orderKeys = [];
+    let current = 0;
+    while (unvisited.size) {
+      let bestIdx = null;
+      let bestDist = Infinity;
+      unvisited.forEach(candidate => {
+        const row = distances[current];
+        const raw = Array.isArray(row) ? Number(row[candidate]) : Infinity;
+        if (Number.isFinite(raw) && raw < bestDist) {
+          bestDist = raw;
+          bestIdx = candidate;
+        }
+      });
+      if (bestIdx == null) {
+        const iter = unvisited.values().next();
+        if (!iter.done) {
+          bestIdx = iter.value;
+        }
+      }
+      if (bestIdx == null) break;
+      unvisited.delete(bestIdx);
+      const jobIdx = bestIdx - 1;
+      if (jobs[jobIdx]) {
+        orderKeys.push(jobs[jobIdx].itemKey);
+      }
+      current = bestIdx;
+    }
+    return orderKeys.length ? orderKeys : null;
+  }
+
+  async function orsDirections(origin, jobs){
+    const coords = [];
+    const hasOrigin = Number.isFinite(origin?.lat) && Number.isFinite(origin?.lon);
+    if (hasOrigin) {
+      coords.push([origin.lon, origin.lat]);
+    }
+    jobs.forEach(job => {
+      coords.push([job.lon, job.lat]);
+    });
+    if (coords.length < 2) return null;
+    const payload = {
+      coordinates: coords,
+      instructions: false,
+      geometry: true,
+      format: 'geojson',
+      units: 'm'
+    };
+    const profile = encodeURIComponent(routingSettings().profile);
+    const data = await orsFetch(`/v2/directions/${profile}`, payload);
+    const feature = Array.isArray(data?.features) ? data.features[0] : null;
+    if (!feature) return null;
+    const latlngs = geojsonToLatLngs(feature.geometry);
+    const summarySource = feature?.properties?.summary || feature?.properties || {};
+    const distance = Number(summarySource.distance);
+    const duration = Number(summarySource.duration);
+    return {
+      latlngs,
+      distance: Number.isFinite(distance) ? distance : null,
+      duration: Number.isFinite(duration) ? duration : null
+    };
+  }
+
+  async function computeRoutePlan(jobs, key){
+    const origin = {
+      lat: Number(state.ORIGIN?.lat),
+      lon: Number(state.ORIGIN?.lon)
+    };
+    const hasOrigin = Number.isFinite(origin.lat) && Number.isFinite(origin.lon);
+    if (!jobs.length) {
+      const latlngs = hasOrigin ? [[origin.lat, origin.lon]] : [];
+      return {
+        key,
+        orderKeys: [],
+        latlngs,
+        distance: null,
+        duration: null
+      };
+    }
+
+    let orderKeys = null;
+    let distance = null;
+    let duration = null;
+
+    if (routingEnabled()) {
+      try {
+        const opt = await orsOptimization(origin, jobs);
+        if (opt && Array.isArray(opt.orderKeys) && opt.orderKeys.length) {
+          orderKeys = opt.orderKeys.slice();
+          distance = opt.distance;
+          duration = opt.duration;
+        }
+      } catch (err) {
+        logRoutingError('ORS optimization', err);
+        showRoutingFailureMessage();
+      }
+    }
+
+    if ((!orderKeys || !orderKeys.length) && routingEnabled()) {
+      try {
+        const matrix = await orsMatrix(origin, jobs);
+        const matrixOrder = orderKeysFromMatrix(matrix, jobs);
+        if (matrixOrder && matrixOrder.length) {
+          orderKeys = matrixOrder.slice();
+        }
+      } catch (err) {
+        logRoutingError('ORS matrix', err);
+        showRoutingFailureMessage();
+      }
+    }
+
+    if (!orderKeys || !orderKeys.length) {
+      const fallback = greedyOrderByGreatCircle(jobs, origin);
+      if (!fallback.length) {
+        return null;
+      }
+      orderKeys = fallback.map(job => job.itemKey);
+    }
+
+    const orderedJobs = [];
+    const jobMap = new Map(jobs.map(job => [job.itemKey, job]));
+    orderKeys.forEach(keyVal => {
+      const job = jobMap.get(keyVal);
+      if (job) orderedJobs.push(job);
+    });
+    jobs.forEach(job => {
+      if (!orderKeys.includes(job.itemKey)) {
+        orderedJobs.push(job);
+        orderKeys.push(job.itemKey);
+      }
+    });
+
+    let latlngs = [];
+    if (routingEnabled()) {
+      try {
+        const dir = await orsDirections(origin, orderedJobs);
+        if (dir) {
+          if (Array.isArray(dir.latlngs) && dir.latlngs.length) {
+            latlngs = dir.latlngs.slice();
+          }
+          if (Number.isFinite(dir.distance)) distance = dir.distance;
+          if (Number.isFinite(dir.duration)) duration = dir.duration;
+        }
+      } catch (err) {
+        logRoutingError('ORS directions', err);
+        showRoutingFailureMessage();
+      }
+    }
+
+    if (!latlngs.length) {
+      latlngs = orderedJobs.map(job => [job.lat, job.lon]);
+      if (hasOrigin) {
+        latlngs.unshift([origin.lat, origin.lon]);
+      }
+    }
+
+    return {
+      key,
+      orderKeys: orderKeys.slice(),
+      latlngs: latlngs.slice(),
+      distance: Number.isFinite(distance) ? distance : null,
+      duration: Number.isFinite(duration) ? duration : null
+    };
+  }
+
+  function requestRouteForRound(rid, jobs, key){
+    if (!routingEnabled()) return;
+    if (!jobs.length || !key) {
+      clearRoundRoute(rid);
+      return;
+    }
+    const cached = state.routeCache.get(key);
+    if (cached) {
+      const info = {
+        key,
+        status: ROUTE_STATUS.READY,
+        orderKeys: cached.orderKeys.slice(),
+        latlngs: cached.latlngs.map(pair => pair.slice()),
+        distance: cached.distance ?? null,
+        duration: cached.duration ?? null
+      };
+      setRoundRouteInfo(rid, info);
+      scheduleRouteRender();
+      return;
+    }
+    const current = state.roundRouteResults.get(rid);
+    if (current && current.status === ROUTE_STATUS.READY && current.key === key) {
+      return;
+    }
+    setRoundRouteInfo(rid, {key, status: ROUTE_STATUS.PENDING});
+    if (state.routeRequests.has(key)) {
+      return;
+    }
+    const promise = computeRoutePlan(jobs, key)
+      .then(result => {
+        if (result && Array.isArray(result.orderKeys) && result.orderKeys.length) {
+          const cacheEntry = {
+            orderKeys: result.orderKeys.slice(),
+            latlngs: result.latlngs.map(pair => pair.slice()),
+            distance: result.distance ?? null,
+            duration: result.duration ?? null
+          };
+          state.routeCache.set(key, cacheEntry);
+          setRoundRouteInfo(rid, {
+            key,
+            status: ROUTE_STATUS.READY,
+            orderKeys: cacheEntry.orderKeys.slice(),
+            latlngs: cacheEntry.latlngs.map(pair => pair.slice()),
+            distance: cacheEntry.distance,
+            duration: cacheEntry.duration
+          });
+          scheduleRouteRender();
+          return cacheEntry;
+        }
+        setRoundRouteInfo(rid, {key, status: ROUTE_STATUS.ERROR});
+        showRoutingFailureMessage();
+        return null;
+      })
+      .catch(err => {
+        logRoutingError('ORS routing', err);
+        setRoundRouteInfo(rid, {key, status: ROUTE_STATUS.ERROR});
+        showRoutingFailureMessage();
+        return null;
+      })
+      .finally(() => {
+        state.routeRequests.delete(key);
+      });
+    state.routeRequests.set(key, promise);
+  }
+
   function autoSortItems(){
     if (!cfg('app.auto_sort_by_round', true)) return;
     const zeroBottom = !!cfg('app.round_zero_at_bottom', false);
@@ -2166,6 +2704,9 @@
     roundIds.forEach(rid => {
       const entries = groups.get(rid) || [];
       const mode = getRoundSortMode(rid);
+      if (mode !== 'route') {
+        clearRoundRoute(rid);
+      }
       if (mode === 'custom') {
         const active = entries.filter(entry => !isItemCompletelyBlank(entry.it));
         const placeholders = entries.filter(entry => isItemCompletelyBlank(entry.it));
@@ -2186,41 +2727,47 @@
       const withCoords = entries.filter(hasCoords);
       const withoutCoords = entries.filter(entry => !hasCoords(entry));
 
-      const sorted = [];
-      if (withCoords.length){
-        const remaining = withCoords.slice();
-        let currentIdx = 0;
-        let bestStart = Infinity;
-        for (let i=0;i<remaining.length;i++){
-          const candidate = remaining[i];
-          const distRaw = haversineKm(state.ORIGIN.lat, state.ORIGIN.lon, candidate.it.lat, candidate.it.lon);
-          const dist = Number.isFinite(distRaw) ? distRaw : Infinity;
-          if (dist < bestStart){
-            bestStart = dist;
-            currentIdx = i;
+      let sortedEntries = [];
+      if (mode === 'route' && routingEnabled()) {
+        const jobs = buildRouteJobs(withCoords);
+        const key = routeCacheKey(state.ORIGIN, jobs);
+        if (!jobs.length || !key) {
+          clearRoundRoute(rid);
+          sortedEntries = [];
+        } else {
+          const info = state.roundRouteResults.get(rid);
+          if (!info || info.key !== key || info.status === ROUTE_STATUS.ERROR) {
+            requestRouteForRound(rid, jobs, key);
+          }
+          const readyInfo = info && info.key === key && info.status === ROUTE_STATUS.READY ? info : null;
+          if (readyInfo) {
+            const orderIndex = new Map(readyInfo.orderKeys.map((value, index) => [value, index]));
+            sortedEntries = jobs.slice().sort((a, b) => {
+              const aIdx = orderIndex.has(a.itemKey) ? orderIndex.get(a.itemKey) : (jobs.length + a.entry.idx);
+              const bIdx = orderIndex.has(b.itemKey) ? orderIndex.get(b.itemKey) : (jobs.length + b.entry.idx);
+              if (aIdx !== bIdx) return aIdx - bIdx;
+              return a.entry.idx - b.entry.idx;
+            }).map(job => job.entry);
+          } else {
+            const fallback = greedyOrderByGreatCircle(jobs, state.ORIGIN);
+            sortedEntries = fallback.map(job => job.entry);
           }
         }
-        let current = remaining.splice(currentIdx,1)[0];
-        sorted.push(current);
-        while (remaining.length){
-          let nextIdx = 0;
-          let bestDist = Infinity;
-          for (let i=0;i<remaining.length;i++){
-            const candidate = remaining[i];
-            const distRaw = haversineKm(current.it.lat, current.it.lon, candidate.it.lat, candidate.it.lon);
-            const dist = Number.isFinite(distRaw) ? distRaw : Infinity;
-            if (dist < bestDist){
-              bestDist = dist;
-              nextIdx = i;
-            }
-          }
-          current = remaining.splice(nextIdx,1)[0];
-          sorted.push(current);
+      } else {
+        if (mode === 'route') {
+          clearRoundRoute(rid);
         }
+        const jobs = buildRouteJobs(withCoords);
+        const fallback = greedyOrderByGreatCircle(jobs, state.ORIGIN);
+        sortedEntries = fallback.map(job => job.entry);
       }
 
-      withoutCoords.sort((a,b)=>a.idx-b.idx);
-      sorted.concat(withoutCoords).forEach(entry => ordered.push(entry.it));
+      const finalEntries = [];
+      if (sortedEntries.length) {
+        sortedEntries.forEach(entry => finalEntries.push(entry));
+      }
+      withoutCoords.sort((a,b)=>a.idx-b.idx).forEach(entry => finalEntries.push(entry));
+      finalEntries.forEach(entry => ordered.push(entry.it));
     });
 
     state.items = ordered;
@@ -2319,6 +2866,8 @@
     const sortLabel = text('round.sort_mode_label', 'Rendezés');
     const sortDefaultLabel = text('round.sort_mode_default', 'Alapértelmezett (távolság)');
     const sortCustomLabel = text('round.sort_mode_custom', 'Egyéni (drag & drop)');
+    const sortRouteLabel = text('round.sort_mode_route', 'Útvonal (ORS)');
+    const routingAvailable = routingEnabled();
     const sortHint = text('round.sort_mode_custom_hint', 'Fogd és vidd a címeket a rendezéshez');
     const sortSelectId = `round_${cssId(String(rid))}_sort_mode`;
     const sortMode = getRoundSortMode(rid);
@@ -2357,6 +2906,7 @@
               <label class="sort-mode-label" for="${sortSelectId}">${esc(sortLabel)}</label>
               <select id="${sortSelectId}" class="round-sort-mode" data-round="${rid}"${sortMode==='custom' && sortHint ? ` title="${esc(sortHint)}"` : ''}>
                 <option value="default"${sortMode==='default' ? ' selected' : ''}>${esc(sortDefaultLabel)}</option>
+                ${routingAvailable ? `<option value="route"${sortMode==='route' ? ' selected' : ''}>${esc(sortRouteLabel)}</option>` : ''}
                 <option value="custom"${sortMode==='custom' ? ' selected' : ''}>${esc(sortCustomLabel)}</option>
               </select>
             </div>`
@@ -2375,6 +2925,7 @@
           ${dragIndicator}
           ${sumTxt ? `<span class="__sum" style="margin-left:8px;color:#6b7280;font-weight:600;font-size:12px;">${esc(sumTxt)}</span>` : ''}
         </div>
+        <div class="group-route-summary" data-round-route-summary="${rid}" hidden style="--route-color:${esc(color)};"></div>
         <div class="group-controls">
           ${plannedDateHtml}
           ${plannedTimeHtml}
@@ -2415,6 +2966,50 @@
     } else {
       span.style.display = 'none';
     }
+  }
+
+  function renderGroupRouteInfoForRound(rid){
+    const el = document.querySelector(`[data-round-route-summary="${rid}"]`);
+    if (!el) return;
+    const mode = getRoundSortMode(rid);
+    if (mode !== 'route' || !routingEnabled()) {
+      el.textContent = '';
+      el.hidden = true;
+      el.style.removeProperty('--route-color');
+      removeRoutePolyline(rid);
+      return;
+    }
+    const color = colorForRound(rid);
+    if (color) {
+      el.style.setProperty('--route-color', color);
+    }
+    const info = state.roundRouteResults.get(rid);
+    if (!info) {
+      el.textContent = '';
+      el.hidden = true;
+      return;
+    }
+    if (info.status === ROUTE_STATUS.PENDING) {
+      el.textContent = 'Útvonal tervezése...';
+      el.hidden = false;
+      return;
+    }
+    if (info.status === ROUTE_STATUS.ERROR) {
+      el.textContent = 'Útvonal adatai nem érhetők el';
+      el.hidden = false;
+      return;
+    }
+    if (info.status === ROUTE_STATUS.READY) {
+      const distanceKm = Number(info.distance) / 1000;
+      const durationMin = Number(info.duration) / 60;
+      const distanceStr = Number.isFinite(distanceKm) ? distanceKm.toFixed(1) : '—';
+      const durationStr = Number.isFinite(durationMin) ? Math.round(durationMin).toString() : '—';
+      el.textContent = `Útvonal adatai: ${distanceStr} km | ${durationStr} perc`;
+      el.hidden = false;
+      return;
+    }
+    el.textContent = '';
+    el.hidden = true;
   }
 
   function refreshDeleteButtonState(row, it){
@@ -3465,7 +4060,10 @@
     let globalIndex = 0;
     order.forEach(rid=>{
       const inRound = state.items.filter(it => (+it.round||0) === rid && it.id !== placeholderId);
-      if (inRound.length === 0) return;
+      if (inRound.length === 0) {
+        clearRoundRoute(rid);
+        return;
+      }
 
       const totals = totalsForRound(rid);
       const groupEl = makeGroupHeader(rid, totals);
@@ -3611,11 +4209,20 @@
       const sortSelect = groupEl.querySelector('.round-sort-mode');
       if (CAN_SORT && sortSelect) {
         sortSelect.addEventListener('change', async ()=>{
-          const newMode = sortSelect.value === 'custom' ? 'custom' : 'default';
+          const rawMode = sortSelect.value;
+          let newMode = 'default';
+          if (rawMode === 'custom') {
+            newMode = 'custom';
+          } else if (rawMode === 'route' && routingEnabled()) {
+            newMode = 'route';
+          }
           const prevMode = getRoundSortMode(rid);
           if (newMode === prevMode) return;
           pushSnapshot();
           setRoundSortMode(rid, newMode);
+          if (prevMode === 'route' && newMode !== 'route') {
+            clearRoundRoute(rid);
+          }
           if (newMode === 'custom') {
             const ids = state.items
               .filter(item => (+item.round||0) === rid && !isItemCompletelyBlank(item))
@@ -3629,6 +4236,7 @@
       }
 
       groupsEl.appendChild(groupEl);
+      renderGroupRouteInfoForRound(rid);
     });
 
     renumberAll();

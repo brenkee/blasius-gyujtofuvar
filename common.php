@@ -298,6 +298,11 @@ $CFG_DEFAULT = [
     ]
   ],
   "routing" => [
+    "enabled" => false,
+    "provider" => "openrouteservice",
+    "api_key" => "",
+    "base_url" => "https://api.openrouteservice.org",
+    "profile" => "driving-car",
     "origin" => "Maglód",
     "origin_coordinates" => [
       "lat" => 47.45,
