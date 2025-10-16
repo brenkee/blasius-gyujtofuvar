@@ -3704,9 +3704,13 @@
     const metrics = getMetricDefs();
     const sums = {};
     const counts = {};
+    let addressCount = 0;
     metrics.forEach(metric => { sums[metric.id] = 0; counts[metric.id] = 0; });
     state.items.forEach(it=>{
       if ((+it.round||0)!==rid) return;
+      if (!isItemCompletelyBlank(it)) {
+        addressCount += 1;
+      }
       metrics.forEach(metric => {
         const raw = it[metric.id];
         if (raw === '' || raw == null) return;
@@ -3716,16 +3720,24 @@
         counts[metric.id] += 1;
       });
     });
-    return {sums, counts};
+    return {sums, counts, addressCount};
   }
 
   function formatMetricSum(metric, value, context='group'){
     const precision = Number.isFinite(Number(metric.precision)) ? Number(metric.precision) : 0;
-    const val = Number.isFinite(value) ? value.toFixed(precision) : (0).toFixed(precision);
+    const numericValue = Number.isFinite(value) ? Number(value) : 0;
+    let strVal;
+    if (context === 'row') {
+      let intVal = Math.round(numericValue);
+      if (Object.is(intVal, -0)) intVal = 0;
+      strVal = String(intVal);
+    } else {
+      strVal = numericValue.toFixed(precision);
+    }
     const tplKey = context === 'row' ? 'row_format' : 'group_format';
     const tpl = metric[tplKey];
-    if (tpl) return format(tpl, {value: val, sum: val, unit: metric.unit ?? '', label: metric.label ?? ''});
-    return `${val}${metric.unit ? ' '+metric.unit : ''}`;
+    if (tpl) return format(tpl, {value: strVal, sum: strVal, unit: metric.unit ?? '', label: metric.label ?? ''});
+    return `${strVal}${metric.unit ? ' '+metric.unit : ''}`;
   }
 
   function groupTotalsText(rid, totals){
@@ -3737,6 +3749,10 @@
       const sum = Number(totals.sums?.[metric.id] ?? 0);
       return formatMetricSum(metric, sum, 'group');
     }).filter(Boolean);
+    const addressCount = Number(totals.addressCount ?? 0);
+    if (addressCount > 0) {
+      parts.push(`${addressCount} Cím`);
+    }
     if (!parts.length) return '';
     const template = cfg('text.group.sum_template', 'Összesen: {parts}');
     return format(template, {parts: parts.join(sep), round: roundLabel(rid)});
@@ -4416,7 +4432,10 @@
             <select id="round_${cssId(it.id)}" class="select-round">
               ${Array.from(ROUND_MAP.values()).map(r => {
                 const sel = (+it.round===+r.id) ? 'selected' : '';
-                return `<option value="${r.id}" ${sel}>${esc(r.label)}</option>`;
+                const optionColor = colorForRound(r.id);
+                const optionTextColor = idealTextColor(optionColor);
+                const style = `style="background:${esc(optionColor)};color:${esc(optionTextColor)};"`;
+                return `<option value="${r.id}" ${sel} ${style}>${esc(r.label)}</option>`;
               }).join('')}
             </select>
           </div>`;
