@@ -298,6 +298,11 @@ $CFG_DEFAULT = [
     ]
   ],
   "routing" => [
+    "enabled" => true,
+    "provider" => "openrouteservice",
+    "api_key" => "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImJkOGQwMjc0YjI2ZjQzN2VhNzE3NGEzZTE1ZjJlMjZlIiwiaCI6Im11cm11cjY0In0=",
+    "base_url" => "https://api.openrouteservice.org",
+    "profile" => "driving-car",
     "origin" => "Maglód",
     "origin_coordinates" => [
       "lat" => 47.45,
@@ -330,8 +335,13 @@ $CFG_DEFAULT = [
       "sort_mode_label" => "Rendezési mód",
       "sort_mode_default" => "Alapértelmezett (távolság)",
       "sort_mode_custom" => "Egyéni (drag & drop)",
+      "sort_mode_route" => "Útvonal (OpenRouteService)",
       "sort_mode_custom_hint" => "Fogd és vidd a címeket a sorrend módosításához",
       "custom_sort_handle_hint" => "Fogd meg és húzd a cím átrendezéséhez"
+    ],
+    "routing" => [
+      "status_template" => "{round}: {distance} · {duration}",
+      "status_pending" => "Útvonal számítása…"
     ],
     "group" => [
       "sum_template" => "Összesen: {parts}",
@@ -1075,7 +1085,11 @@ function normalize_round_meta($roundMeta) {
       }
       if ($metaKeyStr === 'sort_mode') {
         $val = strtolower(trim((string)$value));
-        $entry[$metaKeyStr] = ($val === 'custom') ? 'custom' : 'default';
+        if ($val === 'custom' || $val === 'route') {
+          $entry[$metaKeyStr] = $val;
+        } else {
+          $entry[$metaKeyStr] = 'default';
+        }
         continue;
       }
       if ($metaKeyStr === 'custom_order') {
@@ -1103,6 +1117,93 @@ function normalize_round_meta($roundMeta) {
         }
         continue;
       }
+      if ($metaKeyStr === 'route_order') {
+        $source = $value;
+        if (!is_array($source) && is_string($source) && trim($source) !== '') {
+          $decoded = json_decode($source, true);
+          if (is_array($decoded)) {
+            $source = $decoded;
+          }
+        }
+        if (is_array($source)) {
+          $list = [];
+          $seen = [];
+          foreach ($source as $itemVal) {
+            if ($itemVal === null) {
+              continue;
+            }
+            $itemStr = trim((string)$itemVal);
+            if ($itemStr === '') {
+              continue;
+            }
+            if (isset($seen[$itemStr])) {
+              continue;
+            }
+            $seen[$itemStr] = true;
+            $list[] = $itemStr;
+          }
+          if (!empty($list)) {
+            $entry[$metaKeyStr] = $list;
+          }
+        }
+        continue;
+      }
+      if ($metaKeyStr === 'route_hash') {
+        $val = trim((string)$value);
+        if ($val !== '') {
+          if (function_exists('mb_substr')) {
+            $val = mb_substr($val, 0, 4000);
+          } else {
+            $val = substr($val, 0, 4000);
+          }
+          $entry[$metaKeyStr] = $val;
+        }
+        continue;
+      }
+      if ($metaKeyStr === 'route_distance_m' || $metaKeyStr === 'route_duration_s') {
+        if (is_numeric($value)) {
+          $num = (float)$value;
+          if (is_finite($num) && $num >= 0) {
+            $entry[$metaKeyStr] = $num;
+          }
+        }
+        continue;
+      }
+      if ($metaKeyStr === 'route_geometry') {
+        $source = $value;
+        if (!is_array($source) && is_string($source) && trim($source) !== '') {
+          $decoded = json_decode($source, true);
+          if (is_array($decoded)) {
+            $source = $decoded;
+          }
+        }
+        if (is_array($source)) {
+          $coords = [];
+          foreach ($source as $pair) {
+            if (!is_array($pair) || count($pair) < 2) {
+              continue;
+            }
+            $lat = $pair[0];
+            $lon = $pair[1];
+            if (!is_numeric($lat) || !is_numeric($lon)) {
+              continue;
+            }
+            $lat = (float)$lat;
+            $lon = (float)$lon;
+            if (!is_finite($lat) || !is_finite($lon)) {
+              continue;
+            }
+            $coords[] = [$lat, $lon];
+            if (count($coords) >= 2000) {
+              break;
+            }
+          }
+          if (!empty($coords)) {
+            $entry[$metaKeyStr] = $coords;
+          }
+        }
+        continue;
+      }
       if (is_scalar($value)) {
         $val = trim((string)$value);
         if ($val === '') continue;
@@ -1115,7 +1216,13 @@ function normalize_round_meta($roundMeta) {
       }
     }
     if (!isset($entry['sort_mode'])) {
-      $entry['sort_mode'] = (!empty($entry['custom_order'])) ? 'custom' : 'default';
+      if (!empty($entry['custom_order'])) {
+        $entry['sort_mode'] = 'custom';
+      } elseif (!empty($entry['route_order'])) {
+        $entry['sort_mode'] = 'route';
+      } else {
+        $entry['sort_mode'] = 'default';
+      }
     }
     if (!empty($entry)) {
       ksort($entry);

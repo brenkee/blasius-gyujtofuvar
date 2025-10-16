@@ -240,6 +240,11 @@
         }
     },
     "routing": {
+        "enabled": true,
+        "provider": "openrouteservice",
+        "api_key": "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImJkOGQwMjc0YjI2ZjQzN2VhNzE3NGEzZTE1ZjJlMjZlIiwiaCI6Im11cm11cjY0In0=",
+        "base_url": "https://api.openrouteservice.org",
+        "profile": "driving-car",
         "origin": "Maglód",
         "origin_coordinates": {
             "lat": 47.45,
@@ -366,8 +371,13 @@
             "sort_mode_label": "Rendezés",
             "sort_mode_default": "Alapértelmezett",
             "sort_mode_custom": "Egyéni",
+            "sort_mode_route": "Útvonal (OpenRouteService)",
             "sort_mode_custom_hint": "Fogd és vidd a címeket a sorrend módosításához",
             "custom_sort_handle_hint": "Fogd meg és húzd a cím átrendezéséhez"
+        },
+        "routing": {
+            "status_template": "{round}: {distance} · {duration}",
+            "status_pending": "Útvonal számítása…"
         },
         "group": {
             "sum_template": "Összesen: {parts}",

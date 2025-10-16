@@ -257,6 +257,11 @@ if ($action === 'cfg') {
     ],
     "rounds" => array_values($ROUND_MAP),
     "routing" => [
+      "enabled" => !empty($CFG['routing']['enabled']),
+      "provider" => $CFG['routing']['provider'] ?? 'openrouteservice',
+      "api_key" => $CFG['routing']['api_key'] ?? '',
+      "base_url" => $CFG['routing']['base_url'] ?? '',
+      "profile" => $CFG['routing']['profile'] ?? 'driving-car',
       "origin" => $CFG['routing']['origin'] ?? 'Maglód',
       "origin_coordinates" => [
         'lat' => isset($CFG['routing']['origin_coordinates']['lat']) ? (float)$CFG['routing']['origin_coordinates']['lat'] : null,

@@ -15,6 +15,10 @@
     roundMeta: {},             // { [roundId]: {planned_date:string, planned_time:string, sort_mode:string, custom_order:string[]} }
     markersById: new Map(),
     rowsById: new Map(),
+    routeCache: new Map(),
+    routeLayers: new Map(),
+    pendingRouteRequests: new Map(),
+    activeRouteStatus: null,
     ORIGIN: {lat:47.4500, lon:19.3500}, // Maglód tartalék
     filterText: '',
     clientId: null,
@@ -40,6 +44,7 @@
   const themeToggle = document.getElementById('themeToggle');
   const panelTopEl = document.getElementById('panelTop');
   const appRootEl = document.querySelector('.app');
+  const routeStatusEl = document.getElementById('routeStatus');
   const VIEW_MODE_STORAGE_KEY = 'app_view_mode_v1';
   const VIEW_MODES = Object.freeze({LIST:'list', MAP:'map'});
   const QUICK_SEARCH_DEBOUNCE_MS = 250;
@@ -848,9 +853,78 @@
         sanitized.custom_order = order;
       }
     }
+
+    let routeOrderSource = entryRaw.route_order;
+    if (!Array.isArray(routeOrderSource) && typeof routeOrderSource === 'string' && routeOrderSource.trim() !== '') {
+      try {
+        const parsed = JSON.parse(routeOrderSource);
+        if (Array.isArray(parsed)) routeOrderSource = parsed;
+      } catch (_) {
+        routeOrderSource = [];
+      }
+    }
+    const routeOrder = [];
+    if (Array.isArray(routeOrderSource)) {
+      const seenRoute = new Set();
+      routeOrderSource.forEach(val => {
+        if (val == null) return;
+        const str = String(val).trim();
+        if (!str || seenRoute.has(str)) return;
+        seenRoute.add(str);
+        routeOrder.push(str);
+      });
+      if (routeOrder.length) {
+        sanitized.route_order = routeOrder;
+      }
+    }
+
+    const routeHashRaw = typeof entryRaw.route_hash === 'string' ? entryRaw.route_hash.trim() : '';
+    if (routeHashRaw) {
+      sanitized.route_hash = routeHashRaw.slice(0, 4000);
+    }
+
+    const distanceRaw = Number(entryRaw.route_distance_m);
+    if (Number.isFinite(distanceRaw) && distanceRaw >= 0) {
+      sanitized.route_distance_m = distanceRaw;
+    }
+    const durationRaw = Number(entryRaw.route_duration_s);
+    if (Number.isFinite(durationRaw) && durationRaw >= 0) {
+      sanitized.route_duration_s = durationRaw;
+    }
+
+    let routeGeometrySource = entryRaw.route_geometry;
+    if (!Array.isArray(routeGeometrySource) && typeof routeGeometrySource === 'string' && routeGeometrySource.trim() !== '') {
+      try {
+        const parsed = JSON.parse(routeGeometrySource);
+        if (Array.isArray(parsed)) routeGeometrySource = parsed;
+      } catch (_) {
+        routeGeometrySource = [];
+      }
+    }
+    if (Array.isArray(routeGeometrySource)) {
+      const coords = [];
+      for (const entry of routeGeometrySource) {
+        if (!Array.isArray(entry) || entry.length < 2) continue;
+        const latNum = Number(entry[0]);
+        const lonNum = Number(entry[1]);
+        if (!Number.isFinite(latNum) || !Number.isFinite(lonNum)) continue;
+        coords.push([latNum, lonNum]);
+        if (coords.length >= 2000) break;
+      }
+      if (coords.length) {
+        sanitized.route_geometry = coords;
+      }
+    }
+
     let modeRaw = typeof entryRaw.sort_mode === 'string' ? entryRaw.sort_mode.trim().toLowerCase() : '';
-    if (modeRaw !== 'custom' && modeRaw !== 'default') {
-      modeRaw = order.length ? 'custom' : '';
+    if (modeRaw !== 'custom' && modeRaw !== 'default' && modeRaw !== 'route') {
+      if (order.length) {
+        modeRaw = 'custom';
+      } else if (routeOrder.length) {
+        modeRaw = 'route';
+      } else {
+        modeRaw = '';
+      }
     }
     sanitized.sort_mode = modeRaw || 'default';
     return Object.keys(sanitized).length ? sanitized : null;
@@ -858,6 +932,7 @@
 
   function applyRoundMeta(metaObj){
     state.roundMeta = {};
+    setActiveRouteStatus(null);
     if (!metaObj || typeof metaObj !== 'object' || Array.isArray(metaObj)) return;
     Object.entries(metaObj).forEach(([rid, entry]) => {
       const normalized = sanitizeRoundMetaEntry(entry);
@@ -911,13 +986,33 @@
   function getRoundSortMode(rid){
     const entry = getRoundMetaEntry(rid);
     if (!entry || typeof entry.sort_mode !== 'string') return 'default';
-    return entry.sort_mode === 'custom' ? 'custom' : 'default';
+    if (entry.sort_mode === 'custom') return 'custom';
+    if (entry.sort_mode === 'route') return 'route';
+    return 'default';
   }
 
   function setRoundSortMode(rid, mode){
     if (!CAN_SORT) return;
     const entry = ensureRoundMetaEntry(rid);
-    entry.sort_mode = mode === 'custom' ? 'custom' : 'default';
+    if (mode === 'custom') {
+      entry.sort_mode = 'custom';
+    } else if (mode === 'route') {
+      entry.sort_mode = 'route';
+    } else {
+      entry.sort_mode = 'default';
+    }
+  }
+
+  function clearRouteMetaFields(rid){
+    const entry = getRoundMetaEntry(rid);
+    if (!entry) return;
+    delete entry.route_order;
+    delete entry.route_hash;
+    delete entry.route_distance_m;
+    delete entry.route_duration_s;
+    delete entry.route_geometry;
+    cleanupRoundMetaEntry(rid);
+    clearRouteArtifacts(rid);
   }
 
   function sanitizeCustomOrderList(order){
@@ -993,6 +1088,7 @@
     if (state.roundMeta && Object.prototype.hasOwnProperty.call(state.roundMeta, key)) {
       delete state.roundMeta[key];
     }
+    clearRouteArtifacts(rid);
   }
 
   function normalizedRoundMeta(){
@@ -1079,6 +1175,151 @@
 
   function format(template, vars={}){
     return (template || '').replace(/\{(\w+)\}/g, (_, k)=> (k in vars ? String(vars[k]) : ''));
+  }
+
+  function routingBaseUrl(){
+    const raw = cfg('routing.base_url', '');
+    if (typeof raw !== 'string') return '';
+    const trimmed = raw.trim();
+    if (!trimmed) return '';
+    return trimmed.replace(/\/+$/, '');
+  }
+
+  function routingProfile(){
+    const raw = cfg('routing.profile', 'driving-car');
+    if (typeof raw === 'string' && raw.trim()) {
+      return raw.trim();
+    }
+    return 'driving-car';
+  }
+
+  function routingEnabled(){
+    if (!cfg('routing.enabled', false)) return false;
+    const provider = (cfg('routing.provider', '') || '').toString().trim().toLowerCase();
+    if (provider && provider !== 'openrouteservice') return false;
+    const apiKey = (cfg('routing.api_key', '') || '').toString().trim();
+    const base = routingBaseUrl();
+    return apiKey !== '' && base !== '';
+  }
+
+  function itemHasCoordinates(it){
+    if (!it || typeof it !== 'object') return false;
+    if (it.needs_geocode) return false;
+    const lat = Number(it.lat);
+    const lon = Number(it.lon);
+    return Number.isFinite(lat) && Number.isFinite(lon);
+  }
+
+  function computeRouteKey(origin, items){
+    const base = routingBaseUrl();
+    if (!base) return '';
+    const profile = routingProfile();
+    const lat = Number(origin?.lat);
+    const lon = Number(origin?.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return '';
+    if (!Array.isArray(items) || items.length === 0) return '';
+    const parts = [
+      'provider:ors',
+      `base:${base}`,
+      `profile:${profile}`,
+      `origin:${lat.toFixed(6)},${lon.toFixed(6)}`
+    ];
+    const normalized = items.map(item => {
+      const latNum = Number(item?.lat);
+      const lonNum = Number(item?.lon);
+      if (!Number.isFinite(latNum) || !Number.isFinite(lonNum)) return null;
+      return {
+        id: item?.id != null ? String(item.id) : '',
+        lat: latNum,
+        lon: lonNum
+      };
+    }).filter(Boolean);
+    if (!normalized.length) return '';
+    normalized.sort((a, b) => {
+      const aId = a.id;
+      const bId = b.id;
+      if (aId && bId && aId !== bId) return aId.localeCompare(bId);
+      if (aId && !bId) return -1;
+      if (!aId && bId) return 1;
+      if (a.lat !== b.lat) return a.lat - b.lat;
+      return a.lon - b.lon;
+    });
+    normalized.forEach(entry => {
+      const idPart = entry.id || '';
+      parts.push(`${idPart}:${entry.lat.toFixed(6)},${entry.lon.toFixed(6)}`);
+    });
+    return parts.join('|');
+  }
+
+  function formatDistanceMeters(distance){
+    const num = Number(distance);
+    if (!Number.isFinite(num) || num <= 0) {
+      return '0 km';
+    }
+    const km = num / 1000;
+    const decimals = km >= 100 ? 0 : 1;
+    const formatter = typeof Intl !== 'undefined' && typeof Intl.NumberFormat === 'function'
+      ? new Intl.NumberFormat('hu-HU', {minimumFractionDigits: decimals, maximumFractionDigits: decimals})
+      : null;
+    const formatted = formatter ? formatter.format(km) : km.toFixed(decimals);
+    return `${formatted} km`;
+  }
+
+  function formatDurationSeconds(duration){
+    const num = Number(duration);
+    if (!Number.isFinite(num) || num <= 0) {
+      return '0 p';
+    }
+    const totalMinutes = Math.max(1, Math.round(num / 60));
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes - hours * 60;
+    const parts = [];
+    if (hours > 0) {
+      parts.push(`${hours} ó`);
+    }
+    parts.push(`${minutes} p`);
+    return parts.join(' ');
+  }
+
+  function updateRouteStatusBar(info){
+    if (!routeStatusEl) return;
+    if (!info) {
+      routeStatusEl.textContent = '';
+      routeStatusEl.hidden = true;
+      routeStatusEl.dataset.round = '';
+      return;
+    }
+    routeStatusEl.hidden = false;
+    const roundId = info.roundId != null ? info.roundId : '';
+    routeStatusEl.dataset.round = String(roundId);
+    if (info.pending) {
+      const pendingTpl = text('routing.status_pending', 'Útvonal számítása…');
+      const labelFunc = (typeof roundLabel === 'function') ? roundLabel : null;
+      const roundName = roundId !== '' && labelFunc ? labelFunc(roundId) : '';
+      routeStatusEl.textContent = roundName ? `${pendingTpl} (${roundName})` : pendingTpl;
+      return;
+    }
+    const template = text('routing.status_template', '{round}: {distance} · {duration}');
+    const labelFunc = (typeof roundLabel === 'function') ? roundLabel : null;
+    const distanceText = Number.isFinite(Number(info.distance)) ? formatDistanceMeters(info.distance) : formatDistanceMeters(0);
+    const durationText = Number.isFinite(Number(info.duration)) ? formatDurationSeconds(info.duration) : formatDurationSeconds(0);
+    const roundDisplay = roundId !== '' && labelFunc ? labelFunc(roundId) : (roundId !== '' ? String(roundId) : '');
+    routeStatusEl.textContent = format(template, {
+      round: roundDisplay,
+      round_id: roundId,
+      distance: distanceText,
+      duration: durationText
+    });
+  }
+
+  function setActiveRouteStatus(info){
+    if (!info) {
+      state.activeRouteStatus = null;
+      updateRouteStatusBar(null);
+      return;
+    }
+    state.activeRouteStatus = {...info};
+    updateRouteStatusBar(state.activeRouteStatus);
   }
 
   let cachedFieldDefs = null;
@@ -2008,6 +2249,14 @@
     markerLayer.clearLayers();
     state.markersById.clear();
     state.markerOverlapCounts = new Map();
+    state.routeLayers.forEach(layer => {
+      if (mapRef && layer) {
+        try { mapRef.removeLayer(layer); } catch (_) {}
+      }
+    });
+    state.routeLayers = new Map();
+    state.pendingRouteRequests = new Map();
+    setActiveRouteStatus(null);
     updatePinCount();
     requestMarkerOverlapRefresh();
   }
@@ -2138,6 +2387,57 @@
   }
 
   // ======= AUTO SORT (kör + körön belül távolság)
+  function orderEntriesByProximity(entries){
+    const result = [];
+    const remaining = Array.isArray(entries) ? entries.slice() : [];
+    if (!remaining.length) return result;
+    const originLat = Number(state.ORIGIN?.lat);
+    const originLon = Number(state.ORIGIN?.lon);
+    let current = null;
+    if (Number.isFinite(originLat) && Number.isFinite(originLon)) {
+      let bestIndex = 0;
+      let bestDistance = Infinity;
+      for (let i = 0; i < remaining.length; i++) {
+        const candidate = remaining[i];
+        const latNum = Number(candidate?.it?.lat);
+        const lonNum = Number(candidate?.it?.lon);
+        const distRaw = haversineKm(originLat, originLon, latNum, lonNum);
+        const dist = Number.isFinite(distRaw) ? distRaw : Infinity;
+        if (dist < bestDistance) {
+          bestDistance = dist;
+          bestIndex = i;
+        }
+      }
+      current = remaining.splice(bestIndex, 1)[0] || null;
+    } else {
+      current = remaining.shift() || null;
+    }
+    if (current) {
+      result.push(current);
+    }
+    while (remaining.length) {
+      let nextIndex = 0;
+      let bestDist = Infinity;
+      for (let i = 0; i < remaining.length; i++) {
+        const candidate = remaining[i];
+        const latNum = Number(candidate?.it?.lat);
+        const lonNum = Number(candidate?.it?.lon);
+        const baseLat = Number(current?.it?.lat);
+        const baseLon = Number(current?.it?.lon);
+        const distRaw = haversineKm(baseLat, baseLon, latNum, lonNum);
+        const dist = Number.isFinite(distRaw) ? distRaw : Infinity;
+        if (dist < bestDist) {
+          bestDist = dist;
+          nextIndex = i;
+        }
+      }
+      current = remaining.splice(nextIndex, 1)[0] || null;
+      if (!current) break;
+      result.push(current);
+    }
+    return result;
+  }
+
   function autoSortItems(){
     if (!cfg('app.auto_sort_by_round', true)) return;
     const zeroBottom = !!cfg('app.round_zero_at_bottom', false);
@@ -2157,10 +2457,7 @@
       }
     }
 
-    const hasCoords = (entry)=>{
-      const {lat, lon, needs_geocode} = entry.it;
-      return lat !== '' && lon !== '' && lat != null && lon != null && !needs_geocode;
-    };
+    const hasCoords = (entry)=> itemHasCoordinates(entry.it);
 
     const ordered = [];
     roundIds.forEach(rid => {
@@ -2186,44 +2483,460 @@
       const withCoords = entries.filter(hasCoords);
       const withoutCoords = entries.filter(entry => !hasCoords(entry));
 
-      const sorted = [];
-      if (withCoords.length){
-        const remaining = withCoords.slice();
-        let currentIdx = 0;
-        let bestStart = Infinity;
-        for (let i=0;i<remaining.length;i++){
-          const candidate = remaining[i];
-          const distRaw = haversineKm(state.ORIGIN.lat, state.ORIGIN.lon, candidate.it.lat, candidate.it.lon);
-          const dist = Number.isFinite(distRaw) ? distRaw : Infinity;
-          if (dist < bestStart){
-            bestStart = dist;
-            currentIdx = i;
+      let orderedWithCoords = withCoords.length ? orderEntriesByProximity(withCoords) : [];
+
+      if (mode === 'route' && routingEnabled()) {
+        const metaEntry = getRoundMetaEntry(rid) || {};
+        const routeOrder = Array.isArray(metaEntry.route_order)
+          ? metaEntry.route_order.map(id => String(id))
+          : [];
+        if (routeOrder.length && orderedWithCoords.length) {
+          const indexMap = new Map(routeOrder.map((id, index) => [id, index]));
+          orderedWithCoords.sort((a, b) => {
+            const aId = a?.it?.id != null ? String(a.it.id) : '';
+            const bId = b?.it?.id != null ? String(b.it.id) : '';
+            const aKey = indexMap.has(aId) ? indexMap.get(aId) : (routeOrder.length + a.idx);
+            const bKey = indexMap.has(bId) ? indexMap.get(bId) : (routeOrder.length + b.idx);
+            if (aKey !== bKey) return aKey - bKey;
+            return a.idx - b.idx;
+          });
+        }
+        const itemsForHash = orderedWithCoords.map(entry => entry.it).filter(Boolean);
+        const routeKey = itemsForHash.length ? computeRouteKey(state.ORIGIN, itemsForHash) : '';
+        const storedHash = typeof metaEntry.route_hash === 'string' ? metaEntry.route_hash : '';
+        const storedLength = routeOrder.length;
+        const hasGeometry = Array.isArray(metaEntry.route_geometry) && metaEntry.route_geometry.length >= 2;
+        if (itemsForHash.length) {
+          const mismatchLength = storedLength !== itemsForHash.length;
+          if (!routeKey || routeKey !== storedHash || mismatchLength || !hasGeometry) {
+            scheduleRouteComputation(rid, {force: mismatchLength || !storedLength});
           }
         }
-        let current = remaining.splice(currentIdx,1)[0];
-        sorted.push(current);
-        while (remaining.length){
-          let nextIdx = 0;
-          let bestDist = Infinity;
-          for (let i=0;i<remaining.length;i++){
-            const candidate = remaining[i];
-            const distRaw = haversineKm(current.it.lat, current.it.lon, candidate.it.lat, candidate.it.lon);
-            const dist = Number.isFinite(distRaw) ? distRaw : Infinity;
-            if (dist < bestDist){
-              bestDist = dist;
-              nextIdx = i;
-            }
-          }
-          current = remaining.splice(nextIdx,1)[0];
-          sorted.push(current);
-        }
+      } else if (mode === 'route') {
+        orderedWithCoords = withCoords.length ? orderEntriesByProximity(withCoords) : [];
       }
 
+      const finalWithCoords = orderedWithCoords.length ? orderedWithCoords : (withCoords.length ? orderEntriesByProximity(withCoords) : []);
       withoutCoords.sort((a,b)=>a.idx-b.idx);
-      sorted.concat(withoutCoords).forEach(entry => ordered.push(entry.it));
+      finalWithCoords.concat(withoutCoords).forEach(entry => ordered.push(entry.it));
     });
 
     state.items = ordered;
+  }
+
+  function removeRouteLayer(rid){
+    const idNum = Number(rid);
+    const layer = state.routeLayers.get(idNum);
+    if (layer && mapRef) {
+      try { mapRef.removeLayer(layer); } catch (_) {}
+    }
+    state.routeLayers.delete(idNum);
+  }
+
+  function drawRoutePolyline(rid, geometry){
+    if (!mapRef) return;
+    const idNum = Number(rid);
+    const latLngs = Array.isArray(geometry)
+      ? geometry.map(pair => {
+          if (!Array.isArray(pair) || pair.length < 2) return null;
+          const lat = Number(pair[0]);
+          const lon = Number(pair[1]);
+          if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+          return L.latLng(lat, lon);
+        }).filter(Boolean)
+      : [];
+    if (latLngs.length < 2) {
+      removeRouteLayer(idNum);
+      return;
+    }
+    let polyline = state.routeLayers.get(idNum);
+    const colorFn = typeof colorForRound === 'function' ? colorForRound : (()=> '#2563eb');
+    const color = colorFn(idNum);
+    if (!polyline) {
+      polyline = L.polyline(latLngs, {color, weight: 4, opacity: 0.85});
+      polyline.addTo(mapRef);
+      state.routeLayers.set(idNum, polyline);
+    } else {
+      polyline.setLatLngs(latLngs);
+      polyline.setStyle({color});
+      if (!mapRef.hasLayer(polyline)) {
+        polyline.addTo(mapRef);
+      }
+    }
+  }
+
+  function clearRouteArtifacts(rid){
+    removeRouteLayer(rid);
+    if (state.activeRouteStatus && Number(state.activeRouteStatus.roundId) === Number(rid)) {
+      setActiveRouteStatus(null);
+    }
+  }
+
+  function syncRouteOverlays(){
+    if (!mapRef) return;
+    const activeRounds = new Set();
+    let fallbackStatus = null;
+    if (state.roundMeta && typeof state.roundMeta === 'object') {
+      Object.entries(state.roundMeta).forEach(([ridStr, entry]) => {
+        const ridNum = Number(ridStr);
+        if (!entry || entry.sort_mode !== 'route') {
+          removeRouteLayer(ridNum);
+          return;
+        }
+        activeRounds.add(ridNum);
+        if (Array.isArray(entry.route_geometry) && entry.route_geometry.length >= 2) {
+          drawRoutePolyline(ridNum, entry.route_geometry);
+        } else {
+          removeRouteLayer(ridNum);
+        }
+        if (!state.activeRouteStatus && !fallbackStatus) {
+          const distance = Number(entry.route_distance_m);
+          const duration = Number(entry.route_duration_s);
+          if (Number.isFinite(distance) || Number.isFinite(duration)) {
+            fallbackStatus = {roundId: ridNum, distance, duration};
+          }
+        }
+      });
+    }
+    Array.from(state.routeLayers.keys()).forEach(ridNum => {
+      if (!activeRounds.has(ridNum)) {
+        removeRouteLayer(ridNum);
+      }
+    });
+    if (state.activeRouteStatus) {
+      updateRouteStatusBar(state.activeRouteStatus);
+    } else if (fallbackStatus) {
+      updateRouteStatusBar(fallbackStatus);
+    } else {
+      updateRouteStatusBar(null);
+    }
+  }
+
+  function scheduleRouteComputation(rid, opts = {}){
+    if (!routingEnabled() || !CAN_SORT || !CAN_EDIT) return Promise.resolve();
+    const ridNum = Number(rid);
+    if (!Number.isFinite(ridNum)) return Promise.resolve();
+    let pending = state.pendingRouteRequests.get(ridNum);
+    const force = !!opts.force;
+    if (pending) {
+      if (force) pending.force = true;
+      return pending.promise;
+    }
+    const task = {force};
+    const promise = Promise.resolve().then(async () => {
+      try {
+        await computeRouteForRound(ridNum, {force: task.force});
+      } finally {
+        state.pendingRouteRequests.delete(ridNum);
+      }
+    });
+    task.promise = promise;
+    state.pendingRouteRequests.set(ridNum, task);
+    return promise;
+  }
+
+  async function computeRouteForRound(rid, {force = false} = {}){
+    if (!routingEnabled() || !CAN_SORT || !CAN_EDIT) return;
+    const originLat = Number(state.ORIGIN?.lat);
+    const originLon = Number(state.ORIGIN?.lon);
+    if (!Number.isFinite(originLat) || !Number.isFinite(originLon)) return;
+    const eligible = state.items.filter(it => (+it.round || 0) === rid && !isItemCompletelyBlank(it) && itemHasCoordinates(it));
+    if (!eligible.length) {
+      clearRouteMetaFields(rid);
+      clearRouteArtifacts(rid);
+      return;
+    }
+    const routeKey = computeRouteKey(state.ORIGIN, eligible);
+    const metaEntry = getRoundMetaEntry(rid) || {};
+    const storedHash = typeof metaEntry.route_hash === 'string' ? metaEntry.route_hash : '';
+    const storedOrderLength = Array.isArray(metaEntry.route_order) ? metaEntry.route_order.length : 0;
+    const hasGeometry = Array.isArray(metaEntry.route_geometry) && metaEntry.route_geometry.length >= 2;
+    if (!force && routeKey && storedHash === routeKey && storedOrderLength === eligible.length && hasGeometry) {
+      return;
+    }
+    if (!force && routeKey && state.routeCache.has(routeKey)) {
+      const cached = state.routeCache.get(routeKey);
+      await applyRouteResult(rid, cached, routeKey, {fromCache: true});
+      return;
+    }
+    setActiveRouteStatus({roundId: rid, pending: true});
+    try {
+      const result = await requestRouteResult(state.ORIGIN, eligible);
+      const key = routeKey || computeRouteKey(state.ORIGIN, eligible);
+      if (key) {
+        state.routeCache.set(key, result);
+      }
+      await applyRouteResult(rid, result, key || '');
+    } catch (error) {
+      console.error('Útvonal számítása sikertelen', error);
+      clearRouteArtifacts(rid);
+      setActiveRouteStatus(null);
+      alert('Útvonaltervezés sikertelen, próbáld újra később');
+    }
+  }
+
+  async function orsRequest(path, payload){
+    const base = routingBaseUrl();
+    const key = (cfg('routing.api_key', '') || '').toString().trim();
+    if (!base || !key) {
+      throw new Error('routing_not_configured');
+    }
+    const url = `${base}${path}`;
+    const headers = new Headers();
+    headers.set('Authorization', key);
+    headers.set('Content-Type', 'application/json');
+    const body = payload != null ? JSON.stringify(payload) : undefined;
+    let response;
+    try {
+      response = await fetch(url, {method: 'POST', headers, body});
+    } catch (networkError) {
+      console.error('ORS request network error', {endpoint: path, error: networkError});
+      throw networkError;
+    }
+    const text = await response.text();
+    if (!response.ok) {
+      console.error('ORS request failed', {endpoint: path, status: response.status, body: text});
+      const err = new Error('ors_request_failed');
+      err.status = response.status;
+      err.body = text;
+      throw err;
+    }
+    let data = null;
+    if (text) {
+      try { data = JSON.parse(text); }
+      catch (_) { data = null; }
+    }
+    return {data, text};
+  }
+
+  async function requestDirections(coords, profile){
+    const validCoords = Array.isArray(coords) ? coords.filter(pair => Array.isArray(pair) && pair.length >= 2) : [];
+    if (validCoords.length < 2) {
+      return {geometry: [], distance: 0, duration: 0};
+    }
+    const body = {
+      coordinates: validCoords,
+      instructions: false,
+      geometry: true,
+      format: 'geojson',
+      units: 'm'
+    };
+    const {data} = await orsRequest(`/v2/directions/${profile}`, body);
+    const feature = data && Array.isArray(data.features) ? data.features[0] : null;
+    const coordsGeo = feature?.geometry?.coordinates;
+    const summary = feature?.properties?.summary || {};
+    const line = Array.isArray(coordsGeo)
+      ? coordsGeo.map(pair => {
+          if (!Array.isArray(pair) || pair.length < 2) return null;
+          const lon = Number(pair[0]);
+          const lat = Number(pair[1]);
+          if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+          return [lat, lon];
+        }).filter(Boolean)
+      : [];
+    return {
+      geometry: line,
+      distance: Number(summary.distance ?? NaN),
+      duration: Number(summary.duration ?? NaN)
+    };
+  }
+
+  async function requestRouteResult(origin, items){
+    const profile = routingProfile();
+    const jobs = [];
+    const jobToItem = new Map();
+    items.forEach((item, index) => {
+      const lat = Number(item?.lat);
+      const lon = Number(item?.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+      const jobId = index + 1;
+      jobs.push({id: jobId, location: [lon, lat]});
+      jobToItem.set(jobId, item);
+    });
+    const vehicle = {
+      id: 1,
+      profile,
+      start: [Number(origin?.lon), Number(origin?.lat)]
+    };
+    try {
+      const {data} = await orsRequest('/optimization', {jobs, vehicles: [vehicle]});
+      const route = data && Array.isArray(data.routes) ? data.routes[0] : null;
+      let sequence = [];
+      if (route && Array.isArray(route.activities)) {
+        route.activities.forEach(activity => {
+          if (activity && activity.type === 'job' && Number.isFinite(Number(activity.job))) {
+            sequence.push(Number(activity.job));
+          }
+        });
+      }
+      if (!sequence.length && route && Array.isArray(route.steps)) {
+        route.steps.forEach(step => {
+          if (step && step.type === 'job' && Number.isFinite(Number(step.id))) {
+            sequence.push(Number(step.id));
+          }
+        });
+      }
+      if (!sequence.length) {
+        throw new Error('ors_optimization_no_sequence');
+      }
+      const orderedItems = sequence.map(jobId => jobToItem.get(jobId)).filter(Boolean);
+      if (!orderedItems.length) {
+        throw new Error('ors_optimization_empty');
+      }
+      const coords = [[Number(origin?.lon), Number(origin?.lat)], ...orderedItems.map(it => [Number(it.lon), Number(it.lat)])];
+      const directions = await requestDirections(coords, profile);
+      return {
+        order: orderedItems.map(it => String(it.id)),
+        geometry: Array.isArray(directions.geometry) ? directions.geometry : [],
+        distance: Number.isFinite(directions.distance) ? directions.distance : 0,
+        duration: Number.isFinite(directions.duration) ? directions.duration : 0,
+        source: 'optimization'
+      };
+    } catch (err) {
+      if (err && err.body) {
+        console.error('ORS optimization error', {body: err.body});
+      }
+      return requestRouteResultViaMatrix(origin, items, profile);
+    }
+  }
+
+  async function requestRouteResultViaMatrix(origin, items, profile){
+    const coords = [[Number(origin?.lon), Number(origin?.lat)]];
+    const pointItems = [];
+    items.forEach(item => {
+      const lat = Number(item?.lat);
+      const lon = Number(item?.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+      coords.push([lon, lat]);
+      pointItems.push(item);
+    });
+    if (!pointItems.length) {
+      return {order: [], geometry: [], distance: 0, duration: 0, source: 'matrix'};
+    }
+    const {data} = await orsRequest(`/v2/matrix/${profile}`, {locations: coords, metrics: ['distance', 'duration']});
+    const distances = Array.isArray(data?.distances) ? data.distances : [];
+    const durations = Array.isArray(data?.durations) ? data.durations : [];
+    const orderIndices = [];
+    const visited = new Set();
+    let currentIndex = 0;
+    while (orderIndices.length < pointItems.length) {
+      let nextIdx = -1;
+      let bestDist = Infinity;
+      for (let i = 0; i < pointItems.length; i++) {
+        if (visited.has(i)) continue;
+        const matrixIndex = i + 1;
+        const row = distances[currentIndex];
+        const cell = Array.isArray(row) ? Number(row[matrixIndex]) : NaN;
+        const dist = Number.isFinite(cell) ? cell : Infinity;
+        if (dist < bestDist) {
+          bestDist = dist;
+          nextIdx = i;
+        }
+      }
+      if (nextIdx === -1) {
+        for (let i = 0; i < pointItems.length; i++) {
+          if (!visited.has(i)) { nextIdx = i; break; }
+        }
+        if (nextIdx === -1) break;
+      }
+      visited.add(nextIdx);
+      orderIndices.push(nextIdx);
+      currentIndex = nextIdx + 1;
+    }
+    const orderedItems = orderIndices.map(idx => pointItems[idx]).filter(Boolean);
+    if (!orderedItems.length) {
+      orderedItems.push(...pointItems);
+    }
+    let totalDistance = 0;
+    let totalDuration = 0;
+    let prevMatrixIndex = 0;
+    orderIndices.forEach(idx => {
+      const matrixIndex = idx + 1;
+      const distRow = distances[prevMatrixIndex];
+      const durRow = durations[prevMatrixIndex];
+      const distVal = Array.isArray(distRow) ? Number(distRow[matrixIndex]) : NaN;
+      const durVal = Array.isArray(durRow) ? Number(durRow[matrixIndex]) : NaN;
+      if (Number.isFinite(distVal)) totalDistance += distVal;
+      if (Number.isFinite(durVal)) totalDuration += durVal;
+      prevMatrixIndex = matrixIndex;
+    });
+    const coordList = [[Number(origin?.lon), Number(origin?.lat)], ...orderedItems.map(it => [Number(it.lon), Number(it.lat)])];
+    try {
+      const directions = await requestDirections(coordList, profile);
+      if (Array.isArray(directions.geometry) && directions.geometry.length >= 2) {
+        return {
+          order: orderedItems.map(it => String(it.id)),
+          geometry: directions.geometry,
+          distance: Number.isFinite(directions.distance) ? directions.distance : totalDistance,
+          duration: Number.isFinite(directions.duration) ? directions.duration : totalDuration,
+          source: 'matrix'
+        };
+      }
+      return {
+        order: orderedItems.map(it => String(it.id)),
+        geometry: [],
+        distance: Number.isFinite(totalDistance) ? totalDistance : 0,
+        duration: Number.isFinite(totalDuration) ? totalDuration : 0,
+        source: 'matrix'
+      };
+    } catch (directionError) {
+      console.error('ORS directions error', directionError);
+      return {
+        order: orderedItems.map(it => String(it.id)),
+        geometry: [],
+        distance: Number.isFinite(totalDistance) ? totalDistance : 0,
+        duration: Number.isFinite(totalDuration) ? totalDuration : 0,
+        source: 'matrix'
+      };
+    }
+  }
+
+  async function applyRouteResult(rid, result, hash, opts = {}){
+    if (!result || !Array.isArray(result.order) || result.order.length === 0) {
+      setActiveRouteStatus(null);
+      return;
+    }
+    const entry = ensureRoundMetaEntry(rid);
+    entry.sort_mode = 'route';
+    entry.route_order = result.order.map(id => String(id));
+    if (hash) {
+      entry.route_hash = hash;
+    } else {
+      delete entry.route_hash;
+    }
+    if (Array.isArray(result.geometry) && result.geometry.length >= 2) {
+      const coords = [];
+      for (const pair of result.geometry) {
+        if (!Array.isArray(pair) || pair.length < 2) continue;
+        const lat = Number(pair[0]);
+        const lon = Number(pair[1]);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+        coords.push([lat, lon]);
+        if (coords.length >= 2000) break;
+      }
+      if (coords.length >= 2) {
+        entry.route_geometry = coords;
+      } else {
+        delete entry.route_geometry;
+      }
+    } else {
+      delete entry.route_geometry;
+    }
+    if (Number.isFinite(result.distance)) {
+      entry.route_distance_m = Number(result.distance);
+    } else {
+      delete entry.route_distance_m;
+    }
+    if (Number.isFinite(result.duration)) {
+      entry.route_duration_s = Number(result.duration);
+    } else {
+      delete entry.route_duration_s;
+    }
+    setActiveRouteStatus({roundId: rid, distance: entry.route_distance_m ?? result.distance ?? 0, duration: entry.route_duration_s ?? result.duration ?? 0});
+    renderEverything();
+    if (CAN_EDIT) {
+      await saveAll();
+    }
   }
 
   // ======= ROUNDS
@@ -2319,6 +3032,7 @@
     const sortLabel = text('round.sort_mode_label', 'Rendezés');
     const sortDefaultLabel = text('round.sort_mode_default', 'Alapértelmezett (távolság)');
     const sortCustomLabel = text('round.sort_mode_custom', 'Egyéni (drag & drop)');
+    const sortRouteLabel = text('round.sort_mode_route', 'Útvonal (OpenRouteService)');
     const sortHint = text('round.sort_mode_custom_hint', 'Fogd és vidd a címeket a rendezéshez');
     const sortSelectId = `round_${cssId(String(rid))}_sort_mode`;
     const sortMode = getRoundSortMode(rid);
@@ -2351,6 +3065,9 @@
               <span class="readonly-value" data-round-planned-time="${rid}">${plannedTimeValue ? esc(plannedTimeValue) : '—'}</span>
             </div>`)
       : '';
+    const routeOptionHtml = routingEnabled()
+      ? `<option value="route"${sortMode==='route' ? ' selected' : ''}>${esc(sortRouteLabel)}</option>`
+      : '';
     const sortControlHtml = CAN_SORT
       ? `
             <div class="group-sort">
@@ -2358,6 +3075,7 @@
               <select id="${sortSelectId}" class="round-sort-mode" data-round="${rid}"${sortMode==='custom' && sortHint ? ` title="${esc(sortHint)}"` : ''}>
                 <option value="default"${sortMode==='default' ? ' selected' : ''}>${esc(sortDefaultLabel)}</option>
                 <option value="custom"${sortMode==='custom' ? ' selected' : ''}>${esc(sortCustomLabel)}</option>
+                ${routeOptionHtml}
               </select>
             </div>`
       : '';
@@ -3611,7 +4329,8 @@
       const sortSelect = groupEl.querySelector('.round-sort-mode');
       if (CAN_SORT && sortSelect) {
         sortSelect.addEventListener('change', async ()=>{
-          const newMode = sortSelect.value === 'custom' ? 'custom' : 'default';
+          const rawMode = sortSelect.value;
+          const newMode = rawMode === 'custom' ? 'custom' : (rawMode === 'route' ? 'route' : 'default');
           const prevMode = getRoundSortMode(rid);
           if (newMode === prevMode) return;
           pushSnapshot();
@@ -3622,9 +4341,14 @@
               .map(item => item.id)
               .filter(id => id != null);
             syncCustomOrderWithItems(rid, ids);
+          } else if (newMode !== 'route') {
+            clearRouteMetaFields(rid);
           }
           renderEverything();
           await saveAll();
+          if (newMode === 'route') {
+            scheduleRouteComputation(rid, {force: true});
+          }
         });
       }
 
@@ -4413,6 +5137,7 @@
     autoSortItems();
     renderGroups();
     state.items.forEach((it,idx)=>{ if (it.lat!=null&&it.lon!=null) upsertMarker(it, idx); });
+    syncRouteOverlays();
     const b = markerLayer.getBounds(); if (b.isValid()) map.fitBounds(b.pad(0.2));
     updateUndoButton();
   }

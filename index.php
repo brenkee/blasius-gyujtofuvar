@@ -270,7 +270,10 @@ $LOGOUT_TOKEN = csrf_get_token();
       <img id="devlogo" src="pic/devlogo.webp">
     </div>
   </aside>
-  <main id="map"></main>
+  <main class="map-area">
+    <div id="map"></div>
+    <div id="routeStatus" class="route-status" hidden></div>
+  </main>
 </div>
 </body>
 </html>
