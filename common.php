@@ -1044,6 +1044,395 @@ function is_list_array($value) {
   return true;
 }
 
+function normalize_route_plan_meta($value) {
+  if (is_string($value)) {
+    $decoded = json_decode($value, true);
+    if (is_array($decoded)) {
+      $value = $decoded;
+    }
+  }
+  if (!is_array($value)) {
+    return null;
+  }
+
+  $cacheKeyRaw = '';
+  if (isset($value['cache_key'])) {
+    $cacheKeyRaw = (string)$value['cache_key'];
+  } elseif (isset($value['key'])) {
+    $cacheKeyRaw = (string)$value['key'];
+  }
+  $cacheKey = trim($cacheKeyRaw);
+  if ($cacheKey === '') {
+    return null;
+  }
+
+  $plan = [];
+  if (function_exists('mb_substr')) {
+    $plan['cache_key'] = mb_substr($cacheKey, 0, 400);
+  } else {
+    $plan['cache_key'] = substr($cacheKey, 0, 400);
+  }
+
+  $orderSource = [];
+  if (isset($value['order_keys']) && is_array($value['order_keys'])) {
+    $orderSource = $value['order_keys'];
+  } elseif (isset($value['order']) && is_array($value['order'])) {
+    $orderSource = $value['order'];
+  }
+  $order = [];
+  $seenOrder = [];
+  foreach ($orderSource as $item) {
+    if ($item === null) continue;
+    $str = trim((string)$item);
+    if ($str === '' || isset($seenOrder[$str])) continue;
+    $seenOrder[$str] = true;
+    $order[] = $str;
+  }
+  if (empty($order)) {
+    return null;
+  }
+  $plan['order_keys'] = $order;
+
+  $itemIdSources = [];
+  if (isset($value['item_ids']) && is_array($value['item_ids'])) {
+    $itemIdSources = $value['item_ids'];
+  } elseif (isset($value['itemIds']) && is_array($value['itemIds'])) {
+    $itemIdSources = $value['itemIds'];
+  }
+  if (!empty($itemIdSources)) {
+    $items = [];
+    $seenItems = [];
+    foreach ($itemIdSources as $itemVal) {
+      if ($itemVal === null) continue;
+      $itemStr = trim((string)$itemVal);
+      if ($itemStr === '' || isset($seenItems[$itemStr])) continue;
+      $seenItems[$itemStr] = true;
+      $items[] = $itemStr;
+    }
+    if (!empty($items)) {
+      $plan['item_ids'] = $items;
+    }
+  }
+
+  $latlngSources = [];
+  if (isset($value['latlngs']) && is_array($value['latlngs'])) {
+    $latlngSources = $value['latlngs'];
+  } elseif (isset($value['path']) && is_array($value['path'])) {
+    $latlngSources = $value['path'];
+  }
+  if (!empty($latlngSources)) {
+    $coords = [];
+    foreach ($latlngSources as $pair) {
+      if (count($coords) >= 5000) break;
+      if (!is_array($pair) || count($pair) < 2) continue;
+      if (!is_numeric($pair[0]) || !is_numeric($pair[1])) continue;
+      $lat = round((float)$pair[0], 6);
+      $lon = round((float)$pair[1], 6);
+      $coords[] = [$lat, $lon];
+    }
+    if (!empty($coords)) {
+      $plan['latlngs'] = $coords;
+    }
+  }
+
+  $stepsSources = [];
+  if (isset($value['steps']) && is_array($value['steps'])) {
+    $stepsSources = $value['steps'];
+  } elseif (isset($value['step_details']) && is_array($value['step_details'])) {
+    $stepsSources = $value['step_details'];
+  }
+  if (!empty($stepsSources)) {
+    $steps = [];
+    foreach ($stepsSources as $step) {
+      if (count($steps) >= 2000) break;
+      if (!is_array($step)) continue;
+      $out = [];
+      if (isset($step['sequence']) && is_numeric($step['sequence'])) {
+        $out['sequence'] = max(0, (int)$step['sequence']);
+      } elseif (isset($step['seq']) && is_numeric($step['seq'])) {
+        $out['sequence'] = max(0, (int)$step['seq']);
+      }
+      if (isset($step['job_id']) && is_numeric($step['job_id'])) {
+        $out['job_id'] = (int)$step['job_id'];
+      } elseif (isset($step['jobId']) && is_numeric($step['jobId'])) {
+        $out['job_id'] = (int)$step['jobId'];
+      }
+      if (isset($step['item_key'])) {
+        $keyStr = trim((string)$step['item_key']);
+        if ($keyStr !== '') {
+          $out['item_key'] = $keyStr;
+        }
+      } elseif (isset($step['itemKey'])) {
+        $keyStr = trim((string)$step['itemKey']);
+        if ($keyStr !== '') {
+          $out['item_key'] = $keyStr;
+        }
+      }
+      if (isset($step['item_id'])) {
+        $idStr = trim((string)$step['item_id']);
+        if ($idStr !== '') {
+          $out['item_id'] = $idStr;
+        }
+      } elseif (isset($step['itemId'])) {
+        $idStr = trim((string)$step['itemId']);
+        if ($idStr !== '') {
+          $out['item_id'] = $idStr;
+        }
+      }
+      if (isset($step['lat']) && is_numeric($step['lat'])) {
+        $out['lat'] = round((float)$step['lat'], 6);
+      } elseif (isset($step['latitude']) && is_numeric($step['latitude'])) {
+        $out['lat'] = round((float)$step['latitude'], 6);
+      }
+      if (isset($step['lon']) && is_numeric($step['lon'])) {
+        $out['lon'] = round((float)$step['lon'], 6);
+      } elseif (isset($step['lng']) && is_numeric($step['lng'])) {
+        $out['lon'] = round((float)$step['lng'], 6);
+      } elseif (isset($step['longitude']) && is_numeric($step['longitude'])) {
+        $out['lon'] = round((float)$step['longitude'], 6);
+      }
+      if (isset($step['arrival']) && is_numeric($step['arrival'])) {
+        $out['arrival'] = (float)$step['arrival'];
+      } elseif (isset($step['arrival_time']) && is_numeric($step['arrival_time'])) {
+        $out['arrival'] = (float)$step['arrival_time'];
+      }
+      if (isset($step['duration']) && is_numeric($step['duration'])) {
+        $out['duration'] = (float)$step['duration'];
+      }
+      if (isset($step['distance']) && is_numeric($step['distance'])) {
+        $out['distance'] = (float)$step['distance'];
+      }
+      if (isset($step['waiting']) && is_numeric($step['waiting'])) {
+        $out['waiting'] = (float)$step['waiting'];
+      } elseif (isset($step['waiting_time']) && is_numeric($step['waiting_time'])) {
+        $out['waiting'] = (float)$step['waiting_time'];
+      }
+      if (isset($step['service']) && is_numeric($step['service'])) {
+        $out['service'] = (float)$step['service'];
+      }
+      if (!empty($out)) {
+        $steps[] = $out;
+      }
+    }
+    if (!empty($steps)) {
+      $plan['steps'] = $steps;
+    }
+  }
+
+  if (isset($value['distance']) && is_numeric($value['distance'])) {
+    $plan['distance'] = (float)$value['distance'];
+  } elseif (isset($value['total_distance']) && is_numeric($value['total_distance'])) {
+    $plan['distance'] = (float)$value['total_distance'];
+  }
+  if (isset($value['duration']) && is_numeric($value['duration'])) {
+    $plan['duration'] = (float)$value['duration'];
+  } elseif (isset($value['total_duration']) && is_numeric($value['total_duration'])) {
+    $plan['duration'] = (float)$value['total_duration'];
+  }
+
+  if (isset($value['provider'])) {
+    $provider = trim((string)$value['provider']);
+    if ($provider !== '') {
+      $plan['provider'] = function_exists('mb_substr') ? mb_substr($provider, 0, 80) : substr($provider, 0, 80);
+    }
+  }
+  if (isset($value['profile'])) {
+    $profile = trim((string)$value['profile']);
+    if ($profile !== '') {
+      $plan['profile'] = function_exists('mb_substr') ? mb_substr($profile, 0, 120) : substr($profile, 0, 120);
+    }
+  }
+
+  if (isset($value['updated_at'])) {
+    $updated = trim((string)$value['updated_at']);
+    if ($updated !== '') {
+      $plan['updated_at'] = function_exists('mb_substr') ? mb_substr($updated, 0, 120) : substr($updated, 0, 120);
+    }
+  } elseif (isset($value['updatedAt'])) {
+    $updated = trim((string)$value['updatedAt']);
+    if ($updated !== '') {
+      $plan['updated_at'] = function_exists('mb_substr') ? mb_substr($updated, 0, 120) : substr($updated, 0, 120);
+    }
+  }
+
+  if (isset($value['origin']) && is_array($value['origin'])) {
+    $origin = $value['origin'];
+    $lat = null;
+    if (isset($origin['lat']) && is_numeric($origin['lat'])) {
+      $lat = round((float)$origin['lat'], 6);
+    } elseif (isset($origin['latitude']) && is_numeric($origin['latitude'])) {
+      $lat = round((float)$origin['latitude'], 6);
+    }
+    $lon = null;
+    if (isset($origin['lon']) && is_numeric($origin['lon'])) {
+      $lon = round((float)$origin['lon'], 6);
+    } elseif (isset($origin['lng']) && is_numeric($origin['lng'])) {
+      $lon = round((float)$origin['lng'], 6);
+    } elseif (isset($origin['longitude']) && is_numeric($origin['longitude'])) {
+      $lon = round((float)$origin['longitude'], 6);
+    }
+    if ($lat !== null && $lon !== null) {
+      $plan['origin'] = ['lat' => $lat, 'lon' => $lon];
+    }
+  }
+
+  ksort($plan);
+  return $plan;
+}
+
+function normalize_route_step_item($value) {
+  if (is_string($value)) {
+    $decoded = json_decode($value, true);
+    if (is_array($decoded)) {
+      $value = $decoded;
+    }
+  }
+  if (!is_array($value)) {
+    return null;
+  }
+
+  $planKeyRaw = '';
+  if (isset($value['plan_key'])) {
+    $planKeyRaw = (string)$value['plan_key'];
+  } elseif (isset($value['planKey'])) {
+    $planKeyRaw = (string)$value['planKey'];
+  }
+  $planKey = trim($planKeyRaw);
+  if ($planKey === '') {
+    return null;
+  }
+
+  $step = [];
+  if (function_exists('mb_substr')) {
+    $step['plan_key'] = mb_substr($planKey, 0, 400);
+  } else {
+    $step['plan_key'] = substr($planKey, 0, 400);
+  }
+
+  if (isset($value['round']) && is_numeric($value['round'])) {
+    $step['round'] = (int)$value['round'];
+  }
+
+  $itemIdRaw = null;
+  if (isset($value['item_id'])) {
+    $itemIdRaw = (string)$value['item_id'];
+  } elseif (isset($value['itemId'])) {
+    $itemIdRaw = (string)$value['itemId'];
+  }
+  if ($itemIdRaw !== null) {
+    $itemId = trim($itemIdRaw);
+    if ($itemId !== '') {
+      if (function_exists('mb_substr')) {
+        $step['item_id'] = mb_substr($itemId, 0, 200);
+      } else {
+        $step['item_id'] = substr($itemId, 0, 200);
+      }
+    }
+  }
+
+  $itemKeyRaw = null;
+  if (isset($value['item_key'])) {
+    $itemKeyRaw = (string)$value['item_key'];
+  } elseif (isset($value['itemKey'])) {
+    $itemKeyRaw = (string)$value['itemKey'];
+  }
+  if ($itemKeyRaw !== null) {
+    $itemKey = trim($itemKeyRaw);
+    if ($itemKey !== '') {
+      if (function_exists('mb_substr')) {
+        $step['item_key'] = mb_substr($itemKey, 0, 400);
+      } else {
+        $step['item_key'] = substr($itemKey, 0, 400);
+      }
+    }
+  }
+
+  if (isset($value['job_id']) && is_numeric($value['job_id'])) {
+    $jobId = (int)$value['job_id'];
+    if ($jobId >= 0) {
+      $step['job_id'] = $jobId;
+    }
+  } elseif (isset($value['jobId']) && is_numeric($value['jobId'])) {
+    $jobId = (int)$value['jobId'];
+    if ($jobId >= 0) {
+      $step['job_id'] = $jobId;
+    }
+  }
+
+  if (isset($value['sequence']) && is_numeric($value['sequence'])) {
+    $sequence = (int)floor((float)$value['sequence']);
+    if ($sequence >= 0) {
+      $step['sequence'] = $sequence;
+    }
+  }
+
+  if (isset($value['lat']) && is_numeric($value['lat'])) {
+    $step['lat'] = round((float)$value['lat'], 6);
+  }
+  if (isset($value['lon']) && is_numeric($value['lon'])) {
+    $step['lon'] = round((float)$value['lon'], 6);
+  } elseif (isset($value['lng']) && is_numeric($value['lng'])) {
+    $step['lon'] = round((float)$value['lng'], 6);
+  } elseif (isset($value['longitude']) && is_numeric($value['longitude'])) {
+    $step['lon'] = round((float)$value['longitude'], 6);
+  }
+
+  if (isset($value['arrival']) && is_numeric($value['arrival'])) {
+    $step['arrival'] = (float)$value['arrival'];
+  } elseif (isset($value['arrival_time']) && is_numeric($value['arrival_time'])) {
+    $step['arrival'] = (float)$value['arrival_time'];
+  }
+
+  if (isset($value['duration']) && is_numeric($value['duration'])) {
+    $step['duration'] = (float)$value['duration'];
+  }
+  if (isset($value['distance']) && is_numeric($value['distance'])) {
+    $step['distance'] = (float)$value['distance'];
+  }
+  if (isset($value['waiting']) && is_numeric($value['waiting'])) {
+    $step['waiting'] = (float)$value['waiting'];
+  } elseif (isset($value['waiting_time']) && is_numeric($value['waiting_time'])) {
+    $step['waiting'] = (float)$value['waiting_time'];
+  }
+  if (isset($value['service']) && is_numeric($value['service'])) {
+    $step['service'] = (float)$value['service'];
+  }
+
+  if (isset($value['plan_distance']) && is_numeric($value['plan_distance'])) {
+    $step['plan_distance'] = (float)$value['plan_distance'];
+  }
+  if (isset($value['plan_duration']) && is_numeric($value['plan_duration'])) {
+    $step['plan_duration'] = (float)$value['plan_duration'];
+  }
+
+  if (isset($value['updated_at'])) {
+    $updated = trim((string)$value['updated_at']);
+    if ($updated !== '') {
+      if (function_exists('mb_substr')) {
+        $step['updated_at'] = mb_substr($updated, 0, 120);
+      } else {
+        $step['updated_at'] = substr($updated, 0, 120);
+      }
+    }
+  } elseif (isset($value['updatedAt'])) {
+    $updated = trim((string)$value['updatedAt']);
+    if ($updated !== '') {
+      if (function_exists('mb_substr')) {
+        $step['updated_at'] = mb_substr($updated, 0, 120);
+      } else {
+        $step['updated_at'] = substr($updated, 0, 120);
+      }
+    }
+  }
+
+  if (!isset($step['sequence'])) {
+    return null;
+  }
+
+  ksort($step);
+  return $step;
+}
+
 function normalize_round_meta($roundMeta) {
   $out = [];
   if (!is_array($roundMeta)) return $out;
@@ -1080,7 +1469,13 @@ function normalize_round_meta($roundMeta) {
       }
       if ($metaKeyStr === 'sort_mode') {
         $val = strtolower(trim((string)$value));
-        $entry[$metaKeyStr] = ($val === 'custom') ? 'custom' : 'default';
+        if ($val === 'custom') {
+          $entry[$metaKeyStr] = 'custom';
+        } elseif ($val === 'route') {
+          $entry[$metaKeyStr] = 'route';
+        } else {
+          $entry[$metaKeyStr] = 'default';
+        }
         continue;
       }
       if ($metaKeyStr === 'custom_order') {
@@ -1108,6 +1503,13 @@ function normalize_round_meta($roundMeta) {
         }
         continue;
       }
+      if ($metaKeyStr === 'route_plan') {
+        $plan = normalize_route_plan_meta($value);
+        if ($plan) {
+          $entry[$metaKeyStr] = $plan;
+        }
+        continue;
+      }
       if (is_scalar($value)) {
         $val = trim((string)$value);
         if ($val === '') continue;
@@ -1120,7 +1522,13 @@ function normalize_round_meta($roundMeta) {
       }
     }
     if (!isset($entry['sort_mode'])) {
-      $entry['sort_mode'] = (!empty($entry['custom_order'])) ? 'custom' : 'default';
+      if (!empty($entry['route_plan'])) {
+        $entry['sort_mode'] = 'route';
+      } elseif (!empty($entry['custom_order'])) {
+        $entry['sort_mode'] = 'custom';
+      } else {
+        $entry['sort_mode'] = 'default';
+      }
     }
     if (!empty($entry)) {
       ksort($entry);
@@ -1189,6 +1597,13 @@ function normalize_items(array $items) {
       $keyStr = preg_replace('/^\xEF\xBB\xBF/u', '', $keyStr);
       if ($keyStr === '') continue;
       if ($keyStr === 'collapsed' || $keyStr === 'type') continue;
+      if ($keyStr === 'route_step') {
+        $routeStep = normalize_route_step_item($value);
+        if ($routeStep) {
+          $clean[$keyStr] = $routeStep;
+        }
+        continue;
+      }
       $clean[$keyStr] = $value;
     }
     if (!empty($clean)) {
