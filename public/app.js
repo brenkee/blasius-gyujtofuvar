@@ -4435,18 +4435,7 @@
             <select id="round_${cssId(it.id)}" class="select-round">
               ${Array.from(ROUND_MAP.values()).map(r => {
                 const sel = (+it.round===+r.id) ? 'selected' : '';
-                const optionColor = colorForRound(r.id);
-                const styleParts = [
-                  'background-repeat:no-repeat',
-                  'background-position:8px 50%',
-                  'background-size:8px 8px',
-                  'padding-left:22px'
-                ];
-                if (optionColor) {
-                  styleParts.push(`background-image:radial-gradient(circle at center, ${esc(optionColor)} 0, ${esc(optionColor)} 55%, transparent 60%)`);
-                }
-                const style = `style="${styleParts.join(';')}"`;
-                return `<option value="${r.id}" ${sel} ${style}>${esc(r.label)}</option>`;
+                return `<option value="${r.id}" ${sel}>${esc(r.label)}</option>`;
               }).join('')}
             </select>
           </div>`;
