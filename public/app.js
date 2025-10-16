@@ -2273,16 +2273,92 @@
     return sorted;
   }
 
+  function decodeOrsPolyline(str, precisionDigits){
+    const encoded = typeof str === 'string' ? str : '';
+    if (!encoded) return [];
+    const factor = Math.pow(10, Number.isFinite(precisionDigits) ? precisionDigits : 5);
+    let index = 0;
+    let lat = 0;
+    let lon = 0;
+    const len = encoded.length;
+    const coords = [];
+    while (index < len) {
+      let result = 0;
+      let shift = 0;
+      let b;
+      do {
+        b = encoded.charCodeAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      const deltaLat = (result & 1) ? ~(result >> 1) : (result >> 1);
+      lat += deltaLat;
+
+      result = 0;
+      shift = 0;
+      do {
+        b = encoded.charCodeAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      const deltaLon = (result & 1) ? ~(result >> 1) : (result >> 1);
+      lon += deltaLon;
+
+      coords.push([lat / factor, lon / factor]);
+    }
+    return coords;
+  }
+
+  function coordinatePairToLatLng(pair){
+    if (!Array.isArray(pair) || pair.length < 2) return null;
+    const first = Number(pair[0]);
+    const second = Number(pair[1]);
+    if (!Number.isFinite(first) || !Number.isFinite(second)) return null;
+    const candidates = [];
+    const candidate1 = {lat: second, lon: first};
+    if (Math.abs(candidate1.lat) <= 90 && Math.abs(candidate1.lon) <= 180) {
+      candidates.push(candidate1);
+    }
+    const candidate2 = {lat: first, lon: second};
+    if (Math.abs(candidate2.lat) <= 90 && Math.abs(candidate2.lon) <= 180) {
+      candidates.push(candidate2);
+    }
+    if (!candidates.length) return null;
+    if (candidates.length === 1) {
+      return [candidates[0].lat, candidates[0].lon];
+    }
+    const originLat = Number(state?.ORIGIN?.lat);
+    const originLon = Number(state?.ORIGIN?.lon);
+    if (Number.isFinite(originLat) && Number.isFinite(originLon)) {
+      candidates.sort((a, b) => {
+        const da = Math.abs(a.lat - originLat) + Math.abs(a.lon - originLon);
+        const db = Math.abs(b.lat - originLat) + Math.abs(b.lon - originLon);
+        return da - db;
+      });
+    }
+    return [candidates[0].lat, candidates[0].lon];
+  }
+
   function geojsonToLatLngs(geometry){
     if (!geometry) return [];
-    const coords = Array.isArray(geometry.coordinates) ? geometry.coordinates : [];
-    return coords.map(pair => {
-      if (!Array.isArray(pair) || pair.length < 2) return null;
-      const lon = Number(pair[0]);
-      const lat = Number(pair[1]);
-      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
-      return [lat, lon];
-    }).filter(Boolean);
+    if (typeof geometry === 'string') {
+      const decoded = decodeOrsPolyline(geometry);
+      return decoded
+        .map(pair => coordinatePairToLatLng(pair))
+        .filter(Boolean);
+    }
+    const coords = Array.isArray(geometry.coordinates) ? geometry.coordinates : geometry;
+    const collected = [];
+    (function traverse(value){
+      if (!Array.isArray(value)) return;
+      if (value.length >= 2 && !Array.isArray(value[0])) {
+        const pair = coordinatePairToLatLng(value);
+        if (pair) collected.push(pair);
+        return;
+      }
+      value.forEach(traverse);
+    })(coords);
+    return collected;
   }
 
   function removeRoutePolyline(rid){
@@ -2499,9 +2575,34 @@
     const feature = Array.isArray(data?.features) ? data.features[0] : null;
     if (!feature) return null;
     const latlngs = geojsonToLatLngs(feature.geometry);
-    const summarySource = feature?.properties?.summary || feature?.properties || {};
-    const distance = Number(summarySource.distance);
-    const duration = Number(summarySource.duration);
+    let distance = Number(feature?.properties?.summary?.distance);
+    let duration = Number(feature?.properties?.summary?.duration);
+    if (!Number.isFinite(distance) || !Number.isFinite(duration)) {
+      const segments = Array.isArray(feature?.properties?.segments) ? feature.properties.segments : [];
+      if (segments.length) {
+        const totals = segments.reduce((acc, seg) => {
+          const segDistance = Number(seg?.distance);
+          const segDuration = Number(seg?.duration);
+          if (Number.isFinite(segDistance)) acc.distance += segDistance;
+          if (Number.isFinite(segDuration)) acc.duration += segDuration;
+          return acc;
+        }, {distance: 0, duration: 0});
+        if (!Number.isFinite(distance) && Number.isFinite(totals.distance) && totals.distance >= 0) {
+          distance = totals.distance;
+        }
+        if (!Number.isFinite(duration) && Number.isFinite(totals.duration) && totals.duration >= 0) {
+          duration = totals.duration;
+        }
+      }
+    }
+    if (!Number.isFinite(distance)) {
+      const topLevelDistance = Number(data?.summary?.distance);
+      if (Number.isFinite(topLevelDistance)) distance = topLevelDistance;
+    }
+    if (!Number.isFinite(duration)) {
+      const topLevelDuration = Number(data?.summary?.duration);
+      if (Number.isFinite(topLevelDuration)) duration = topLevelDuration;
+    }
     return {
       latlngs,
       distance: Number.isFinite(distance) ? distance : null,
@@ -3000,8 +3101,10 @@
       return;
     }
     if (info.status === ROUTE_STATUS.READY) {
-      const distanceKm = Number(info.distance) / 1000;
-      const durationMin = Number(info.duration) / 60;
+      const distanceValue = Number(info.distance);
+      const durationValue = Number(info.duration);
+      const distanceKm = Number.isFinite(distanceValue) ? distanceValue / 1000 : null;
+      const durationMin = Number.isFinite(durationValue) ? durationValue / 60 : null;
       const distanceStr = Number.isFinite(distanceKm) ? distanceKm.toFixed(1) : '—';
       const durationStr = Number.isFinite(durationMin) ? Math.round(durationMin).toString() : '—';
       el.textContent = `Útvonal adatai: ${distanceStr} km | ${durationStr} perc`;
