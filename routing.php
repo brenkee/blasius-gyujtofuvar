@@ -485,6 +485,8 @@ if (!function_exists('routing_fetch_matrix')) {
                     'metrics' => ['distance', 'duration'],
                     'sources' => $sourceLocal,
                     'destinations' => $destLocal,
+                    'resolve_locations' => false,
+                    'units' => 'm',
                 ];
                 $response = routing_http_request('POST', '/v2/matrix/' . $profile, $payload, $cfg);
                 if (!isset($response['distances']) || !is_array($response['distances'])) {
@@ -521,17 +523,31 @@ if (!function_exists('routing_fetch_directions')) {
         $payload = [
             'coordinates' => $coordinates,
             'instructions' => false,
-            'geometry_format' => 'geojson',
+            'geometry' => true,
+            'format' => 'geojson',
+            'units' => 'm',
         ];
         $response = routing_http_request('POST', '/v2/directions/' . $profile, $payload, $cfg);
-        $route = $response['routes'][0] ?? null;
-        if (!is_array($route)) {
-            throw new RuntimeException('routing_directions_missing_route');
+        $feature = $response['features'][0] ?? null;
+        if (!is_array($feature)) {
+            throw new RuntimeException('routing_directions_missing_feature');
         }
-        $summary = $route['summary'] ?? [];
+        $properties = isset($feature['properties']) && is_array($feature['properties']) ? $feature['properties'] : [];
+        $summary = isset($properties['summary']) && is_array($properties['summary']) ? $properties['summary'] : [];
         $distance = isset($summary['distance']) ? (float)$summary['distance'] : null;
         $duration = isset($summary['duration']) ? (float)$summary['duration'] : null;
-        $geometry = $route['geometry'] ?? null;
+        if (($distance === null || $duration === null) && isset($properties['segments']) && is_array($properties['segments'])) {
+            $segment = $properties['segments'][0] ?? [];
+            if (is_array($segment)) {
+                if ($distance === null && isset($segment['distance'])) {
+                    $distance = (float)$segment['distance'];
+                }
+                if ($duration === null && isset($segment['duration'])) {
+                    $duration = (float)$segment['duration'];
+                }
+            }
+        }
+        $geometry = $feature['geometry'] ?? null;
         return [
             'distance' => $distance,
             'duration' => $duration,
@@ -569,7 +585,8 @@ if (!function_exists('routing_run_optimization')) {
             'jobs' => $jobPayload,
             'vehicles' => [$vehicle],
         ];
-        $response = routing_http_request('POST', '/optimization', $payload, $cfg, 60);
+        $optimizationUrl = 'https://api.openrouteservice.org/optimization';
+        $response = routing_http_request('POST', $optimizationUrl, $payload, $cfg, 60);
         $routes = $response['routes'] ?? [];
         if (empty($routes)) {
             throw new RuntimeException('routing_optimization_missing_route');
