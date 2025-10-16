@@ -298,13 +298,22 @@ $CFG_DEFAULT = [
     ]
   ],
   "routing" => [
+    "enabled" => true,
+    "provider" => "openrouteservice",
+    "api_key" => "",
+    "base_url" => "https://api.openrouteservice.org/v2",
+    "profile" => "driving-car",
     "origin" => "Maglód",
     "origin_coordinates" => [
       "lat" => 47.45,
       "lon" => 19.35
     ],
     "max_waypoints" => 10,
-    "geocode_origin_on_start" => true
+    "return_to_origin" => true,
+    "geocode_origin_on_start" => true,
+    "cache_ttl_minutes" => 720,
+    "matrix_chunk_size" => 40,
+    "request_pause_ms" => 220
   ],
   "text" => [
     "toolbar" => [
@@ -322,6 +331,11 @@ $CFG_DEFAULT = [
       "pin_counter_label" => "Pin-ek:",
       "pin_counter_title" => "Aktív pin jelölők száma"
     ],
+    "route" => [
+      "status_distance_label" => "Összes távolság",
+      "status_duration_label" => "Becsült menetidő",
+      "status_cached_hint" => "Gyorsítótárazott útvonal"
+    ],
     "round" => [
       "planned_date_label" => "Tervezett dátum",
       "planned_date_hint" => "Válaszd ki a kör tervezett dátumát",
@@ -330,6 +344,7 @@ $CFG_DEFAULT = [
       "sort_mode_label" => "Rendezési mód",
       "sort_mode_default" => "Alapértelmezett (távolság)",
       "sort_mode_custom" => "Egyéni (drag & drop)",
+      "sort_mode_route" => "Útvonal (ORS)",
       "sort_mode_custom_hint" => "Fogd és vidd a címeket a sorrend módosításához",
       "custom_sort_handle_hint" => "Fogd meg és húzd a cím átrendezéséhez"
     ],
@@ -373,10 +388,11 @@ $CFG_DEFAULT = [
         "navigation_skip" => "Figyelem: {count} cím nem került bele (nincs geolokáció).",
         "geocode_failed" => "Geokódolás sikertelen.",
         "geocode_failed_detailed" => "Geokódolás sikertelen. Írd át a címet más formátumban, majd próbáld újra.",
-        "geocode_missing" => "A cím nincs geokódolva. Írd át más formátumban, majd mentsd újra.",
-        "undo_unavailable" => "Nincs visszavonható művelet.",
-        "import_success" => "Import kész.",
-        "import_error" => "Az importálás nem sikerült.",
+      "geocode_missing" => "A cím nincs geokódolva. Írd át más formátumban, majd mentsd újra.",
+      "undo_unavailable" => "Nincs visszavonható művelet.",
+      "import_success" => "Import kész.",
+      "route_failed" => "Útvonaltervezés sikertelen, próbáld újra később.",
+      "import_error" => "Az importálás nem sikerült.",
         "import_in_progress" => "Import folyamatban…",
         "import_mode_prompt" => "Felülírjuk a jelenlegi adatokat az importált CSV-vel, vagy hozzáadjuk az új sorokat?",
         "import_mode_replace" => "Felülírás",
@@ -590,6 +606,8 @@ if (is_file($CONFIG_FILE)) {
   $json = json_decode($raw, true);
   if (is_array($json)) $CFG = array_replace_recursive($CFG_DEFAULT, $json);
 }
+
+require_once __DIR__ . '/routing.php';
 
 $BASE_URL_FILES = [
   __DIR__ . '/config/base_url.local.json',
@@ -1039,6 +1057,68 @@ function is_list_array($value) {
   return true;
 }
 
+function sanitize_route_info_meta($value) {
+  if (is_string($value) && trim($value) !== '') {
+    $decoded = json_decode($value, true);
+    if (is_array($decoded)) {
+      $value = $decoded;
+    }
+  }
+  if (!is_array($value)) {
+    return null;
+  }
+  $info = [];
+  if (isset($value['distance_m']) && is_numeric($value['distance_m'])) {
+    $info['distance_m'] = (float)$value['distance_m'];
+  }
+  if (isset($value['duration_s']) && is_numeric($value['duration_s'])) {
+    $info['duration_s'] = (float)$value['duration_s'];
+  }
+  if (isset($value['geometry'])) {
+    $geom = routing_sanitize_geometry($value['geometry']);
+    if ($geom) {
+      $info['geometry'] = $geom;
+    }
+  }
+  if (isset($value['hash'])) {
+    $hash = trim((string)$value['hash']);
+    if ($hash !== '') {
+      if (function_exists('mb_substr')) {
+        $hash = mb_substr($hash, 0, 128);
+      } else {
+        $hash = substr($hash, 0, 128);
+      }
+      $info['hash'] = $hash;
+    }
+  }
+  if (isset($value['source'])) {
+    $source = trim((string)$value['source']);
+    if ($source !== '') {
+      if (function_exists('mb_substr')) {
+        $source = mb_substr($source, 0, 40);
+      } else {
+        $source = substr($source, 0, 40);
+      }
+      $info['source'] = $source;
+    }
+  }
+  if (isset($value['updated_at'])) {
+    $updated = trim((string)$value['updated_at']);
+    if ($updated !== '') {
+      if (function_exists('mb_substr')) {
+        $updated = mb_substr($updated, 0, 40);
+      } else {
+        $updated = substr($updated, 0, 40);
+      }
+      $info['updated_at'] = $updated;
+    }
+  }
+  if (isset($value['from_cache'])) {
+    $info['from_cache'] = (bool)$value['from_cache'];
+  }
+  return !empty($info) ? $info : null;
+}
+
 function normalize_round_meta($roundMeta) {
   $out = [];
   if (!is_array($roundMeta)) return $out;
@@ -1075,7 +1155,13 @@ function normalize_round_meta($roundMeta) {
       }
       if ($metaKeyStr === 'sort_mode') {
         $val = strtolower(trim((string)$value));
-        $entry[$metaKeyStr] = ($val === 'custom') ? 'custom' : 'default';
+        if ($val === 'route') {
+          $entry[$metaKeyStr] = 'route';
+        } elseif ($val === 'custom') {
+          $entry[$metaKeyStr] = 'custom';
+        } else {
+          $entry[$metaKeyStr] = 'default';
+        }
         continue;
       }
       if ($metaKeyStr === 'custom_order') {
@@ -1103,6 +1189,38 @@ function normalize_round_meta($roundMeta) {
         }
         continue;
       }
+      if ($metaKeyStr === 'route_order') {
+        $source = $value;
+        if (!is_array($source) && is_string($source) && trim($source) !== '') {
+          $decoded = json_decode($source, true);
+          if (is_array($decoded)) {
+            $source = $decoded;
+          }
+        }
+        if (is_array($source)) {
+          $list = [];
+          $seen = [];
+          foreach ($source as $itemVal) {
+            if ($itemVal === null) continue;
+            $itemStr = trim((string)$itemVal);
+            if ($itemStr === '') continue;
+            if (isset($seen[$itemStr])) continue;
+            $seen[$itemStr] = true;
+            $list[] = $itemStr;
+          }
+          if (!empty($list)) {
+            $entry[$metaKeyStr] = $list;
+          }
+        }
+        continue;
+      }
+      if ($metaKeyStr === 'route_info') {
+        $info = sanitize_route_info_meta($value);
+        if (!empty($info)) {
+          $entry[$metaKeyStr] = $info;
+        }
+        continue;
+      }
       if (is_scalar($value)) {
         $val = trim((string)$value);
         if ($val === '') continue;
@@ -1115,7 +1233,13 @@ function normalize_round_meta($roundMeta) {
       }
     }
     if (!isset($entry['sort_mode'])) {
-      $entry['sort_mode'] = (!empty($entry['custom_order'])) ? 'custom' : 'default';
+      if (!empty($entry['route_order'])) {
+        $entry['sort_mode'] = 'route';
+      } elseif (!empty($entry['custom_order'])) {
+        $entry['sort_mode'] = 'custom';
+      } else {
+        $entry['sort_mode'] = 'default';
+      }
     }
     if (!empty($entry)) {
       ksort($entry);
@@ -1184,6 +1308,15 @@ function normalize_items(array $items) {
       $keyStr = preg_replace('/^\xEF\xBB\xBF/u', '', $keyStr);
       if ($keyStr === '') continue;
       if ($keyStr === 'collapsed' || $keyStr === 'type') continue;
+      if ($keyStr === 'utvonal_sorrend') {
+        if ($value === null || $value === '') {
+          continue;
+        }
+        if (is_numeric($value)) {
+          $clean[$keyStr] = (int)$value;
+        }
+        continue;
+      }
       $clean[$keyStr] = $value;
     }
     if (!empty($clean)) {
@@ -1298,7 +1431,7 @@ function data_store_read_sqlite($file) {
   try {
     $items = [];
     $dbStart = microtime(true);
-    $stmt = $pdo->query('SELECT data FROM items ORDER BY position ASC, id ASC');
+    $stmt = $pdo->query('SELECT data, utvonal_sorrend FROM items ORDER BY position ASC, id ASC');
     app_perf_track_db($dbStart);
     if ($stmt) {
       foreach ($stmt as $row) {
@@ -1307,6 +1440,9 @@ function data_store_read_sqlite($file) {
         if (!is_string($payload)) continue;
         $decoded = json_decode($payload, true);
         if (is_array($decoded)) {
+          if (isset($row['utvonal_sorrend']) && $row['utvonal_sorrend'] !== null) {
+            $decoded['utvonal_sorrend'] = (int)$row['utvonal_sorrend'];
+          }
           $items[] = $decoded;
         }
       }
@@ -1352,7 +1488,7 @@ function data_store_write_sqlite_conn(PDO $pdo, array $items, array $roundMeta) 
   app_perf_track_db($dbStart);
 
   if (!empty($normalizedItems)) {
-    $insertItem = $pdo->prepare('INSERT INTO items (id, position, data) VALUES (:id, :position, :data)');
+    $insertItem = $pdo->prepare('INSERT INTO items (id, position, data, utvonal_sorrend) VALUES (:id, :position, :data, :route_order)');
     foreach (array_values($normalizedItems) as $position => $item) {
       $id = isset($item['id']) ? (string)$item['id'] : '';
       if ($id === '') {
@@ -1362,11 +1498,21 @@ function data_store_write_sqlite_conn(PDO $pdo, array $items, array $roundMeta) 
       if ($json === false) {
         throw new RuntimeException('JSON kódolási hiba elem írásakor.');
       }
+      $routeOrder = null;
+      if (isset($item['utvonal_sorrend'])) {
+        $rawOrder = $item['utvonal_sorrend'];
+        if ($rawOrder === '' || $rawOrder === null) {
+          $routeOrder = null;
+        } elseif (is_numeric($rawOrder)) {
+          $routeOrder = (int)$rawOrder;
+        }
+      }
       $dbStart = microtime(true);
       $insertItem->execute([
         ':id' => $id,
         ':position' => (int)$position,
-        ':data' => $json
+        ':data' => $json,
+        ':route_order' => $routeOrder
       ]);
       app_perf_track_db($dbStart);
     }
@@ -1810,6 +1956,7 @@ function audit_log_action_labels() {
     'dataset.import' => 'Import',
     'dataset.save' => 'Mentés',
     'dataset.delete_round' => 'Kör törlése',
+    'dataset.route_optimize' => 'Útvonal frissítése',
   ];
 }
 

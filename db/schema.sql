@@ -11,7 +11,8 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 CREATE TABLE IF NOT EXISTS items (
   id TEXT PRIMARY KEY,
   position INTEGER NOT NULL,
-  data TEXT NOT NULL
+  data TEXT NOT NULL,
+  utvonal_sorrend INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS round_meta (
