@@ -2582,7 +2582,6 @@
       coordinates: coords,
       instructions: false,
       geometry: true,
-      geometry_format: 'geojson',
       format: 'geojson',
       units: 'm'
     };
