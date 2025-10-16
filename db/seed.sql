@@ -3,9 +3,9 @@ INSERT INTO items (id, position, data) VALUES
   ('sample-1', 0, '{"id":"sample-1","label":"Minta ügyfél","address":"Budapest, Fő utca 1.","note":"Első próbatétel","round":1,"deadline":"2024-04-30","weight":120,"volume":2.5}'),
   ('sample-2', 1, '{"id":"sample-2","label":"Második ügyfél","address":"Győr, Mintakör 5.","note":"Hétfő délelőtt","round":2,"deadline":"2024-05-02","weight":80,"volume":1.2}');
 
-INSERT INTO round_meta (round_id, data) VALUES
-  ('1', '{"id":1,"label":"1. kör","color":"#e11d48"}'),
-  ('2', '{"id":2,"label":"2. kör","color":"#f59e0b"}');
+INSERT INTO round_meta (round_id, data, route_order) VALUES
+  ('1', '{"id":1,"label":"1. kör","color":"#e11d48"}', NULL),
+  ('2', '{"id":2,"label":"2. kör","color":"#f59e0b"}', NULL);
 
 INSERT INTO audit_log (created_at, action, actor_id, actor_name, actor_role, entity, entity_id, message, meta) VALUES
   ('2024-05-01T08:15:00+00:00', 'item.created', NULL, 'admin', 'full-admin', 'item', 'sample-1',

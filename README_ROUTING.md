@@ -53,9 +53,24 @@ Any change to `routing.enabled` or clearing `routing.base_url` will cause the ad
 to stop calling OSRM and fall back to the legacy straight-line ordering automatically.
 Cached plans expire after the configured TTL, ensuring the results stay fresh.
 
+## Using OSRM ordering in the UI
+
+- Rounds continue to default to the legacy straight-line ordering. No OSRM requests
+  are issued unless a user explicitly chooses the **Útvonal (OSRM)** option in the
+  round header's rendezés selector.
+- When the route option is active the client requests an OSRM `trip` and renders the
+  returned geometry on the map. The computed stop sequence is saved to the
+  `round_meta.route_order` column so that other clients can reuse the result.
+- If the OSRM backend is offline the UI automatically falls back to the straight-line
+  nearest-neighbour ordering while keeping the last successful road order cached.
+- Switching the selector back to **Alapértelmezett (légvonal)** restores the
+  distance-based ordering without touching the persisted OSRM order.
+
 ## Disabling road routing quickly
 
 1. Set `"routing": { "enabled": false, ... }` in `config/config.json`, or
-2. Override `routing.base_url` with an empty string via runtime configuration.
+2. Override `routing.base_url` with an empty string via runtime configuration, or
+3. Ask users to pick **Alapértelmezett (légvonal)** in the rendezés selector per
+   round.
 
 Either change reverts the UI to the previous behaviour without requiring a rebuild.

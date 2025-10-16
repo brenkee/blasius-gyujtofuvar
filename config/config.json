@@ -395,7 +395,8 @@
             "planned_time_label": "Tervezett idő",
             "planned_time_hint": "Add meg a kör tervezett idejét",
             "sort_mode_label": "Rendezés",
-            "sort_mode_default": "Alapértelmezett",
+            "sort_mode_default": "Alapértelmezett (légvonal)",
+            "sort_mode_route": "Útvonal (OSRM)",
             "sort_mode_custom": "Egyéni",
             "sort_mode_custom_hint": "Fogd és vidd a címeket a sorrend módosításához",
             "custom_sort_handle_hint": "Fogd meg és húzd a cím átrendezéséhez"

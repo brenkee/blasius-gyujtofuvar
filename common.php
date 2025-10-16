@@ -1073,6 +1073,35 @@ function is_list_array($value) {
   return true;
 }
 
+function round_meta_sanitize_order_list($source) {
+  if (is_string($source) && trim($source) !== '') {
+    $decoded = json_decode($source, true);
+    if (is_array($decoded)) {
+      $source = $decoded;
+    }
+  }
+  if (!is_array($source)) {
+    return [];
+  }
+  $list = [];
+  $seen = [];
+  foreach ($source as $itemVal) {
+    if ($itemVal === null) {
+      continue;
+    }
+    $itemStr = trim((string)$itemVal);
+    if ($itemStr === '') {
+      continue;
+    }
+    if (isset($seen[$itemStr])) {
+      continue;
+    }
+    $seen[$itemStr] = true;
+    $list[] = $itemStr;
+  }
+  return $list;
+}
+
 function normalize_round_meta($roundMeta) {
   $out = [];
   if (!is_array($roundMeta)) return $out;
@@ -1109,31 +1138,26 @@ function normalize_round_meta($roundMeta) {
       }
       if ($metaKeyStr === 'sort_mode') {
         $val = strtolower(trim((string)$value));
-        $entry[$metaKeyStr] = ($val === 'custom') ? 'custom' : 'default';
+        if ($val === 'custom') {
+          $entry[$metaKeyStr] = 'custom';
+        } elseif ($val === 'route') {
+          $entry[$metaKeyStr] = 'route';
+        } else {
+          $entry[$metaKeyStr] = 'default';
+        }
         continue;
       }
       if ($metaKeyStr === 'custom_order') {
-        $source = $value;
-        if (!is_array($source) && is_string($source) && trim($source) !== '') {
-          $decoded = json_decode($source, true);
-          if (is_array($decoded)) {
-            $source = $decoded;
-          }
+        $list = round_meta_sanitize_order_list($value);
+        if (!empty($list)) {
+          $entry[$metaKeyStr] = $list;
         }
-        if (is_array($source)) {
-          $list = [];
-          $seen = [];
-          foreach ($source as $itemVal) {
-            if ($itemVal === null) continue;
-            $itemStr = trim((string)$itemVal);
-            if ($itemStr === '') continue;
-            if (isset($seen[$itemStr])) continue;
-            $seen[$itemStr] = true;
-            $list[] = $itemStr;
-          }
-          if (!empty($list)) {
-            $entry[$metaKeyStr] = $list;
-          }
+        continue;
+      }
+      if ($metaKeyStr === 'route_order') {
+        $list = round_meta_sanitize_order_list($value);
+        if (!empty($list)) {
+          $entry[$metaKeyStr] = $list;
         }
         continue;
       }
@@ -1149,7 +1173,13 @@ function normalize_round_meta($roundMeta) {
       }
     }
     if (!isset($entry['sort_mode'])) {
-      $entry['sort_mode'] = (!empty($entry['custom_order'])) ? 'custom' : 'default';
+      if (!empty($entry['custom_order'])) {
+        $entry['sort_mode'] = 'custom';
+      } elseif (!empty($entry['route_order'])) {
+        $entry['sort_mode'] = 'route';
+      } else {
+        $entry['sort_mode'] = 'default';
+      }
     }
     if (!empty($entry)) {
       ksort($entry);
@@ -1347,7 +1377,25 @@ function data_store_read_sqlite($file) {
     }
     $roundMetaRaw = [];
     $dbStart = microtime(true);
-    $stmt = $pdo->query('SELECT round_id, data FROM round_meta');
+    $routeOrderAvailable = false;
+    try {
+      $infoStmt = $pdo->query('PRAGMA table_info(round_meta)');
+      if ($infoStmt) {
+        foreach ($infoStmt as $col) {
+          $colName = isset($col['name']) ? strtolower((string)$col['name']) : '';
+          if ($colName === 'route_order') {
+            $routeOrderAvailable = true;
+            break;
+          }
+        }
+      }
+    } catch (Throwable $e) {
+      $routeOrderAvailable = false;
+    }
+    $selectSql = $routeOrderAvailable
+      ? 'SELECT round_id, data, route_order FROM round_meta'
+      : 'SELECT round_id, data FROM round_meta';
+    $stmt = $pdo->query($selectSql);
     app_perf_track_db($dbStart);
     if ($stmt) {
       foreach ($stmt as $row) {
@@ -1358,6 +1406,13 @@ function data_store_read_sqlite($file) {
         if (!is_string($payload)) continue;
         $decoded = json_decode($payload, true);
         if (is_array($decoded)) {
+          if ($routeOrderAvailable) {
+            $routeOrderRaw = $row['route_order'] ?? null;
+            $routeOrder = round_meta_sanitize_order_list($routeOrderRaw);
+            if (!empty($routeOrder)) {
+              $decoded['route_order'] = $routeOrder;
+            }
+          }
           $roundMetaRaw[$rid] = $decoded;
         }
       }
@@ -1406,22 +1461,61 @@ function data_store_write_sqlite_conn(PDO $pdo, array $items, array $roundMeta) 
     }
   }
 
+  $routeOrderAvailable = false;
+  try {
+    $infoStmt = $pdo->query('PRAGMA table_info(round_meta)');
+    if ($infoStmt) {
+      foreach ($infoStmt as $col) {
+        $colName = isset($col['name']) ? strtolower((string)$col['name']) : '';
+        if ($colName === 'route_order') {
+          $routeOrderAvailable = true;
+          break;
+        }
+      }
+    }
+  } catch (Throwable $e) {
+    $routeOrderAvailable = false;
+  }
+
   if (!empty($normalizedMeta)) {
-    $insertMeta = $pdo->prepare('INSERT INTO round_meta (round_id, data) VALUES (:round_id, :data)');
+    $sql = $routeOrderAvailable
+      ? 'INSERT INTO round_meta (round_id, data, route_order) VALUES (:round_id, :data, :route_order)'
+      : 'INSERT INTO round_meta (round_id, data) VALUES (:round_id, :data)';
+    $insertMeta = $pdo->prepare($sql);
     foreach ($normalizedMeta as $roundId => $meta) {
       $roundKey = (string)$roundId;
       if ($roundKey === '') {
         continue;
       }
-      $json = json_encode($meta, JSON_UNESCAPED_UNICODE);
+      $metaCopy = $meta;
+      $routeOrderList = [];
+      if (isset($metaCopy['route_order'])) {
+        $routeOrderList = round_meta_sanitize_order_list($metaCopy['route_order']);
+      }
+      if (!empty($routeOrderList)) {
+        $metaCopy['route_order'] = $routeOrderList;
+      } else {
+        unset($metaCopy['route_order']);
+      }
+      $json = json_encode($metaCopy, JSON_UNESCAPED_UNICODE);
       if ($json === false) {
         throw new RuntimeException('JSON kódolási hiba kör meta írásakor.');
       }
       $dbStart = microtime(true);
-      $insertMeta->execute([
-        ':round_id' => $roundKey,
-        ':data' => $json
-      ]);
+      if ($routeOrderAvailable) {
+        $insertMeta->execute([
+          ':round_id' => $roundKey,
+          ':data' => $json,
+          ':route_order' => !empty($routeOrderList)
+            ? json_encode($routeOrderList, JSON_UNESCAPED_UNICODE)
+            : null
+        ]);
+      } else {
+        $insertMeta->execute([
+          ':round_id' => $roundKey,
+          ':data' => $json
+        ]);
+      }
       app_perf_track_db($dbStart);
     }
   }

@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS items (
 
 CREATE TABLE IF NOT EXISTS round_meta (
   round_id TEXT PRIMARY KEY,
-  data TEXT NOT NULL
+  data TEXT NOT NULL,
+  route_order TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_items_position ON items(position);

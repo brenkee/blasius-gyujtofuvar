@@ -63,6 +63,8 @@
     statusTotals: {distance: null, duration: null},
     statusEl: null
   };
+  let routeMetaSaveTimer = null;
+  let routeMetaSavePromise = null;
   let pendingMapResize = null;
   let mobileLayoutFrame = null;
   let mapRef = null;
@@ -861,9 +863,30 @@
         sanitized.custom_order = order;
       }
     }
+    let routeOrderSource = entryRaw.route_order;
+    if (!Array.isArray(routeOrderSource) && typeof routeOrderSource === 'string' && routeOrderSource.trim() !== '') {
+      try {
+        const parsed = JSON.parse(routeOrderSource);
+        if (Array.isArray(parsed)) routeOrderSource = parsed;
+      } catch (_) {
+        routeOrderSource = [];
+      }
+    }
+    if (Array.isArray(routeOrderSource)) {
+      const routeOrder = sanitizeCustomOrderList(routeOrderSource);
+      if (routeOrder.length) {
+        sanitized.route_order = routeOrder;
+      }
+    }
     let modeRaw = typeof entryRaw.sort_mode === 'string' ? entryRaw.sort_mode.trim().toLowerCase() : '';
-    if (modeRaw !== 'custom' && modeRaw !== 'default') {
-      modeRaw = order.length ? 'custom' : '';
+    if (modeRaw !== 'custom' && modeRaw !== 'default' && modeRaw !== 'route') {
+      if (order.length) {
+        modeRaw = 'custom';
+      } else if (sanitized.route_order && sanitized.route_order.length) {
+        modeRaw = 'route';
+      } else {
+        modeRaw = '';
+      }
     }
     sanitized.sort_mode = modeRaw || 'default';
     return Object.keys(sanitized).length ? sanitized : null;
@@ -924,20 +947,38 @@
   function getRoundSortMode(rid){
     const entry = getRoundMetaEntry(rid);
     if (!entry || typeof entry.sort_mode !== 'string') return 'default';
-    return entry.sort_mode === 'custom' ? 'custom' : 'default';
+    const mode = entry.sort_mode.toLowerCase();
+    if (mode === 'custom') return 'custom';
+    if (mode === 'route') return 'route';
+    return 'default';
   }
 
   function setRoundSortMode(rid, mode){
     if (!CAN_SORT) return;
     const entry = ensureRoundMetaEntry(rid);
-    entry.sort_mode = mode === 'custom' ? 'custom' : 'default';
+    const normalized = mode === 'custom' ? 'custom' : (mode === 'route' ? 'route' : 'default');
+    entry.sort_mode = normalized;
+    clearRoutePlan(rid);
   }
 
   function sanitizeCustomOrderList(order){
+    let source = order;
+    if (!Array.isArray(source)) {
+      if (typeof source === 'string' && source.trim()) {
+        try {
+          const parsed = JSON.parse(source);
+          if (Array.isArray(parsed)) {
+            source = parsed;
+          }
+        } catch (err) {
+          source = [];
+        }
+      }
+    }
     const out = [];
-    if (!Array.isArray(order)) return out;
+    if (!Array.isArray(source)) return out;
     const seen = new Set();
-    order.forEach(val => {
+    source.forEach(val => {
       if (val == null) return;
       const str = String(val).trim();
       if (!str || seen.has(str)) return;
@@ -962,6 +1003,72 @@
     } else {
       delete entry.custom_order;
       cleanupRoundMetaEntry(rid);
+    }
+  }
+
+  function getRoundRouteOrder(rid){
+    const entry = getRoundMetaEntry(rid);
+    if (!entry || !Array.isArray(entry.route_order)) return [];
+    return sanitizeCustomOrderList(entry.route_order);
+  }
+
+  function setRoundRouteOrder(rid, order){
+    if (!CAN_SORT) return;
+    const entry = ensureRoundMetaEntry(rid);
+    const sanitized = sanitizeCustomOrderList(order);
+    const previous = Array.isArray(entry.route_order) ? sanitizeCustomOrderList(entry.route_order) : [];
+    const hasChange = sanitized.length !== previous.length
+      || sanitized.some((id, idx) => previous[idx] !== id);
+    if (!hasChange) return;
+    if (sanitized.length) {
+      entry.route_order = sanitized;
+    } else {
+      delete entry.route_order;
+      cleanupRoundMetaEntry(rid);
+    }
+    scheduleRouteMetaSave();
+  }
+
+  function clearRoundRouteOrder(rid){
+    if (!CAN_SORT) return;
+    const entry = getRoundMetaEntry(rid);
+    if (!entry || !Array.isArray(entry.route_order)) return;
+    delete entry.route_order;
+    cleanupRoundMetaEntry(rid);
+    scheduleRouteMetaSave();
+  }
+
+  function syncRouteOrderWithItems(rid, itemIds){
+    const ids = Array.isArray(itemIds) ? itemIds.map(id => String(id)).filter(id => id !== '') : [];
+    const existing = getRoundRouteOrder(rid);
+    if (!existing.length) {
+      if (!ids.length) {
+        clearRoundRouteOrder(rid);
+        return [];
+      }
+      return ids.slice();
+    }
+    const filtered = existing.filter(id => ids.includes(id));
+    if (!filtered.length) {
+      clearRoundRouteOrder(rid);
+      return ids.slice();
+    }
+    const missing = ids.filter(id => !filtered.includes(id));
+    const combined = [...filtered, ...missing];
+    if (CAN_SORT) {
+      setRoundRouteOrder(rid, combined);
+    }
+    return combined;
+  }
+
+  function removeItemFromRouteOrder(rid, itemId){
+    if (!CAN_SORT) return;
+    if (!itemId) return;
+    const entry = getRoundMetaEntry(rid);
+    if (!entry || !Array.isArray(entry.route_order)) return;
+    const next = entry.route_order.filter(id => String(id) !== String(itemId));
+    if (next.length !== entry.route_order.length) {
+      setRoundRouteOrder(rid, next);
     }
   }
 
@@ -2562,8 +2669,32 @@
       })
       .finally(()=>{
         routingState.pending.delete(signature);
-      });
+    });
     routingState.pending.set(signature, promise);
+  }
+
+  function scheduleRouteMetaSave(){
+    if (!CAN_SORT) return;
+    if (routeMetaSaveTimer != null) return;
+    routeMetaSaveTimer = window.setTimeout(async ()=>{
+      routeMetaSaveTimer = null;
+      if (routeMetaSavePromise) return;
+      try {
+        routeMetaSavePromise = saveAll();
+        await routeMetaSavePromise;
+      } catch (err) {
+        console.warn('route order auto-save failed', err);
+      } finally {
+        routeMetaSavePromise = null;
+      }
+    }, 600);
+  }
+
+  function persistRoundRouteOrder(rid, orderIds){
+    if (!CAN_SORT) return;
+    const sanitized = sanitizeCustomOrderList(orderIds);
+    if (!sanitized.length) return;
+    setRoundRouteOrder(rid, sanitized);
   }
 
   function scheduleRouteRender(){
@@ -3012,6 +3143,43 @@
     return {lat, lon};
   }
 
+  function sortEntriesByNearestNeighbor(entries){
+    const remaining = Array.isArray(entries) ? entries.slice() : [];
+    const ordered = [];
+    if (!remaining.length) return ordered;
+    const originLat = Number(state.ORIGIN?.lat);
+    const originLon = Number(state.ORIGIN?.lon);
+    let currentIdx = 0;
+    let bestStart = Infinity;
+    for (let i = 0; i < remaining.length; i += 1) {
+      const candidate = remaining[i];
+      const distRaw = haversineKm(originLat, originLon, candidate.it.lat, candidate.it.lon);
+      const dist = Number.isFinite(distRaw) ? distRaw : Infinity;
+      if (dist < bestStart) {
+        bestStart = dist;
+        currentIdx = i;
+      }
+    }
+    let current = remaining.splice(currentIdx, 1)[0];
+    ordered.push(current);
+    while (remaining.length) {
+      let nextIdx = 0;
+      let bestDist = Infinity;
+      for (let i = 0; i < remaining.length; i += 1) {
+        const candidate = remaining[i];
+        const distRaw = haversineKm(current.it.lat, current.it.lon, candidate.it.lat, candidate.it.lon);
+        const dist = Number.isFinite(distRaw) ? distRaw : Infinity;
+        if (dist < bestDist) {
+          bestDist = dist;
+          nextIdx = i;
+        }
+      }
+      current = remaining.splice(nextIdx, 1)[0];
+      ordered.push(current);
+    }
+    return ordered;
+  }
+
   function updateRoutingTotals(){
     let totalDistance = 0;
     let totalDuration = 0;
@@ -3090,55 +3258,45 @@
 
       let sortedWithCoords = [];
       if (withCoords.length) {
-        const plan = getRoutePlanForRound(rid, withCoords);
-        if (plan && Array.isArray(plan.orderIds) && plan.orderIds.length) {
-          const orderIndex = new Map();
-          plan.orderIds.forEach((id, idx) => {
-            if (!orderIndex.has(id)) orderIndex.set(id, idx);
-          });
-          sortedWithCoords = withCoords.slice().sort((a, b) => {
-            const aIdx = orderIndex.has(a.it.id) ? orderIndex.get(a.it.id) : (orderIndex.size + a.idx);
-            const bIdx = orderIndex.has(b.it.id) ? orderIndex.get(b.it.id) : (orderIndex.size + b.idx);
-            if (aIdx !== bIdx) return aIdx - bIdx;
-            return a.idx - b.idx;
-          });
-        } else {
-          const remaining = withCoords.slice();
-          const fallback = [];
-          if (remaining.length) {
-            let currentIdx = 0;
-            let bestStart = Infinity;
-            for (let i = 0; i < remaining.length; i += 1) {
-              const candidate = remaining[i];
-              const distRaw = haversineKm(state.ORIGIN.lat, state.ORIGIN.lon, candidate.it.lat, candidate.it.lon);
-              const dist = Number.isFinite(distRaw) ? distRaw : Infinity;
-              if (dist < bestStart) {
-                bestStart = dist;
-                currentIdx = i;
-              }
-            }
-            let current = remaining.splice(currentIdx, 1)[0];
-            fallback.push(current);
-            while (remaining.length) {
-              let nextIdx = 0;
-              let bestDist = Infinity;
-              for (let i = 0; i < remaining.length; i += 1) {
-                const candidate = remaining[i];
-                const distRaw = haversineKm(current.it.lat, current.it.lon, candidate.it.lat, candidate.it.lon);
-                const dist = Number.isFinite(distRaw) ? distRaw : Infinity;
-                if (dist < bestDist) {
-                  bestDist = dist;
-                  nextIdx = i;
-                }
-              }
-              current = remaining.splice(nextIdx, 1)[0];
-              fallback.push(current);
+        if (mode === 'route') {
+          const ids = withCoords.map(entry => entry.it?.id).filter(id => id != null);
+          const expectedLength = ids.length;
+          const plan = getRoutePlanForRound(rid, withCoords);
+          if (plan && Array.isArray(plan.orderIds) && plan.orderIds.length === expectedLength) {
+            const orderIndex = new Map();
+            plan.orderIds.forEach((id, idx) => {
+              if (!orderIndex.has(id)) orderIndex.set(id, idx);
+            });
+            sortedWithCoords = withCoords.slice().sort((a, b) => {
+              const aIdx = orderIndex.has(a.it.id) ? orderIndex.get(a.it.id) : (orderIndex.size + a.idx);
+              const bIdx = orderIndex.has(b.it.id) ? orderIndex.get(b.it.id) : (orderIndex.size + b.idx);
+              if (aIdx !== bIdx) return aIdx - bIdx;
+              return a.idx - b.idx;
+            });
+            persistRoundRouteOrder(rid, plan.orderIds);
+          } else {
+            const storedOrder = syncRouteOrderWithItems(rid, ids);
+            if (storedOrder.length) {
+              const orderIndex = new Map(storedOrder.map((id, idx) => [id, idx]));
+              sortedWithCoords = withCoords.slice().sort((a, b) => {
+                const aIdx = orderIndex.has(a.it.id) ? orderIndex.get(a.it.id) : (orderIndex.size + a.idx);
+                const bIdx = orderIndex.has(b.it.id) ? orderIndex.get(b.it.id) : (orderIndex.size + b.idx);
+                if (aIdx !== bIdx) return aIdx - bIdx;
+                return a.idx - b.idx;
+              });
+            } else {
+              sortedWithCoords = sortEntriesByNearestNeighbor(withCoords);
             }
           }
-          sortedWithCoords = fallback;
+        } else {
+          clearRoutePlan(rid);
+          sortedWithCoords = sortEntriesByNearestNeighbor(withCoords);
         }
       } else {
         clearRoutePlan(rid);
+        if (mode === 'route') {
+          clearRoundRouteOrder(rid);
+        }
       }
 
       const withoutSorted = withoutCoords.sort((a,b)=>a.idx-b.idx);
@@ -3164,31 +3322,70 @@
 
   function updateRouteLayers(){
     if (!routeLayer) return;
-    const active = new Set();
-    routingState.perRound.forEach((entry, rid) => {
-      const plan = entry?.plan;
-      const existing = routingState.layerByRound.get(rid);
-      if (!plan || !plan.geometry) {
-        if (existing) {
-          routeLayer.removeLayer(existing);
-          routingState.layerByRound.delete(rid);
-        }
-        return;
+    const coordsByRound = new Map();
+    state.items.forEach(item => {
+      const rid = +item.round || 0;
+      if (!coordsByRound.has(rid)) coordsByRound.set(rid, []);
+      const lat = Number(item.lat);
+      const lon = Number(item.lon);
+      if (Number.isFinite(lat) && Number.isFinite(lon)) {
+        coordsByRound.get(rid).push([lat, lon]);
       }
-      active.add(rid);
+    });
+    const weight = Math.max(1, cfgNumber('routing.line.width', cfgNumber('routing.road_sort.line_width', 4) || 4) || 4);
+    const paneName = routeLayer?.options?.pane;
+    const roundsToRender = new Set([
+      ...coordsByRound.keys(),
+      ...routingState.perRound.keys()
+    ]);
+    const active = new Set();
+
+    roundsToRender.forEach(rid => {
+      const mode = getRoundSortMode(rid);
+      const existing = routingState.layerByRound.get(rid);
+      let layer = null;
+      let usedGeometry = false;
+      if (mode === 'route') {
+        const plan = routingState.perRound.get(rid)?.plan;
+        if (plan && plan.geometry) {
+          layer = L.geoJSON(plan.geometry, {
+            style: () => ({color: colorForRound(rid), weight, opacity: 0.6, lineCap: 'round', lineJoin: 'round'}),
+            pane: paneName,
+            interactive: false
+          });
+          usedGeometry = true;
+        }
+      }
+      if (!usedGeometry) {
+        const coords = coordsByRound.get(rid) || [];
+        if (coords.length >= 2) {
+          const latLngs = coords.map(pair => [pair[0], pair[1]]);
+          layer = L.polyline(latLngs, {
+            color: colorForRound(rid),
+            weight,
+            opacity: 0.6,
+            lineCap: 'round',
+            lineJoin: 'round',
+            pane: paneName,
+            interactive: false
+          });
+        } else {
+          if (existing) {
+            routeLayer.removeLayer(existing);
+            routingState.layerByRound.delete(rid);
+          }
+          return;
+        }
+      }
+      if (!layer) return;
       if (existing) {
         routeLayer.removeLayer(existing);
       }
-      const paneName = routeLayer?.options?.pane;
-      const weight = Math.max(1, cfgNumber('routing.line.width', cfgNumber('routing.road_sort.line_width', 4) || 4) || 4);
-      const layer = L.geoJSON(plan.geometry, {
-        style: () => ({color: colorForRound(rid), weight, opacity: 0.6, lineCap: 'round', lineJoin: 'round'}),
-        pane: paneName,
-        interactive: false
-      });
       layer.addTo(routeLayer);
       routingState.layerByRound.set(rid, layer);
+      active.add(rid);
     });
+
     routingState.layerByRound.forEach((layer, rid) => {
       if (!active.has(rid)) {
         routeLayer.removeLayer(layer);
@@ -3282,7 +3479,8 @@
     const showPlannedTime = plannedTimeEnabled && !isRoundZero(rid);
     const canEditRoundMeta = CAN_CHANGE_ROUND_META;
     const sortLabel = text('round.sort_mode_label', 'Rendezés');
-    const sortDefaultLabel = text('round.sort_mode_default', 'Alapértelmezett (távolság)');
+    const sortDefaultLabel = text('round.sort_mode_default', 'Alapértelmezett (légvonal)');
+    const sortRouteLabel = text('round.sort_mode_route', 'Útvonal (OSRM)');
     const sortCustomLabel = text('round.sort_mode_custom', 'Egyéni (drag & drop)');
     const sortHint = text('round.sort_mode_custom_hint', 'Fogd és vidd a címeket a rendezéshez');
     const sortSelectId = `round_${cssId(String(rid))}_sort_mode`;
@@ -3322,6 +3520,7 @@
               <label class="sort-mode-label" for="${sortSelectId}">${esc(sortLabel)}</label>
               <select id="${sortSelectId}" class="round-sort-mode" data-round="${rid}"${sortMode==='custom' && sortHint ? ` title="${esc(sortHint)}"` : ''}>
                 <option value="default"${sortMode==='default' ? ' selected' : ''}>${esc(sortDefaultLabel)}</option>
+                <option value="route"${sortMode==='route' ? ' selected' : ''}>${esc(sortRouteLabel)}</option>
                 <option value="custom"${sortMode==='custom' ? ' selected' : ''}>${esc(sortCustomLabel)}</option>
               </select>
             </div>`
@@ -3639,7 +3838,13 @@
       state.items[idx] = updated;
       delete state.items[idx]._pendingRound;
       removeItemFromCustomOrder(prevRound, updated.id);
+      removeItemFromRouteOrder(prevRound, updated.id);
       maybeAddItemToCustomOrder(+updated.round || 0, updated.id);
+      const roundIdsForSync = state.items
+        .filter(item => (+item.round||0) === (+updated.round||0) && !isItemCompletelyBlank(item))
+        .map(item => item.id)
+        .filter(id => id != null);
+      syncRouteOrderWithItems(+updated.round || 0, roundIdsForSync);
       upsertMarker(state.items[idx], idx);
       ensureBlankRowInDefaultRound();
       setCollapsePref(state.items[idx].id, false);
@@ -4147,7 +4352,13 @@
           pushSnapshot();
           state.items[idx].round = selRound;
           removeItemFromCustomOrder(prevRound, it.id);
+          removeItemFromRouteOrder(prevRound, it.id);
           maybeAddItemToCustomOrder(selRound, it.id);
+          const ids = state.items
+            .filter(item => (+item.round||0) === selRound && !isItemCompletelyBlank(item))
+            .map(item => item.id)
+            .filter(id => id != null);
+          syncRouteOrderWithItems(selRound, ids);
           await saveAll();
           renderEverything();
           renderGroupHeaderTotalsForRound(prevRound);
@@ -4168,6 +4379,7 @@
             const rPrev = +state.items[idx].round||0;
             state.items.splice(idx,1);
             removeItemFromCustomOrder(rPrev, it.id);
+            removeItemFromRouteOrder(rPrev, it.id);
             clearCollapsePref(it.id);
             renderGroupHeaderTotalsForRound(rPrev);
           }
@@ -4576,7 +4788,8 @@
       const sortSelect = groupEl.querySelector('.round-sort-mode');
       if (CAN_SORT && sortSelect) {
         sortSelect.addEventListener('change', async ()=>{
-          const newMode = sortSelect.value === 'custom' ? 'custom' : 'default';
+          const raw = typeof sortSelect.value === 'string' ? sortSelect.value.toLowerCase() : '';
+          const newMode = raw === 'custom' ? 'custom' : (raw === 'route' ? 'route' : 'default');
           const prevMode = getRoundSortMode(rid);
           if (newMode === prevMode) return;
           pushSnapshot();
@@ -4587,6 +4800,13 @@
               .map(item => item.id)
               .filter(id => id != null);
             syncCustomOrderWithItems(rid, ids);
+          }
+          if (newMode === 'route') {
+            const ids = state.items
+              .filter(item => (+item.round||0) === rid && !isItemCompletelyBlank(item))
+              .map(item => item.id)
+              .filter(id => id != null);
+            syncRouteOrderWithItems(rid, ids);
           }
           renderEverything();
           await saveAll();
