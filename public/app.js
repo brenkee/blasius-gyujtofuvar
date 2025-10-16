@@ -3726,8 +3726,11 @@
   function formatMetricSum(metric, value, context='group'){
     const precision = Number.isFinite(Number(metric.precision)) ? Number(metric.precision) : 0;
     const numericValue = Number.isFinite(value) ? Number(value) : 0;
+    const metricId = metric && metric.id != null ? String(metric.id) : '';
+    const treatAsWhole = metricId === 'weight' || metricId === 'volume';
+    const shouldRoundToInt = context === 'row' || treatAsWhole;
     let strVal;
-    if (context === 'row') {
+    if (shouldRoundToInt) {
       let intVal = Math.round(numericValue);
       if (Object.is(intVal, -0)) intVal = 0;
       strVal = String(intVal);
@@ -4433,8 +4436,16 @@
               ${Array.from(ROUND_MAP.values()).map(r => {
                 const sel = (+it.round===+r.id) ? 'selected' : '';
                 const optionColor = colorForRound(r.id);
-                const optionTextColor = idealTextColor(optionColor);
-                const style = `style="background:${esc(optionColor)};color:${esc(optionTextColor)};"`;
+                const styleParts = [
+                  'background-repeat:no-repeat',
+                  'background-position:8px 50%',
+                  'background-size:8px 8px',
+                  'padding-left:22px'
+                ];
+                if (optionColor) {
+                  styleParts.push(`background-image:radial-gradient(circle at center, ${esc(optionColor)} 0, ${esc(optionColor)} 55%, transparent 60%)`);
+                }
+                const style = `style="${styleParts.join(';')}"`;
                 return `<option value="${r.id}" ${sel} ${style}>${esc(r.label)}</option>`;
               }).join('')}
             </select>
