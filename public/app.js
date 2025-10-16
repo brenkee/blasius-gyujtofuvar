@@ -2501,10 +2501,13 @@
     const summary = route.summary || {};
     const distance = Number(summary.distance);
     const duration = Number(summary.duration);
+    const geometry = route.geometry;
+    const latlngs = geojsonToLatLngs(geometry);
     return {
       orderKeys,
       distance: Number.isFinite(distance) ? distance : null,
-      duration: Number.isFinite(duration) ? duration : null
+      duration: Number.isFinite(duration) ? duration : null,
+      latlngs: latlngs.length ? latlngs : []
     };
   }
 
@@ -2586,28 +2589,30 @@
       units: 'm'
     };
     const profile = encodeURIComponent(routingSettings().profile);
-    const data = await orsFetch(`/v2/directions/${profile}`, payload);
+    const data = await orsFetch(`/v2/directions/${profile}?format=geojson`, payload);
     const feature = Array.isArray(data?.features) ? data.features[0] : null;
-    if (!feature) return null;
-    const latlngs = geojsonToLatLngs(feature.geometry);
-    let distance = Number(feature?.properties?.summary?.distance);
-    let duration = Number(feature?.properties?.summary?.duration);
-    if (!Number.isFinite(distance) || !Number.isFinite(duration)) {
-      const segments = Array.isArray(feature?.properties?.segments) ? feature.properties.segments : [];
-      if (segments.length) {
-        const totals = segments.reduce((acc, seg) => {
-          const segDistance = Number(seg?.distance);
-          const segDuration = Number(seg?.duration);
-          if (Number.isFinite(segDistance)) acc.distance += segDistance;
-          if (Number.isFinite(segDuration)) acc.duration += segDuration;
-          return acc;
-        }, {distance: 0, duration: 0});
-        if (!Number.isFinite(distance) && Number.isFinite(totals.distance) && totals.distance >= 0) {
-          distance = totals.distance;
-        }
-        if (!Number.isFinite(duration) && Number.isFinite(totals.duration) && totals.duration >= 0) {
-          duration = totals.duration;
-        }
+    const route = feature || (Array.isArray(data?.routes) ? data.routes[0] : null);
+    if (!route) return null;
+    const geometry = feature ? feature.geometry : route.geometry;
+    const latlngs = geojsonToLatLngs(geometry);
+    const props = feature?.properties || route || {};
+    const summary = props.summary || data?.summary || {};
+    let distance = Number(summary?.distance);
+    let duration = Number(summary?.duration);
+    const segments = Array.isArray(props?.segments) ? props.segments : [];
+    if ((!Number.isFinite(distance) || !Number.isFinite(duration)) && segments.length) {
+      const totals = segments.reduce((acc, seg) => {
+        const segDistance = Number(seg?.distance);
+        const segDuration = Number(seg?.duration);
+        if (Number.isFinite(segDistance)) acc.distance += segDistance;
+        if (Number.isFinite(segDuration)) acc.duration += segDuration;
+        return acc;
+      }, {distance: 0, duration: 0});
+      if (!Number.isFinite(distance) && Number.isFinite(totals.distance) && totals.distance >= 0) {
+        distance = totals.distance;
+      }
+      if (!Number.isFinite(duration) && Number.isFinite(totals.duration) && totals.duration >= 0) {
+        duration = totals.duration;
       }
     }
     if (!Number.isFinite(distance)) {
@@ -2645,6 +2650,7 @@
     let orderKeys = null;
     let distance = null;
     let duration = null;
+    let latlngs = [];
 
     if (routingEnabled()) {
       try {
@@ -2653,6 +2659,9 @@
           orderKeys = opt.orderKeys.slice();
           distance = opt.distance;
           duration = opt.duration;
+          if (Array.isArray(opt.latlngs) && opt.latlngs.length) {
+            latlngs = opt.latlngs.slice();
+          }
         }
       } catch (err) {
         logRoutingError('ORS optimization', err);
@@ -2694,8 +2703,12 @@
       }
     });
 
-    let latlngs = [];
-    if (routingEnabled()) {
+    const needsDirections = routingEnabled() && (
+      !latlngs.length ||
+      !Number.isFinite(distance) ||
+      !Number.isFinite(duration)
+    );
+    if (needsDirections) {
       try {
         const dir = await orsDirections(origin, orderedJobs);
         if (dir) {
