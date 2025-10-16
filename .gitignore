@@ -8,3 +8,4 @@ data/*.db-shm
 data/*.db-wal
 config/base_url.local.json
 config/base_url.local.json
+error.log
