@@ -32,7 +32,8 @@
     conflictOverlay: null,
     markerOverlapCounts: new Map(),
     displayIndexById: new Map(),
-    viewMode: 'list'
+    viewMode: 'list',
+    isMobileViewport: false
   };
 
   const history = [];
@@ -47,6 +48,8 @@
   const appRootEl = document.querySelector('.app');
   const VIEW_MODE_STORAGE_KEY = 'app_view_mode_v1';
   const VIEW_MODES = Object.freeze({LIST:'list', MAP:'map'});
+  const MOBILE_VIEWPORT_MAX_WIDTH = 768;
+  const MOBILE_VIEWPORT_QUERY = '(max-width: 768px)';
   const QUICK_SEARCH_DEBOUNCE_MS = 250;
   const canUseLocalStorage = (()=>{
     try {
@@ -56,6 +59,7 @@
     }
   })();
   const viewSwitchButtons = new Map();
+  let mobileViewportMedia = null;
   let pendingMapResize = null;
   let mobileLayoutFrame = null;
   let mapRef = null;
@@ -117,6 +121,39 @@
       mobileLayoutFrame = null;
       updateMobileLayoutMetrics();
     });
+  }
+
+  function applyMobileViewportMatch(matches){
+    const next = !!matches;
+    if (state.isMobileViewport === next) return;
+    state.isMobileViewport = next;
+    renderAllGroupHeaderTotals();
+  }
+
+  function initMobileViewportTracking(){
+    if (typeof window === 'undefined') {
+      state.isMobileViewport = false;
+      return;
+    }
+    if (typeof window.matchMedia === 'function') {
+      try {
+        mobileViewportMedia = window.matchMedia(MOBILE_VIEWPORT_QUERY);
+        applyMobileViewportMatch(mobileViewportMedia.matches);
+        const handler = event => applyMobileViewportMatch(event.matches);
+        if (typeof mobileViewportMedia.addEventListener === 'function') {
+          mobileViewportMedia.addEventListener('change', handler);
+        } else if (typeof mobileViewportMedia.addListener === 'function') {
+          mobileViewportMedia.addListener(handler);
+        }
+        return;
+      } catch (err) {
+        mobileViewportMedia = null;
+      }
+    }
+    const fallback = typeof window.innerWidth === 'number'
+      ? window.innerWidth <= MOBILE_VIEWPORT_MAX_WIDTH
+      : false;
+    state.isMobileViewport = fallback;
   }
 
   function requestMapResize(){
@@ -202,7 +239,18 @@
     appRootEl.setAttribute('data-mobile-view', state.viewMode);
   }
   scheduleMobileLayoutUpdate();
-  window.addEventListener('resize', ()=>{ scheduleMobileLayoutUpdate(); });
+  window.addEventListener('resize', ()=>{
+    scheduleMobileLayoutUpdate();
+    if (!mobileViewportMedia) {
+      const next = typeof window.innerWidth === 'number'
+        ? window.innerWidth <= MOBILE_VIEWPORT_MAX_WIDTH
+        : false;
+      if (state.isMobileViewport !== next) {
+        state.isMobileViewport = next;
+        renderAllGroupHeaderTotals();
+      }
+    }
+  });
 
   const flashTimers = new WeakMap();
 
@@ -3757,7 +3805,15 @@
       parts.push(`${addressCount} Cím`);
     }
     if (!parts.length) return '';
-    const template = cfg('text.group.sum_template', 'Összesen: {parts}');
+    const baseTemplateRaw = cfg('text.group.sum_template', 'Összesen: {parts}');
+    const baseTemplate = (typeof baseTemplateRaw === 'string' && baseTemplateRaw.trim() !== '')
+      ? baseTemplateRaw
+      : 'Összesen: {parts}';
+    const mobileTemplateRaw = cfg('text.group.sum_mobile_template', '∑: {parts}');
+    const mobileTemplate = (typeof mobileTemplateRaw === 'string' && mobileTemplateRaw.trim() !== '')
+      ? mobileTemplateRaw
+      : '∑: {parts}';
+    const template = state.isMobileViewport ? mobileTemplate : baseTemplate;
     return format(template, {parts: parts.join(sep), round: roundLabel(rid)});
   }
 
@@ -3883,6 +3939,15 @@
     } else {
       span.style.display = 'none';
     }
+  }
+
+  function renderAllGroupHeaderTotals(){
+    document.querySelectorAll('[data-group-header]').forEach(el => {
+      const ridAttr = el instanceof HTMLElement ? el.getAttribute('data-group-header') : null;
+      if (!ridAttr) return;
+      const rid = Number.parseInt(ridAttr, 10);
+      renderGroupHeaderTotalsForRound(Number.isNaN(rid) ? 0 : rid);
+    });
   }
 
   function renderGroupRouteInfoForRound(rid){
@@ -5948,6 +6013,7 @@
     try{
       loadCollapsePrefs();
       await loadCfg();
+      initMobileViewportTracking();
       applyThemeVariables();
       applyPanelSizes();
       applyPanelSticky();
