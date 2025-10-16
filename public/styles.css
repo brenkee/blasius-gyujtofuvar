@@ -188,6 +188,9 @@ h1{font-size:18px;margin:0 0 6px}
 .group-title{font-weight:800;display:flex;align-items:center;gap:6px;flex-wrap:wrap;cursor:pointer}
 .group-title:focus{outline:2px solid rgba(37,99,235,0.6);outline-offset:2px}
 .group-title .__sum{display: flex;flex: auto;justify-content: flex-end;}
+.group-route-summary{display:none;padding:8px 12px;border-radius:8px;border-left:4px solid var(--route-color,rgba(37,99,235,0.6));background:rgba(37,99,235,0.08);color:#1f2937;font-size:13px;font-weight:600;line-height:1.35;flex-wrap:wrap;}
+.group-route-summary:not([hidden]){display:flex;align-items:center;gap:8px;justify-content:flex-start;}
+:root.dark .group-route-summary{background:rgba(96,165,250,0.18);color:#e5e7eb;border-left-color:var(--route-color,rgba(96,165,250,0.65));}
 .group-drag-indicator{display:none;font-size:14px;color:var(--muted);align-items:center;justify-content:center}
 .group-controls{display:flex;flex-wrap:nowrap;gap:12px;align-items:center;justify-content: space-around;}
 .group-tools{display:flex;gap:6px;flex-wrap:wrap;justify-content: space-around;}
