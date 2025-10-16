@@ -257,12 +257,16 @@ if ($action === 'cfg') {
     ],
     "rounds" => array_values($ROUND_MAP),
     "routing" => [
+      "enabled" => !empty($CFG['routing']['enabled']),
+      "provider" => $CFG['routing']['provider'] ?? 'openrouteservice',
+      "profile" => $CFG['routing']['profile'] ?? 'driving-car',
       "origin" => $CFG['routing']['origin'] ?? 'Maglód',
       "origin_coordinates" => [
         'lat' => isset($CFG['routing']['origin_coordinates']['lat']) ? (float)$CFG['routing']['origin_coordinates']['lat'] : null,
         'lon' => isset($CFG['routing']['origin_coordinates']['lon']) ? (float)$CFG['routing']['origin_coordinates']['lon'] : null,
       ],
       "max_waypoints" => (int)($CFG['routing']['max_waypoints'] ?? 10),
+      "return_to_origin" => !empty($CFG['routing']['return_to_origin']),
       "geocode_origin_on_start" => !empty($CFG['routing']['geocode_origin_on_start'])
     ],
     "text" => $CFG['text'] ?? [],
@@ -388,6 +392,63 @@ if ($action === 'save') {
   }
   backup_now($CFG, $DATA_FILE, $result['items'] ?? null, $result['round_meta'] ?? null);
   echo json_encode(['ok' => true, 'rev' => $result['rev'] ?? null]);
+  exit;
+}
+
+if ($action === 'route_optimize') {
+  $jsonHeader();
+  if (empty($PERMISSIONS['canSort'])) {
+    http_response_code(403);
+    echo json_encode(['ok' => false, 'error' => 'forbidden'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+  $actorId = require_actor_id();
+  $requestId = require_request_id();
+  $batchId = optional_batch_id();
+  $body = file_get_contents('php://input');
+  $data = json_decode($body, true);
+  $roundIdRaw = $data['round_id'] ?? null;
+  if (!is_numeric($roundIdRaw)) {
+    http_response_code(400);
+    echo json_encode(['ok' => false, 'error' => 'invalid_round'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+  $roundId = (int)$roundIdRaw;
+  [$items, $roundMeta] = data_store_read($DATA_FILE);
+  try {
+    [$updatedItems, $updatedMeta, $order, $routeInfo] = routing_apply_route($items, $roundMeta, $roundId, $CFG);
+  } catch (Throwable $e) {
+    routing_log_error('Útvonaltervezés sikertelen', ['round' => $roundId, 'error' => $e->getMessage()]);
+    http_response_code(503);
+    echo json_encode([
+      'ok' => false,
+      'error' => 'route_failed',
+      'message' => 'Útvonaltervezés sikertelen, próbáld újra később.'
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+  try {
+    $result = commit_dataset_update($updatedItems, $updatedMeta, $actorId, $requestId, $batchId, 'route_optimize', ['round_id' => $roundId]);
+  } catch (Throwable $e) {
+    routing_log_error('Útvonal mentése sikertelen', ['round' => $roundId, 'error' => $e->getMessage()]);
+    http_response_code(500);
+    echo json_encode(['ok' => false, 'error' => 'write_failed'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+  $orderPayload = [];
+  if (is_array($order)) {
+    foreach (array_values($order) as $idx => $id) {
+      $orderPayload[] = ['id' => (string)$id, 'position' => $idx + 1];
+    }
+  }
+  $routeInfoPayload = is_array($routeInfo) ? $routeInfo : (object)[];
+  echo json_encode([
+    'ok' => true,
+    'rev' => $result['rev'] ?? null,
+    'round_id' => $roundId,
+    'order' => $orderPayload,
+    'route_info' => $routeInfoPayload
+  ], JSON_UNESCAPED_UNICODE);
   exit;
 }
 

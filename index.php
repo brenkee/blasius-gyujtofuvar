@@ -25,6 +25,7 @@ $LOGOUT_TOKEN = csrf_get_token();
     'revision' => 'api.php?action=revision',
     'changes' => 'api.php?action=changes',
     'geocode' => 'api.php?action=geocode',
+    'routeOptimize' => 'api.php?action=route_optimize',
     'importCsv' => 'api.php?action=import_csv',
     'exportAll' => 'api.php?action=export',
     'deleteRound' => 'api.php?action=delete_round',
@@ -271,6 +272,12 @@ $LOGOUT_TOKEN = csrf_get_token();
     </div>
   </aside>
   <main id="map"></main>
+  <div id="routeStatusBar" class="route-status" hidden>
+    <span class="route-status__item" data-route-distance>Összes távolság: —</span>
+    <span class="route-status__separator" aria-hidden="true">·</span>
+    <span class="route-status__item" data-route-duration>Becsült menetidő: —</span>
+    <span class="route-status__cache" data-route-cache hidden title="Gyorsítótárazott útvonal" aria-hidden="true">⚡</span>
+  </div>
 </div>
 </body>
 </html>

@@ -240,13 +240,23 @@
         }
     },
     "routing": {
+        "enabled": true,
+        "provider": "openrouteservice",
+        "api_key": "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImJkOGQwMjc0YjI2ZjQzN2VhNzE3NGEzZTE1ZjJlMjZlIiwiaCI6Im11cm11cjY0In0=",
+        "base_url": "https://api.openrouteservice.org",
+        "profile": "driving-car",
         "origin": "Maglód",
         "origin_coordinates": {
             "lat": 47.45,
             "lon": 19.35
         },
         "max_waypoints": 10,
-        "geocode_origin_on_start": true
+        "return_to_origin": true,
+        "geocode_origin_on_start": true,
+        "optimization_max_jobs": 50,
+        "matrix_max_locations": 40,
+        "matrix_chunk_size": 30,
+        "request_pause_ms": 250
     },
     "rounds": [
         {
@@ -358,6 +368,11 @@
             "pin_counter_label": "Címek:",
             "pin_counter_title": "Aktív pin jelölők száma"
         },
+        "route": {
+            "status_distance_label": "Összes távolság",
+            "status_duration_label": "Becsült menetidő",
+            "status_cached_hint": "Gyorsítótárazott útvonal"
+        },
         "round": {
             "planned_date_label": "Megjegyzés",
             "planned_date_hint": "Add meg a kör tervezett dátumát",
@@ -366,6 +381,7 @@
             "sort_mode_label": "Rendezés",
             "sort_mode_default": "Alapértelmezett",
             "sort_mode_custom": "Egyéni",
+            "sort_mode_route": "Útvonal",
             "sort_mode_custom_hint": "Fogd és vidd a címeket a sorrend módosításához",
             "custom_sort_handle_hint": "Fogd meg és húzd a cím átrendezéséhez"
         },
@@ -412,6 +428,7 @@
             "geocode_missing": "A cím nincs geokódolva. Írd át más formátumban, majd mentsd újra.",
             "undo_unavailable": "Nincs visszavonható művelet.",
             "import_success": "Import kész.",
+            "route_failed": "Útvonaltervezés sikertelen, próbáld újra később.",
             "import_error": "Az importálás nem sikerült.",
             "import_in_progress": "Import folyamatban…",
             "import_mode_prompt": "Felülírjuk a jelenlegi adatokat az importált CSV-vel, vagy hozzáadjuk az új sorokat?",
