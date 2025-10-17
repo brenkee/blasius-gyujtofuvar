@@ -130,6 +130,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
         }
+    } elseif ($mode === 'wipe_data') {
+        $wipeErr = null;
+        $wipeOk = admin_wipe_application_data($CURRENT_USER, $wipeErr);
+        if ($wipeOk) {
+            $success = 'Az adatbázis tartalma sikeresen törölve.';
+        } else {
+            if ($wipeErr === 'db_error') {
+                $errors[] = 'Az adatbázis ürítése nem sikerült. Kérjük, próbáld újra később.';
+            } else {
+                $errors[] = 'Az adatbázis ürítése közben hiba történt.';
+            }
+        }
     }
 }
 
@@ -166,6 +178,10 @@ $csrfToken = csrf_get_token();
     .notice-error{background:rgba(220,38,38,0.12);border:1px solid rgba(220,38,38,0.35);color:#7f1d1d}
     .create-card{border:1px dashed var(--border);padding:18px;border-radius:12px;background:var(--panel);display:grid;gap:14px}
     .create-card h2{margin:0;font-size:18px}
+    .danger-card{border:1px solid rgba(220,38,38,0.45);background:rgba(220,38,38,0.08);padding:20px;border-radius:12px;display:grid;gap:12px}
+    .danger-card h2{margin:0;font-size:18px;color:#991b1b}
+    .danger-card p{margin:0;color:#7f1d1d;font-size:14px}
+    .danger-card form{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
     .back-link{color:var(--accent);text-decoration:none;font-weight:600}
     .back-link:hover{text-decoration:underline}
   </style>
@@ -222,6 +238,16 @@ $csrfToken = csrf_get_token();
           </label>
           <button class="btn-primary" type="submit">Felhasználó létrehozása</button>
         </div>
+      </form>
+    </section>
+
+    <section class="danger-card">
+      <h2>Adatbázis ürítése</h2>
+      <p>A művelet törli az összes címet, kör metaadatot és audit naplóbejegyzést. A felhasználói fiókok megmaradnak.</p>
+      <form method="post" onsubmit="return confirm('Biztosan üríted az adatbázist? A művelet nem vonható vissza.');">
+        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrfToken, ENT_QUOTES) ?>" />
+        <input type="hidden" name="mode" value="wipe_data" />
+        <button class="btn-danger" type="submit">Adatbázis ürítése</button>
       </form>
     </section>
 

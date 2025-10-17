@@ -1914,6 +1914,83 @@ function data_store_write($file, $items, $roundMeta, $alreadyNormalized = false)
   return $result;
 }
 
+function admin_wipe_application_data($user, &$error = null) {
+  $error = null;
+  try {
+    return state_lock(function () use ($user, &$error) {
+      global $DATA_FILE;
+
+      $pdo = auth_db();
+      $tablesToClear = ['items', 'round_meta', 'audit_log'];
+      $dbStart = microtime(true);
+
+      try {
+        $pdo->beginTransaction();
+        foreach ($tablesToClear as $table) {
+          $pdo->exec('DELETE FROM ' . $table);
+        }
+        $pdo->commit();
+        app_perf_track_db($dbStart);
+      } catch (Throwable $dbError) {
+        if ($pdo->inTransaction()) {
+          $pdo->rollBack();
+        }
+        throw $dbError;
+      }
+
+      data_store_cache_set($DATA_FILE, [], []);
+
+      $currentRev = read_current_revision();
+      $newRev = $currentRev + 1;
+      write_revision_locked($newRev);
+
+      $changeMeta = [];
+      $userId = isset($user['id']) ? (int)$user['id'] : 0;
+      if ($userId > 0) {
+        $changeMeta['user_id'] = $userId;
+      }
+      $username = trim((string)($user['username'] ?? ''));
+      if ($username !== '') {
+        $changeMeta['username'] = $username;
+      }
+      $changeMeta['source'] = 'admin_panel';
+
+      $changeLogEntry = [
+        'rev' => $newRev,
+        'entity' => 'dataset',
+        'entity_id' => null,
+        'action' => 'reset',
+        'actor_id' => 'admin-panel',
+        'request_id' => 'admin-wipe',
+      ];
+      if (!empty($changeMeta)) {
+        $changeLogEntry['meta'] = $changeMeta;
+      }
+      append_change_log_locked($changeLogEntry);
+
+      $auditMeta = [
+        'source' => 'admin_panel',
+        'tables' => $tablesToClear,
+        'revision' => $newRev,
+      ];
+      audit_log_record(
+        $user,
+        'dataset.reset',
+        'Az adatbázis tartalma kiürítésre került az admin felületen.',
+        $auditMeta,
+        'dataset',
+        null
+      );
+
+      return true;
+    });
+  } catch (Throwable $e) {
+    error_log('Adatbázis ürítés sikertelen: ' . $e->getMessage());
+    $error = 'db_error';
+    return false;
+  }
+}
+
 function state_lock(callable $callback) {
   global $STATE_LOCK_FILE;
   $fh = fopen($STATE_LOCK_FILE, 'c+');
@@ -2231,6 +2308,7 @@ function audit_log_action_labels() {
     'dataset.import' => 'Import',
     'dataset.save' => 'Mentés',
     'dataset.delete_round' => 'Kör törlése',
+    'dataset.reset' => 'Adatbázis ürítése',
   ];
 }
 
