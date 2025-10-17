@@ -493,7 +493,7 @@ if ($action === 'import_csv') {
   if (!$fh) {
     $sendJsonError('A CSV fájl nem nyitható meg.');
   }
-  $header = fgetcsv($fh, 0, $delimiter);
+  $header = fgetcsv($fh, 0, $delimiter, '"', '\\');
   if ($header === false || $header === null) {
     fclose($fh);
     $sendJsonError('A CSV fejléce nem olvasható.');
@@ -619,7 +619,7 @@ if ($action === 'import_csv') {
   $rowNumber = 1;
   $items = [];
   $routeMetaUpdates = [];
-  while (($row = fgetcsv($fh, 0, $delimiter)) !== false) {
+  while (($row = fgetcsv($fh, 0, $delimiter, '"', '\\')) !== false) {
     $rowNumber++;
     if (!is_array($row)) { continue; }
     $allEmpty = true;
