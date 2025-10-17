@@ -38,16 +38,20 @@ body.import-busy .app{filter:blur(4px);pointer-events:none;user-select:none}
 .init-error-banner{background:#fee2e2;color:#7f1d1d;border:1px solid #fecaca;border-radius:12px;padding:14px 18px;margin:12px auto;max-width:920px;box-shadow:0 8px 20px rgba(220,38,38,0.18)}
 .init-error-banner strong{display:block;font-size:16px;margin-bottom:6px}
 .init-error-banner code{background:rgba(127,29,29,0.12);color:inherit;padding:2px 6px;border-radius:6px;font-size:14px}
-.app{display:grid;grid-template-columns:clamp(var(--panel-min),var(--panel-pref),var(--panel-max)) 1fr;grid-template-rows:100vh;max-width:100vw}
+.app{display:grid;grid-template-columns:clamp(var(--panel-min),var(--panel-pref),var(--panel-max)) 1fr;grid-template-rows:minmax(0,1fr);min-height:100vh;max-width:100vw}
+@media (min-width:1101px){
+  .app{height:100vh}
+  .panel{height:100vh;overflow-y:auto}
+}
 @media (max-width:1100px){
-  .app{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr);height:100dvh;overflow:hidden}
+  .app{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}
   .panel{grid-row:1/2}
   .panel-top{padding:14px 14px 10px}
   .panel-content{flex:1 1 auto}
   #map{grid-row:2/3;min-height:240px}
   .app[data-mobile-view="list"] #map{display:none}
-  .app[data-mobile-view="list"] .panel{grid-row:1/3;height:100dvh}
-.app[data-mobile-view="map"] .panel{overflow:visible;height:auto}
+  .app[data-mobile-view="list"] .panel{grid-row:1/3}
+  .app[data-mobile-view="map"] .panel{overflow:visible;height:auto}
   .app[data-mobile-view="map"] .panel-content{display:none}
 }
 
@@ -97,8 +101,6 @@ body.import-busy .app{filter:blur(4px);pointer-events:none;user-select:none}
   .app[data-mobile-view="map"] .panel{position:relative;z-index:60}
   .app[data-mobile-view="map"] .panel-top{position:sticky;top:0;z-index:80}
   .app[data-mobile-view="list"] .panel-content,
-  .app[data-mobile-view="list"] .groups,
-  .app[data-mobile-view="list"] .group,
   .app[data-mobile-view="list"] .row{max-width:100%;width:100%}
   .group-controls{flex-wrap:wrap;gap:10px}
   .group-planned-date,
@@ -112,6 +114,39 @@ body.import-busy .app{filter:blur(4px);pointer-events:none;user-select:none}
   .grid{grid-template-columns:1fr}
   .iconbtn {padding: 4px 5px !important;}
   .row .drag-cell {    width: 15px !important;    display: none;}
+}
+
+@media (max-width:768px){
+  .app[data-mobile-view="list"] .panel-content{overflow:hidden}
+  .app[data-mobile-view="list"] .groups{
+    display:flex;
+    flex-direction:row;
+    gap:16px;
+    padding:0 16px 16px;
+    overflow-x:auto;
+    overflow-y:hidden;
+    align-items:flex-start;
+    scroll-snap-type:x mandatory;
+    scroll-padding:0 16px;
+    scroll-behavior:smooth;
+    -webkit-overflow-scrolling:touch;
+  }
+  .app[data-mobile-view="list"] .group{
+    flex:0 0 calc(100% - 32px);
+    max-width:calc(100% - 32px);
+    min-width:calc(100% - 32px);
+    scroll-snap-align:start;
+    scroll-snap-stop:always;
+    height:max(320px, calc(100dvh - var(--mobile-header-height) - 32px));
+    display:flex;
+    flex-direction:column;
+  }
+  .app[data-mobile-view="list"] .group-header{flex:0 0 auto}
+  .app[data-mobile-view="list"] .group-body{
+    flex:1 1 auto;
+    min-height:0;
+    overflow-y:auto;
+  }
 }
 
 @media (max-width:1230px){
