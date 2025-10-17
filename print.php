@@ -81,7 +81,7 @@ $printListTitle = $CFG['print']['list_title'] ?? 'Szállítási lista';
 <html lang="hu">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title><?= htmlspecialchars($CFG['app']['title'] . $printTitleSuffix) ?></title>
   <style>
     body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#111;margin:20px}
