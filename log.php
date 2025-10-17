@@ -26,7 +26,7 @@ if ($download) {
     header('Content-Disposition: attachment; filename="' . $filename . '"');
     $out = fopen('php://output', 'w');
     fputs($out, "\xEF\xBB\xBF");
-    fputcsv($out, ['Dátum', 'Felhasználó', 'Szerep', 'Művelet', 'Üzenet'], ';');
+    fputcsv($out, ['Dátum', 'Felhasználó', 'Szerep', 'Művelet', 'Üzenet'], ';', '"', '\\');
     $tzName = @date_default_timezone_get();
     if (!is_string($tzName) || $tzName === '') {
         $tzName = 'UTC';
@@ -49,7 +49,7 @@ if ($download) {
             $actionLabel,
             (string)($entry['message'] ?? ''),
         ];
-        fputcsv($out, $row, ';');
+        fputcsv($out, $row, ';', '"', '\\');
     }
     fclose($out);
     exit;

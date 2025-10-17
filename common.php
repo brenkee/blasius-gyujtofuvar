@@ -815,10 +815,10 @@ function generate_export_csv($cfg, $dataFile, $roundFilter = null, &$error = nul
         $row[] = is_scalar($value) ? (string)$value : json_encode($value, JSON_UNESCAPED_UNICODE);
       }
     }
-    fputcsv($fh, $row, $delimiter);
+    fputcsv($fh, $row, $delimiter, '"', '\\');
   };
 
-  fputcsv($fh, $columns, $delimiter);
+  fputcsv($fh, $columns, $delimiter, '"', '\\');
   foreach ($items as $it) {
     if (!is_array($it)) continue;
     if ($roundFilter !== null && (int)($it['round'] ?? 0) !== $roundFilter) {
