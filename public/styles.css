@@ -121,6 +121,7 @@ body.import-busy .app{filter:blur(4px);pointer-events:none;user-select:none}
     padding:0 16px 16px;
     overflow-x:auto;
     overflow-y:hidden;
+    align-items:flex-start;
     scroll-snap-type:x mandatory;
     scroll-padding:0 16px;
     scroll-behavior:smooth;
