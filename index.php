@@ -44,6 +44,7 @@ $LOGOUT_TOKEN = csrf_get_token();
     'endpoints' => $bootstrapEndpoints,
     'permissions' => $PERMISSIONS,
     'features' => $FEATURES,
+    'version' => APP_VERSION,
   ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
   window.APP_BOOTSTRAP.endpoints.printRound = function(rid){
     const base = <?= json_encode($printRoundBase, JSON_UNESCAPED_SLASHES) ?>;
@@ -268,6 +269,7 @@ $LOGOUT_TOKEN = csrf_get_token();
       <div id="newAddress" class="new-address-container"></div>
       <div id="groups" class="groups"></div>
       <img id="devlogo" src="pic/devlogo.webp">
+      <div class="app-version" aria-label="Alkalmazás verziója"><?= htmlspecialchars(APP_VERSION) ?></div>
     </div>
   </aside>
   <main id="map"></main>

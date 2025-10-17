@@ -131,6 +131,10 @@ if (!defined('APP_CSRF_COOKIE')) {
   define('APP_CSRF_COOKIE', 'GF-CSRF');
 }
 
+if (!defined('APP_VERSION')) {
+  define('APP_VERSION', 'v1.0.1');
+}
+
 $CONFIG_FILE = __DIR__ . '/config/config.json';
 $CFG_DEFAULT = [
   "base_url" => "/",
