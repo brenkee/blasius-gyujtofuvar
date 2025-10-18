@@ -9,6 +9,7 @@ if (!auth_user_can($CURRENT_USER, 'view_logs')) {
 
 $actionLabels = audit_log_action_labels();
 $filters = [
+    'query' => trim((string)($_GET['query'] ?? '')),
     'user' => trim((string)($_GET['user'] ?? '')),
     'action' => trim((string)($_GET['action'] ?? '')),
     'from' => trim((string)($_GET['from'] ?? '')),
@@ -93,6 +94,7 @@ function log_build_query(array $params, array $overrides = []): string {
 }
 
 $filterQuery = [
+    'query' => $filters['query'],
     'user' => $filters['user'],
     'action' => $filters['action'],
     'from' => $filters['from'],
@@ -118,6 +120,11 @@ $downloadQuery = log_build_query($filterQuery, ['download' => 'csv']);
             <a class="log-back" href="<?= htmlspecialchars(app_url_path('index.php'), ENT_QUOTES) ?>">&larr; Vissza az alkalmazáshoz</a>
         </div>
         <form class="log-filters" method="get" action="">
+            <div class="log-filter-group">
+                <label>Keresés
+                    <input type="text" name="query" value="<?= htmlspecialchars($filters['query'], ENT_QUOTES) ?>" placeholder="Kulcsszó vagy részlet" />
+                </label>
+            </div>
             <div class="log-filter-group">
                 <label>Felhasználó
                     <input type="text" name="user" value="<?= htmlspecialchars($filters['user'], ENT_QUOTES) ?>" placeholder="pl. admin" />
