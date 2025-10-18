@@ -2728,6 +2728,19 @@ function audit_log_query(array $filters, $page = 1, $perPage = 25, $forDownload 
   $where = [];
   $params = [];
   $actionLabels = audit_log_action_labels();
+  $queryFilter = isset($filters['query']) ? trim((string)$filters['query']) : '';
+  if ($queryFilter !== '') {
+    $lowerQuery = function_exists('mb_strtolower') ? mb_strtolower($queryFilter, 'UTF-8') : strtolower($queryFilter);
+    $where[] = '('
+      . 'LOWER(COALESCE(message, "")) LIKE :query'
+      . ' OR LOWER(COALESCE(meta, "")) LIKE :query'
+      . ' OR LOWER(COALESCE(entity, "")) LIKE :query'
+      . ' OR LOWER(COALESCE(action, "")) LIKE :query'
+      . ' OR LOWER(COALESCE(actor_name, "")) LIKE :query'
+      . ' OR (entity_id IS NOT NULL AND CAST(entity_id AS TEXT) LIKE :query)'
+      . ')';
+    $params[':query'] = '%' . $lowerQuery . '%';
+  }
   $userFilter = isset($filters['user']) ? trim((string)$filters['user']) : '';
   if ($userFilter !== '') {
     $where[] = 'LOWER(actor_name) LIKE :user';
@@ -2762,7 +2775,7 @@ function audit_log_query(array $filters, $page = 1, $perPage = 25, $forDownload 
     $countSql = 'SELECT COUNT(*) FROM audit_log' . $whereSql;
     $countStmt = $pdo->prepare($countSql);
     foreach ($params as $key => $value) {
-      if ($key === ':user') {
+      if ($key === ':user' || $key === ':query') {
         $countStmt->bindValue($key, $value, PDO::PARAM_STR);
       } else {
         $countStmt->bindValue($key, $value);
@@ -2787,7 +2800,7 @@ function audit_log_query(array $filters, $page = 1, $perPage = 25, $forDownload 
          . ' FROM audit_log' . $whereSql . ' ORDER BY created_at DESC LIMIT :limit OFFSET :offset';
     $stmt = $pdo->prepare($sql);
     foreach ($params as $key => $value) {
-      if ($key === ':user') {
+      if ($key === ':user' || $key === ':query') {
         $stmt->bindValue($key, $value, PDO::PARAM_STR);
       } else {
         $stmt->bindValue($key, $value);
