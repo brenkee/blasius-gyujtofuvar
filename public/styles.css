@@ -114,6 +114,8 @@ body.import-busy .app{filter:blur(4px);pointer-events:none;user-select:none}
   .grid{grid-template-columns:1fr}
   .iconbtn {padding: 4px 5px !important;}
   .row .drag-cell {    width: 15px !important;    display: none;}
+  .change-notice{ border-radius: 19px !important;    width: 96%;    padding: 21px 26px !important;    font-size: 20px;    text-align: center;}
+  .change-notice__button{    font-size: 20px;    border-radius: 10px !important;    padding: 26px 14px !important;}
 }
 
 @media (max-width:768px){
