@@ -37,9 +37,15 @@ $defaultLoginTexts = [
     'login_error_missing_fields' => 'Kérjük, töltsd ki a felhasználónevet és a jelszót is.',
     'login_error_invalid_credentials' => 'Hibás felhasználónév vagy jelszó.',
 ];
-$customLoginTexts = [];
+$loginConfig = [];
 if (isset($CFG['auth']['login']) && is_array($CFG['auth']['login'])) {
-    $customLoginTexts = $CFG['auth']['login'];
+    $loginConfig = $CFG['auth']['login'];
+}
+$customLoginTexts = [];
+foreach ($loginConfig as $key => $value) {
+    if (is_string($value)) {
+        $customLoginTexts[$key] = $value;
+    }
 }
 $loginTexts = array_merge($defaultLoginTexts, $customLoginTexts);
 $loginText = static function (string $key) use ($loginTexts, $defaultLoginTexts): string {
@@ -48,6 +54,53 @@ $loginText = static function (string $key) use ($loginTexts, $defaultLoginTexts)
     }
     return $defaultLoginTexts[$key] ?? '';
 };
+$resolveImageConfig = static function ($value, string $defaultAlt = '') {
+    if (is_string($value)) {
+        $value = trim($value);
+        if ($value === '') {
+            return null;
+        }
+        $value = ['src' => $value];
+    }
+    if (!is_array($value)) {
+        return null;
+    }
+    $rawSrc = trim((string)($value['src'] ?? ''));
+    if ($rawSrc === '') {
+        return null;
+    }
+    $formatCssLength = static function ($input) {
+        if ($input === null || $input === '') {
+            return null;
+        }
+        return is_numeric($input) ? ((string)$input . 'px') : (string)$input;
+    };
+    $attrs = '';
+    foreach (['width', 'height'] as $dimension) {
+        $dimVal = $value[$dimension] ?? null;
+        if ($dimVal !== null && $dimVal !== '') {
+            $attrs .= ' ' . $dimension . '="' . htmlspecialchars((string)$dimVal, ENT_QUOTES) . '"';
+        }
+    }
+    $styleParts = [];
+    foreach ([
+        'max_width' => 'max-width',
+        'max_height' => 'max-height',
+    ] as $configKey => $cssProperty) {
+        $cssValue = $formatCssLength($value[$configKey] ?? null);
+        if ($cssValue !== null && $cssValue !== '') {
+            $styleParts[] = $cssProperty . ':' . $cssValue;
+        }
+    }
+    $styleAttr = $styleParts ? ' style="' . htmlspecialchars(implode(';', $styleParts), ENT_QUOTES) . '"' : '';
+    return [
+        'src' => htmlspecialchars(base_url($rawSrc), ENT_QUOTES),
+        'alt' => htmlspecialchars((string)($value['alt'] ?? $defaultAlt), ENT_QUOTES),
+        'attrs' => $attrs,
+        'style' => $styleAttr,
+    ];
+};
+$loginLogo = $resolveImageConfig($loginConfig['logo'] ?? ($CFG['app']['logo'] ?? null), $CFG['app']['title'] ?? $loginTexts['title']);
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_require_token_from_request('html');
     $mode = $_POST['mode'] ?? 'login';
@@ -121,12 +174,19 @@ $showResetForm = ($resetMessage !== null) || ($resetError !== null) || (($_POST[
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title><?= htmlspecialchars($loginText('page_title')) ?> – <?= htmlspecialchars($CFG['app']['title']) ?></title>
-  <link rel="icon" type="image/png" href="<?= htmlspecialchars(base_url('pic/favicon.png'), ENT_QUOTES) ?>" />
+  <link rel="icon" type="image/png" sizes="16x16" href="<?= htmlspecialchars(base_url('pic/favicon.png'), ENT_QUOTES) ?>" />
+  <link rel="icon" type="image/png" sizes="32x32" href="<?= htmlspecialchars(base_url('pic/favicon.png'), ENT_QUOTES) ?>" />
+  <link rel="icon" type="image/png" sizes="192x192" href="<?= htmlspecialchars(base_url('pic/favicon.png'), ENT_QUOTES) ?>" />
+  <link rel="apple-touch-icon" sizes="180x180" href="<?= htmlspecialchars(base_url('pic/favicon.png'), ENT_QUOTES) ?>" />
+  <link rel="shortcut icon" href="<?= htmlspecialchars(base_url('pic/favicon.png'), ENT_QUOTES) ?>" />
   <link rel="stylesheet" href="<?= htmlspecialchars(base_url('public/styles.css'), ENT_QUOTES) ?>" />
 </head>
 <body class="auth-body">
   <main class="auth-page">
     <section class="auth-card">
+      <?php if ($loginLogo): ?>
+        <img src="<?= $loginLogo['src'] ?>" alt="<?= $loginLogo['alt'] ?>" class="auth-logo"<?= $loginLogo['attrs'] ?><?= $loginLogo['style'] ?>>
+      <?php endif; ?>
       <h1><?= htmlspecialchars($loginText('title')) ?></h1>
       <p class="auth-subtitle"><?= htmlspecialchars($loginText('subtitle')) ?></p>
       <?php if ($error): ?>

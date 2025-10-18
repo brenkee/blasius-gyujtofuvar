@@ -1,6 +1,14 @@
 {
     "app": {
         "title": "BLASIUS - Gyűjtőfuvar",
+        "logo": {
+            "src": "pic/devlogo.webp",
+            "alt": "BLASIUS",
+            "height": 48
+        },
+        "panel_title": {
+            "image": null
+        },
         "auto_sort_by_round": true,
         "round_zero_at_bottom": false,
         "default_collapsed": false
@@ -83,7 +91,18 @@
                 22.897
             ]
         ],
-        "max_bounds_pad": 0.6
+        "max_bounds_pad": 0.6,
+        "max_zoom_bounds": [
+            [
+                45.737,
+                16.113
+            ],
+            [
+                48.585,
+                22.897
+            ]
+        ],
+        "max_zoom_padding": 0
     },
     "geocode": {
         "countrycodes": "hu",
@@ -119,7 +138,12 @@
             "reset_error_update": "Az új jelszó beállítása nem sikerült.",
             "reset_error_mail": "Az email küldése nem sikerült. Kérjük, vedd fel a kapcsolatot az adminisztrátorral.",
             "login_error_missing_fields": "Kérjük, töltsd ki a felhasználónevet és a jelszót is.",
-            "login_error_invalid_credentials": "Hibás felhasználónév vagy jelszó."
+            "login_error_invalid_credentials": "Hibás felhasználónév vagy jelszó.",
+            "logo": {
+                "src": "pic/devlogo.webp",
+                "alt": "BLASIUS",
+                "height": 48
+            }
         }
     },
     "ui": {
