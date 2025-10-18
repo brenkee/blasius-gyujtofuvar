@@ -253,7 +253,9 @@ if ($action === 'cfg') {
         "attribution" => $CFG['map']['tiles']['attribution']
       ],
       "fit_bounds" => $CFG['map']['fit_bounds'] ?? null,
-      "max_bounds_pad" => isset($CFG['map']['max_bounds_pad']) ? (float)$CFG['map']['max_bounds_pad'] : 0.6
+      "max_bounds_pad" => isset($CFG['map']['max_bounds_pad']) ? (float)$CFG['map']['max_bounds_pad'] : 0.6,
+      "max_zoom_bounds" => $CFG['map']['max_zoom_bounds'] ?? null,
+      "max_zoom_padding" => isset($CFG['map']['max_zoom_padding']) ? (float)$CFG['map']['max_zoom_padding'] : null,
     ],
     "rounds" => array_values($ROUND_MAP),
     "routing" => [

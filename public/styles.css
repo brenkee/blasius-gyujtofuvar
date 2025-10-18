@@ -16,6 +16,7 @@ body.import-busy .app{filter:blur(4px);pointer-events:none;user-select:none}
 .auth-page{width:100%;max-width:480px;padding:24px}
 .auth-card{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:32px 28px;box-shadow:0 20px 50px rgba(15,23,42,0.18);display:grid;gap:18px}
 .auth-card h1{margin:0;font-size:24px;text-align:center;color:var(--text)}
+.auth-logo{display:block;margin:0 auto 12px;width:auto;max-height:72px}
 .auth-subtitle{margin:0;text-align:center;color:var(--muted);font-size:15px}
 .auth-form{display:grid;gap:16px}
 .auth-form label{display:grid;gap:6px;font-size:14px;color:var(--muted)}
@@ -164,7 +165,7 @@ h1{font-size:18px;margin:0 0 6px}
 .panel-top-header{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
 .panel-brand{display:flex;align-items:center;gap:12px;min-width:0;flex:1 1 auto}
 .panel-title{margin:0;font-size:20px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.panel-brand-logo{max-height:48px;width:auto;display:block}
+.panel-brand-logo,.panel-title-image{max-height:48px;width:auto;display:block}
 .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0;margin-left:auto;justify-content:flex-end}
 .toolbar button{height:40px !important}
 .toolbar-pin-counter{font-weight:600;color:var(--muted);display:inline-flex;align-items:center;gap:6px;white-space:nowrap}

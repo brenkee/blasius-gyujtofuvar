@@ -132,7 +132,7 @@ if (!defined('APP_CSRF_COOKIE')) {
 }
 
 if (!defined('APP_VERSION')) {
-  define('APP_VERSION', 'v1.0.1');
+  define('APP_VERSION', 'v1.0.2');
 }
 
 $CONFIG_FILE = __DIR__ . '/config/config.json';
@@ -141,6 +141,9 @@ $CFG_DEFAULT = [
   "app" => [
     "title" => "Gyűjtőfuvar – címkezelő",
     "logo" => null,
+    "panel_title" => [
+      "image" => null,
+    ],
     "auto_sort_by_round" => true,
     "round_zero_at_bottom" => true,
     "default_collapsed" => false
@@ -204,7 +207,9 @@ $CFG_DEFAULT = [
       "attribution" => "&copy; OSM közreműködők"
     ],
     "fit_bounds" => [[45.737,16.113],[48.585,22.897]],
-    "max_bounds_pad" => 0.6
+    "max_bounds_pad" => 0.6,
+    "max_zoom_bounds" => [[45.737,16.113],[48.585,22.897]],
+    "max_zoom_padding" => 0.0
   ],
   "geocode" => [
     "countrycodes" => "hu",

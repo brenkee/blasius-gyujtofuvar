@@ -1655,8 +1655,8 @@
   (function initTheme(){
     const root = document.documentElement;
     const saved = localStorage.getItem('fuvar_theme');
-    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-    root.classList.toggle('dark', saved ? (saved==='dark') : prefersDark);
+    const useDark = saved === 'dark';
+    root.classList.toggle('dark', !!useDark);
     applyQuickSearchClearStyles();
     if (themeToggle) {
       themeToggle.addEventListener('click', ()=>{
@@ -6022,6 +6022,7 @@
       // tile layer
       L.tileLayer(state.cfg.map.tiles.url,{maxZoom:19, attribution:state.cfg.map.tiles.attribution}).addTo(map);
       let resolvedMaxBounds = null;
+      let resolvedMinZoomBounds = null;
       if (state.cfg.map.fit_bounds) {
         const b = L.latLngBounds(state.cfg.map.fit_bounds);
         map.fitBounds(b.pad(0.15));
@@ -6035,6 +6036,34 @@
         resolvedMaxBounds = resolvedMaxBounds
           ? L.latLngBounds(resolvedMaxBounds).extend(paddedDefault)
           : paddedDefault;
+      }
+      const maxZoomBoundsCfg = state.cfg.map.max_zoom_bounds;
+      if (Array.isArray(maxZoomBoundsCfg) && maxZoomBoundsCfg.length === 2) {
+        try {
+          resolvedMinZoomBounds = L.latLngBounds(maxZoomBoundsCfg);
+        } catch (err) {
+          resolvedMinZoomBounds = null;
+        }
+      }
+      if (!resolvedMinZoomBounds && state.cfg.map.fit_bounds) {
+        resolvedMinZoomBounds = L.latLngBounds(state.cfg.map.fit_bounds);
+      }
+      if (resolvedMinZoomBounds && typeof resolvedMinZoomBounds.isValid === 'function' && !resolvedMinZoomBounds.isValid()) {
+        resolvedMinZoomBounds = null;
+      }
+      if (resolvedMinZoomBounds) {
+        const zoomPadCfg = Number(state.cfg.map.max_zoom_padding);
+        const zoomPad = Number.isFinite(zoomPadCfg) ? zoomPadCfg : 0;
+        if (zoomPad !== 0) {
+          resolvedMinZoomBounds = L.latLngBounds(resolvedMinZoomBounds).pad(zoomPad);
+        }
+        const minZoomLevel = map.getBoundsZoom(resolvedMinZoomBounds, true);
+        if (Number.isFinite(minZoomLevel)) {
+          map.setMinZoom(minZoomLevel);
+        }
+        resolvedMaxBounds = resolvedMaxBounds
+          ? L.latLngBounds(resolvedMaxBounds).extend(resolvedMinZoomBounds)
+          : L.latLngBounds(resolvedMinZoomBounds);
       }
       if (resolvedMaxBounds) {
         map.setMaxBounds(resolvedMaxBounds);

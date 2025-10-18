@@ -4,6 +4,55 @@ $CURRENT_USER = auth_require_login();
 $PERMISSIONS = auth_build_permissions($CURRENT_USER);
 $FEATURES = app_features_for_user($CFG['features'] ?? [], $PERMISSIONS);
 $LOGOUT_TOKEN = csrf_get_token();
+$appTitle = $CFG['app']['title'] ?? '';
+$resolveImageConfig = static function ($value, string $defaultAlt = '') {
+    if (is_string($value)) {
+        $value = trim($value);
+        if ($value === '') {
+            return null;
+        }
+        $value = ['src' => $value];
+    }
+    if (!is_array($value)) {
+        return null;
+    }
+    $rawSrc = trim((string)($value['src'] ?? ''));
+    if ($rawSrc === '') {
+        return null;
+    }
+    $formatCssLength = static function ($input) {
+        if ($input === null || $input === '') {
+            return null;
+        }
+        return is_numeric($input) ? ((string)$input . 'px') : (string)$input;
+    };
+    $attrs = '';
+    foreach (['width', 'height'] as $dimension) {
+        $dimVal = $value[$dimension] ?? null;
+        if ($dimVal !== null && $dimVal !== '') {
+            $attrs .= ' ' . $dimension . '="' . htmlspecialchars((string)$dimVal, ENT_QUOTES) . '"';
+        }
+    }
+    $styleParts = [];
+    foreach ([
+        'max_width' => 'max-width',
+        'max_height' => 'max-height',
+    ] as $configKey => $cssProperty) {
+        $cssValue = $formatCssLength($value[$configKey] ?? null);
+        if ($cssValue !== null && $cssValue !== '') {
+            $styleParts[] = $cssProperty . ':' . $cssValue;
+        }
+    }
+    $styleAttr = $styleParts ? ' style="' . htmlspecialchars(implode(';', $styleParts), ENT_QUOTES) . '"' : '';
+    return [
+        'src' => htmlspecialchars(base_url($rawSrc), ENT_QUOTES),
+        'alt' => htmlspecialchars((string)($value['alt'] ?? $defaultAlt), ENT_QUOTES),
+        'attrs' => $attrs,
+        'style' => $styleAttr,
+    ];
+};
+$panelTitleImage = $resolveImageConfig($CFG['app']['panel_title']['image'] ?? null, $appTitle);
+$logoImage = $resolveImageConfig($CFG['app']['logo'] ?? null, $appTitle);
 ?>
 <!doctype html>
 <html lang="hu">
@@ -13,7 +62,11 @@ $LOGOUT_TOKEN = csrf_get_token();
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
 <title><?= htmlspecialchars($CFG['app']['title']) ?></title>
-<link rel="icon" type="image/png" href="<?= htmlspecialchars(base_url('pic/favicon.png'), ENT_QUOTES) ?>" />
+<link rel="icon" type="image/png" sizes="16x16" href="<?= htmlspecialchars(base_url('pic/favicon.png'), ENT_QUOTES) ?>" />
+<link rel="icon" type="image/png" sizes="32x32" href="<?= htmlspecialchars(base_url('pic/favicon.png'), ENT_QUOTES) ?>" />
+<link rel="icon" type="image/png" sizes="192x192" href="<?= htmlspecialchars(base_url('pic/favicon.png'), ENT_QUOTES) ?>" />
+<link rel="apple-touch-icon" sizes="180x180" href="<?= htmlspecialchars(base_url('pic/favicon.png'), ENT_QUOTES) ?>" />
+<link rel="shortcut icon" href="<?= htmlspecialchars(base_url('pic/favicon.png'), ENT_QUOTES) ?>" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <link rel="stylesheet" href="<?= htmlspecialchars(base_url('public/styles.css'), ENT_QUOTES) ?>">
 <?php
@@ -66,34 +119,6 @@ $LOGOUT_TOKEN = csrf_get_token();
   <aside class="panel">
     <div id="panelTop" class="panel-top">
       <?php
-        $appTitle = $CFG['app']['title'] ?? '';
-        $logoCfg = $CFG['app']['logo'] ?? null;
-        $logoData = null;
-        if (is_string($logoCfg) && trim($logoCfg) !== '') {
-          $logoData = ['src' => trim($logoCfg)];
-        } elseif (is_array($logoCfg)) {
-          $logoData = $logoCfg;
-        }
-        $logoSrc = '';
-        $logoAlt = $appTitle;
-        $logoWidthAttr = '';
-        $logoHeightAttr = '';
-        if (is_array($logoData)) {
-          $rawSrc = trim((string)($logoData['src'] ?? ''));
-          if ($rawSrc !== '') {
-            $logoSrc = htmlspecialchars(base_url($rawSrc), ENT_QUOTES);
-            $logoAlt = (string)($logoData['alt'] ?? $logoAlt);
-            $widthVal = $logoData['width'] ?? null;
-            if ($widthVal !== null && $widthVal !== '') {
-              $logoWidthAttr = ' width="' . htmlspecialchars((string)$widthVal, ENT_QUOTES) . '"';
-            }
-            $heightVal = $logoData['height'] ?? null;
-            if ($heightVal !== null && $heightVal !== '') {
-              $logoHeightAttr = ' height="' . htmlspecialchars((string)$heightVal, ENT_QUOTES) . '"';
-            }
-          }
-        }
-
         $toolbarFeatures = $FEATURES['toolbar'] ?? [];
         $toolbarText = $CFG['text']['toolbar'] ?? [];
         $badgeText = $CFG['text']['badges']['pin_counter_label'] ?? 'Pin-ek:';
@@ -250,10 +275,12 @@ $LOGOUT_TOKEN = csrf_get_token();
       ?>
       <div class="panel-top-header">
         <div class="panel-brand">
-          <?php if ($logoSrc !== ''): ?>
-            <img src="<?= $logoSrc ?>" alt="<?= htmlspecialchars($logoAlt, ENT_QUOTES) ?>" class="panel-brand-logo"<?= $logoWidthAttr ?><?= $logoHeightAttr ?>>
+          <?php if ($panelTitleImage): ?>
+            <img src="<?= $panelTitleImage['src'] ?>" alt="<?= $panelTitleImage['alt'] ?>" class="panel-title-image"<?= $panelTitleImage['attrs'] ?><?= $panelTitleImage['style'] ?>>
+          <?php elseif ($logoImage): ?>
+            <img src="<?= $logoImage['src'] ?>" alt="<?= $logoImage['alt'] ?>" class="panel-brand-logo"<?= $logoImage['attrs'] ?><?= $logoImage['style'] ?>>
           <?php else: ?>
-            <h1 class="panel-title"><?= htmlspecialchars($appTitle) ?></h1>
+            <h1 class="panel-title"><?= htmlspecialchars($appTitle, ENT_QUOTES) ?></h1>
           <?php endif; ?>
         </div>
         <?php if ($hasToolbarItems): ?>
